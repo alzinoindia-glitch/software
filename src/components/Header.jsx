@@ -72,8 +72,8 @@ export default function Header({
   return (
     <>
       <header className="no-print" style={{
-        background: 'var(--surface-primary)',
-        borderBottom: '1px solid var(--border-color)',
+        background: '#0F251E',
+        borderBottom: '1px solid rgba(210, 222, 216, 0.15)',
         position: 'sticky',
         top: 0,
         zIndex: 100,
@@ -94,40 +94,40 @@ export default function Header({
                 alignItems: 'center',
                 gap: '0.45rem',
                 padding: '0.42rem 0.75rem',
-                border: menuOpen ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                background: menuOpen ? 'var(--illoca-blue-subtle)' : 'var(--surface-card)',
-                color: menuOpen ? 'var(--accent-primary)' : 'var(--text-primary)',
+                border: menuOpen ? '1px solid #A9BC5C' : '1px solid rgba(210, 222, 216, 0.22)',
+                background: menuOpen ? '#A9BC5C' : 'rgba(241, 239, 229, 0.08)',
+                color: menuOpen ? '#0F251E' : '#F1EFE5',
                 cursor: 'pointer',
                 borderRadius: 'var(--radius-sm)',
                 transition: 'var(--transition-smooth)'
               }}
               title="Open Main Menu (Press M)"
             >
-              <Menu size={18} />
+              <Menu size={18} color={menuOpen ? '#0F251E' : '#A9BC5C'} />
               <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
                 Menu
               </span>
               <kbd className="hide-on-mobile" style={{
-                background: 'rgba(0,0,0,0.12)',
+                background: menuOpen ? 'rgba(15, 37, 30, 0.2)' : 'rgba(241, 239, 229, 0.14)',
                 padding: '0.05rem 0.35rem',
                 borderRadius: '3px',
                 fontSize: '0.65rem',
                 fontFamily: 'var(--font-mono)',
-                color: 'var(--text-muted)'
+                color: menuOpen ? '#0F251E' : 'rgba(241, 239, 229, 0.8)'
               }}>M</kbd>
             </button>
 
             {/* Brand Mark */}
             <div 
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer' }}
               onClick={() => setActiveTab('dashboard')}
               title="Go to Dashboard (F1)"
             >
               <div style={{
                 width: '28px',
                 height: '28px',
-                background: 'var(--accent-primary)',
-                color: '#FFFFFF',
+                background: '#A9BC5C',
+                color: '#0F251E',
                 borderRadius: 'var(--radius-sm)',
                 display: 'flex',
                 alignItems: 'center',
@@ -144,7 +144,7 @@ export default function Header({
                 fontWeight: 800, 
                 fontSize: '1.15rem', 
                 letterSpacing: '-0.03em',
-                color: 'var(--text-primary)'
+                color: '#F1EFE5'
               }}>
                 {shopConfig.name}
               </span>
@@ -159,20 +159,20 @@ export default function Header({
                 marginLeft: '0.35rem',
                 padding: '0.25rem 0.65rem',
                 borderRadius: '999px',
-                background: 'var(--surface-card)',
-                border: '1px solid var(--border-color)',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
                 fontSize: '0.78rem',
-                color: 'var(--text-primary)',
+                color: '#F1EFE5',
                 fontFamily: 'var(--font-heading)',
                 fontWeight: 600
               }}>
-                <currentTabObj.icon size={13} color="var(--accent-primary)" />
+                <currentTabObj.icon size={13} color="#A9BC5C" />
                 <span>{currentTabObj.label}</span>
                 {currentTabObj.count !== undefined && currentTabObj.count !== null && (
                   <span style={{
                     fontSize: '0.62rem',
-                    background: 'var(--accent-primary)',
-                    color: '#FFF',
+                    background: '#A9BC5C',
+                    color: '#0F251E',
                     padding: '0.05rem 0.35rem',
                     borderRadius: '999px',
                     fontFamily: 'var(--font-mono)',
@@ -184,12 +184,13 @@ export default function Header({
                 {currentTabObj.badge && (
                   <span style={{
                     fontSize: '0.62rem',
-                    background: 'var(--badge-bg)',
-                    color: 'var(--badge-text)',
+                    background: 'rgba(169, 188, 92, 0.2)',
+                    color: '#A9BC5C',
                     padding: '0.05rem 0.35rem',
                     borderRadius: '3px',
                     fontFamily: 'var(--font-mono)',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    border: '1px solid rgba(169, 188, 92, 0.3)'
                   }}>
                     {currentTabObj.badge}
                   </span>
@@ -210,19 +211,22 @@ export default function Header({
                 fontSize: '0.78rem',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.4rem'
+                gap: '0.4rem',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: '#F1EFE5'
               }}
             >
-              <Search size={13} color="var(--accent-primary)" />
-              <span className="hide-on-mobile" style={{ color: 'var(--text-secondary)' }}>Search</span>
+              <Search size={13} color="#A9BC5C" />
+              <span className="hide-on-mobile" style={{ color: 'rgba(241, 239, 229, 0.85)' }}>Search</span>
               <kbd className="hide-on-mobile" style={{ 
-                background: 'var(--surface-card)', 
+                background: 'rgba(241, 239, 229, 0.12)', 
                 padding: '0.05rem 0.3rem', 
                 borderRadius: '3px', 
                 fontSize: '0.68rem',
                 fontFamily: 'var(--font-mono)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-muted)'
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: 'rgba(241, 239, 229, 0.7)'
               }}>⌘K</kbd>
             </button>
 
@@ -230,20 +234,30 @@ export default function Header({
             <button 
               onClick={openPullout}
               className="btn-secondary"
-              style={{ padding: '0.35rem 0.55rem' }}
+              style={{ 
+                padding: '0.35rem 0.55rem',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: '#F1EFE5'
+              }}
               title="Quick Tools & Bench Drawer"
             >
-              <SlidersHorizontal size={14} color="var(--accent-primary)" />
+              <SlidersHorizontal size={14} color="#A9BC5C" />
             </button>
 
             {/* Theme Switcher */}
             <button 
               onClick={toggleTheme}
               className="btn-secondary"
-              style={{ padding: '0.35rem 0.55rem' }}
+              style={{ 
+                padding: '0.35rem 0.55rem',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: '#F1EFE5'
+              }}
               title={theme === 'cream' ? 'Switch to Dark Mode' : 'Switch to Warm Mode'}
             >
-              {theme === 'cream' ? <Moon size={14} /> : <Sun size={14} color="#F59E0B" />}
+              {theme === 'cream' ? <Moon size={14} color="#F1EFE5" /> : <Sun size={14} color="#A9BC5C" />}
             </button>
 
             {/* Settings Icon Only in Header */}
@@ -252,14 +266,14 @@ export default function Header({
               className="btn-secondary"
               style={{ 
                 padding: '0.35rem 0.55rem',
-                border: activeTab === 'settings' ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                background: activeTab === 'settings' ? 'var(--illoca-blue-subtle)' : 'var(--surface-card)',
-                color: activeTab === 'settings' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                border: activeTab === 'settings' ? '1px solid #A9BC5C' : '1px solid rgba(210, 222, 216, 0.2)',
+                background: activeTab === 'settings' ? '#A9BC5C' : 'rgba(241, 239, 229, 0.08)',
+                color: activeTab === 'settings' ? '#0F251E' : '#F1EFE5',
                 cursor: 'pointer'
               }}
               title="Shop Settings & Backup"
             >
-              <Settings size={14} color={activeTab === 'settings' ? 'var(--accent-primary)' : 'var(--text-secondary)'} />
+              <Settings size={14} color={activeTab === 'settings' ? '#0F251E' : '#F1EFE5'} />
             </button>
           </div>
         </div>
@@ -278,19 +292,19 @@ export default function Header({
           >
             {/* Menu Header */}
             <div style={{
-              padding: '1rem 1.25rem',
+              padding: '1.1rem 1.25rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              borderBottom: '1px solid var(--border-color)',
-              background: 'var(--surface-card)',
+              borderBottom: '1px solid rgba(210, 222, 216, 0.15)',
+              background: '#0F251E',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                 <div style={{
-                  width: '30px',
-                  height: '30px',
-                  background: 'var(--accent-primary)',
-                  color: '#FFFFFF',
+                  width: '32px',
+                  height: '32px',
+                  background: '#A9BC5C',
+                  color: '#0F251E',
                   borderRadius: 'var(--radius-sm)',
                   display: 'flex',
                   alignItems: 'center',
@@ -302,10 +316,10 @@ export default function Header({
                   A
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', lineHeight: 1.1 }}>
+                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', lineHeight: 1.1, color: '#F1EFE5' }}>
                     {shopConfig.name}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#A9BC5C', fontFamily: 'var(--font-mono)' }}>
                     Retail ERP · Admin Portal · Bodhan
                   </div>
                 </div>
@@ -320,10 +334,10 @@ export default function Header({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--text-muted)',
+                  color: '#F1EFE5',
                   cursor: 'pointer',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--surface-primary)'
+                  border: '1px solid rgba(210, 222, 216, 0.2)',
+                  background: 'rgba(241, 239, 229, 0.08)'
                 }}
                 title="Close Menu (Esc)"
               >
@@ -338,12 +352,13 @@ export default function Header({
               padding: '0.85rem 0.75rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.3rem',
+              gap: '0.35rem',
+              background: '#0F251E',
             }}>
               <div style={{
                 fontSize: '0.68rem',
                 fontFamily: 'var(--font-mono)',
-                color: 'var(--text-muted)',
+                color: 'rgba(241, 239, 229, 0.6)',
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 padding: '0.35rem 0.6rem',
@@ -366,9 +381,9 @@ export default function Header({
                       justifyContent: 'space-between',
                       padding: '0.65rem 0.85rem',
                       borderRadius: 'var(--radius-sm)',
-                      background: isActive ? 'var(--accent-primary)' : 'transparent',
-                      color: isActive ? '#FFFFFF' : 'var(--text-primary)',
-                      border: `1px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`,
+                      background: isActive ? '#A9BC5C' : 'transparent',
+                      color: isActive ? '#0F251E' : '#F1EFE5',
+                      border: `1px solid ${isActive ? '#A9BC5C' : 'transparent'}`,
                       transition: 'var(--transition-smooth)',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -376,7 +391,7 @@ export default function Header({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                      <Icon size={17} color={isActive ? '#FFFFFF' : 'var(--accent-primary)'} />
+                      <Icon size={17} color={isActive ? '#0F251E' : '#A9BC5C'} />
                       <span style={{ 
                         fontFamily: 'var(--font-heading)', 
                         fontWeight: isActive ? 700 : 500, 
@@ -393,9 +408,9 @@ export default function Header({
                           fontFamily: 'var(--font-mono)',
                           padding: '0.1rem 0.38rem',
                           borderRadius: '3px',
-                          background: isActive ? 'rgba(255,255,255,0.22)' : 'var(--surface-primary)',
-                          border: `1px solid ${isActive ? 'rgba(255,255,255,0.3)' : 'var(--border-color)'}`,
-                          color: isActive ? '#FFFFFF' : 'var(--text-muted)'
+                          background: isActive ? 'rgba(15, 37, 30, 0.2)' : 'rgba(241, 239, 229, 0.08)',
+                          border: `1px solid ${isActive ? 'rgba(15, 37, 30, 0.3)' : 'rgba(210, 222, 216, 0.15)'}`,
+                          color: isActive ? '#0F251E' : 'rgba(241, 239, 229, 0.75)'
                         }}>
                           {item.hotkey}
                         </kbd>
@@ -409,11 +424,10 @@ export default function Header({
                           padding: '0.12rem 0.45rem',
                           borderRadius: '999px',
                           background: isActive 
-                            ? 'rgba(255,255,255,0.3)' 
-                            : item.alert 
-                              ? 'var(--status-amber)' 
-                              : 'var(--accent-primary)',
-                          color: item.alert && !isActive ? '#000' : '#FFF',
+                            ? '#0F251E' 
+                            : 'rgba(169, 188, 92, 0.22)',
+                          color: isActive ? '#A9BC5C' : '#A9BC5C',
+                          border: isActive ? 'none' : '1px solid rgba(169, 188, 92, 0.35)'
                         }}>
                           {item.count}
                         </span>
@@ -426,14 +440,15 @@ export default function Header({
                           fontWeight: 600,
                           padding: '0.1rem 0.35rem',
                           borderRadius: '3px',
-                          background: isActive ? 'rgba(255,255,255,0.2)' : 'var(--badge-bg)',
-                          color: isActive ? '#FFF' : 'var(--badge-text)',
+                          background: isActive ? '#0F251E' : 'rgba(169, 188, 92, 0.22)',
+                          color: isActive ? '#A9BC5C' : '#A9BC5C',
+                          border: '1px solid rgba(169, 188, 92, 0.35)'
                         }}>
                           {item.badge}
                         </span>
                       )}
 
-                      <ChevronRight size={13} opacity={isActive ? 0.9 : 0.3} />
+                      <ChevronRight size={13} color={isActive ? '#0F251E' : '#A9BC5C'} opacity={isActive ? 0.9 : 0.4} />
                     </div>
                   </button>
                 );
@@ -443,16 +458,16 @@ export default function Header({
             {/* Menu Footer */}
             <div style={{
               padding: '0.85rem 1rem',
-              borderTop: '1px solid var(--border-color)',
-              background: 'var(--surface-card)',
+              borderTop: '1px solid rgba(210, 222, 216, 0.15)',
+              background: '#0F251E',
               fontSize: '0.72rem',
-              color: 'var(--text-secondary)',
+              color: 'rgba(241, 239, 229, 0.8)',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                <span style={{ fontWeight: 600 }}>ALZINO Retail ERP</span>
-                <span className="mono-tag" style={{ fontSize: '0.65rem' }}>OFFLINE</span>
+                <span style={{ fontWeight: 600, color: '#F1EFE5' }}>ALZINO Retail ERP</span>
+                <span className="mono-tag" style={{ fontSize: '0.65rem', background: 'rgba(169, 188, 92, 0.2)', color: '#A9BC5C', borderColor: 'rgba(169, 188, 92, 0.3)' }}>OFFLINE</span>
               </div>
-              <div style={{ color: 'var(--text-muted)' }}>
+              <div style={{ color: 'rgba(241, 239, 229, 0.6)' }}>
                 GSTIN: {shopConfig.gstin}
               </div>
             </div>

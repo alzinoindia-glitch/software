@@ -1,42 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import './styles.css';
 
 :root {
-  /* Illoca SOTD Color Palette */
-  --illoca-blue: #3B60C5;
-  --illoca-blue-hover: #2F4FA8;
-  --illoca-blue-subtle: rgba(59, 96, 197, 0.12);
-  --illoca-blue-border: rgba(59, 96, 197, 0.28);
-  
-  --illoca-cream: #FDF2DE;
-  --illoca-cream-surface: #F7EBD3;
-  --illoca-cream-card: #F1E2C5;
-  --illoca-cream-border: #E0CFAE;
-  --illoca-cream-text: #23201B;
-  --illoca-cream-muted: #6E685C;
-
-  /* Dark Canvas (Obsidian Blueprint) */
-  --bg-dark: #0A0D14;
-  --surface-dark: #111622;
-  --surface-dark-card: #171E2E;
-  --surface-dark-hover: #1E273B;
-  --border-dark: rgba(253, 242, 222, 0.13);
-  --text-dark-primary: #FDF2DE;
-  --text-dark-secondary: #9FAAC1;
-  --text-dark-muted: #626F8A;
+  /* Fonts */
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: var(--font-display);
+  --font-body: var(--font-sans);
+  --font-mono: 'JetBrains Mono', monospace;
 
   /* Status Colors */
-  --status-green: #10B981;
-  --status-green-bg: rgba(16, 185, 129, 0.15);
-  --status-amber: #F59E0B;
-  --status-amber-bg: rgba(245, 158, 11, 0.15);
-  --status-red: #EF4444;
-  --status-red-bg: rgba(239, 68, 68, 0.15);
-  --status-purple: #8B5CF6;
-  --status-purple-bg: rgba(139, 92, 246, 0.15);
-
-  --font-heading: 'Space Grotesk', sans-serif;
-  --font-body: 'Plus Jakarta Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --status-green: #1F6E48;
+  --status-green-bg: #D8F6E3;
+  --status-amber: #AC7C20;
+  --status-amber-bg: #FEF1D1;
+  --status-red: #C04639;
+  --status-red-bg: #FFEAE6;
+  --status-blue: #207096;
+  --status-blue-bg: #DCF2FE;
+  --status-teal: #1E7777;
+  --status-teal-bg: #D6F7F1;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -46,40 +28,50 @@
   --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Base Light Theme (Default: Illoca Warm Tracing Paper) */
+/* Base Light Theme (Default: Tailored Emerald & Warm Off-White) */
 body.theme-cream {
-  --bg-main: var(--illoca-cream);
-  --surface-primary: var(--illoca-cream-surface);
-  --surface-card: #FFF9EE;
+  --bg-main: #F8F7F1;
+  --surface-primary: #FEFDFA;
+  --surface-card: #FEFDFA;
   --surface-card-hover: #FFFFFF;
-  --border-color: var(--illoca-cream-border);
-  --border-accent: var(--illoca-blue);
-  --text-primary: var(--illoca-cream-text);
-  --text-secondary: var(--illoca-cream-muted);
-  --text-muted: #8E877A;
-  --accent-primary: var(--illoca-blue);
+  --border-color: #D2DED8;
+  --border-accent: #0C5B43;
+  --text-primary: #152620;
+  --text-secondary: #63756E;
+  --text-muted: #63756E;
+  --accent-primary: #0C5B43;
+  --accent-primary-hover: #084331;
   --accent-contrast: #FFFFFF;
-  --badge-bg: rgba(59, 96, 197, 0.1);
-  --badge-text: var(--illoca-blue);
-  --grid-dots: rgba(59, 96, 197, 0.07);
+  --badge-bg: #E1EEE5;
+  --badge-text: #0C5B43;
+  --grid-dots: rgba(12, 91, 67, 0.05);
+
+  --color-danger: #D33F3C;
+  --color-danger-bg: #FFEAE6;
+  --color-highlight: #F0EDC5;
 }
 
-/* Dark Theme (Obsidian Architectural Blueprint) */
+/* Dark Theme (Obsidian Emerald Blueprint) */
 body.theme-dark {
-  --bg-main: var(--bg-dark);
-  --surface-primary: var(--surface-dark);
-  --surface-card: var(--surface-dark-card);
-  --surface-card-hover: var(--surface-dark-hover);
-  --border-color: var(--border-dark);
-  --border-accent: var(--illoca-blue);
-  --text-primary: var(--text-dark-primary);
-  --text-secondary: var(--text-dark-secondary);
-  --text-muted: var(--text-dark-muted);
-  --accent-primary: var(--illoca-blue);
-  --accent-contrast: #FFFFFF;
-  --badge-bg: rgba(59, 96, 197, 0.22);
-  --badge-text: #96B4FF;
-  --grid-dots: rgba(253, 242, 222, 0.05);
+  --bg-main: #0B1713;
+  --surface-primary: #0F251E;
+  --surface-card: #142F27;
+  --surface-card-hover: #1A3C32;
+  --border-color: rgba(210, 222, 216, 0.18);
+  --border-accent: #A9BC5C;
+  --text-primary: #F1EFE5;
+  --text-secondary: #9DB3A9;
+  --text-muted: #748A80;
+  --accent-primary: #A9BC5C;
+  --accent-primary-hover: #BFD36E;
+  --accent-contrast: #0F251E;
+  --badge-bg: rgba(169, 188, 92, 0.18);
+  --badge-text: #A9BC5C;
+  --grid-dots: rgba(241, 239, 229, 0.04);
+
+  --color-danger: #E05350;
+  --color-danger-bg: rgba(211, 63, 60, 0.2);
+  --color-highlight: rgba(240, 237, 197, 0.15);
 }
 
 * {
@@ -179,7 +171,7 @@ input, select, textarea {
   border-color: var(--border-accent);
 }
 
-/* Illoca Tactile Button */
+/* Tactile Button */
 .btn-primary {
   background: var(--accent-primary);
   color: #FFFFFF;
@@ -191,12 +183,12 @@ input, select, textarea {
   align-items: center;
   gap: 0.5rem;
   transition: var(--transition-smooth);
-  box-shadow: 0 2px 4px rgba(59, 96, 197, 0.25);
+  box-shadow: 0 2px 4px rgba(12, 91, 67, 0.2);
 }
 .btn-primary:hover {
-  background: var(--illoca-blue-hover);
+  background: var(--accent-primary-hover, #084331);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(59, 96, 197, 0.35);
+  box-shadow: 0 4px 10px rgba(12, 91, 67, 0.3);
 }
 
 .btn-secondary {
@@ -215,6 +207,23 @@ input, select, textarea {
 .btn-secondary:hover {
   border-color: var(--border-accent);
   background: var(--surface-card-hover);
+}
+
+.btn-danger {
+  background: var(--color-danger, #D33F3C);
+  color: #FFFFFF;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: var(--transition-smooth);
+}
+.btn-danger:hover {
+  background: #B82E2B;
+  transform: translateY(-1px);
 }
 
 .btn-outline {
@@ -243,7 +252,7 @@ input, select, textarea {
 }
 .input-field:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px var(--illoca-blue-subtle);
+  box-shadow: 0 0 0 2px rgba(12, 91, 67, 0.15);
 }
 
 /* Minimalist Segmented Control */
@@ -453,10 +462,10 @@ input, select, textarea {
   left: 0;
   right: 0;
   height: 58px;
-  background: #000000;
-  border-top: 1px solid #1E2330;
+  background: #0F251E;
+  border-top: 1px solid rgba(210, 222, 216, 0.18);
   z-index: 1000;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
   align-items: center;
   justify-content: space-around;
   padding: 0 0.25rem;
@@ -471,7 +480,7 @@ input, select, textarea {
   gap: 3px;
   background: transparent;
   border: none;
-  color: #94A3B8;
+  color: rgba(241, 239, 229, 0.7);
   font-size: 0.68rem;
   font-family: var(--font-heading);
   font-weight: 500;
@@ -481,7 +490,7 @@ input, select, textarea {
 }
 
 .mobile-bottom-item.active {
-  color: var(--accent-primary);
+  color: #A9BC5C;
   font-weight: 700;
 }
 
@@ -493,8 +502,8 @@ input, select, textarea {
   position: absolute;
   top: -4px;
   right: -8px;
-  background: var(--accent-primary);
-  color: #FFFFFF;
+  background: #A9BC5C;
+  color: #0F251E;
   font-size: 0.58rem;
   font-family: var(--font-mono);
   font-weight: 700;

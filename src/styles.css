@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Fonts */
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: var(--font-display);
+  --font-body: var(--font-sans);
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Colors defined as OKLCH tokens with Hex approximations */
+  /* Sidebar / Nav */
+  --color-sidebar-nav: oklch(0.24 0.04 165);       /* #0F251E - Dark green left navigation */
+  --color-sidebar-text: oklch(0.95 0.015 95);      /* #F1EFE5 - Menu labels on the dark sidebar */
+  --color-sidebar-highlight: oklch(0.74 0.13 125); /* #A9BC5C - Active menu item accent */
+
+  /* Primary (Actions) */
+  --color-primary: oklch(0.42 0.09 165);          /* #0C5B43 - Buttons, links, main brand green */
+  --color-primary-hover: oklch(0.36 0.08 165);    /* #084331 */
+
+  /* Page Background & Containers */
+  --color-page-bg: oklch(0.975 0.008 95);         /* #F8F7F1 - Warm off-white workspace */
+  --color-card: oklch(0.995 0.004 95);            /* #FEFDFA - Panels, table containers */
+  --color-secondary-fill: oklch(0.935 0.02 155);   /* #E1EEE5 - Soft green-tinted backgrounds */
+  --color-accent-highlight: oklch(0.935 0.05 105); /* #F0EDC5 - Warm yellow-cream highlights */
+
+  /* Body & Secondary Text */
+  --color-body-text: oklch(0.24 0.025 165);       /* #152620 - Headings and content */
+  --color-secondary-text: oklch(0.53 0.025 165);  /* #63756E - Muted labels, hints */
+
+  /* Borders */
+  --color-border: oklch(0.89 0.015 165);          /* #D2DED8 - Card and input outlines */
+
+  /* Danger / Delete */
+  --color-danger: oklch(0.55 0.18 25);            /* #D33F3C - Destructive buttons, alerts */
+  --color-danger-bg: oklch(0.94 0.035 25);        /* #FFEAE6 */
+
+  /* Status Tones (paired color + soft background chips) */
+  /* Green: PAID, in stock */
+  --status-green-text: #1F6E48;
+  --status-green-bg: #D8F6E3;
+
+  /* Blue: UPI, info */
+  --status-blue-text: #207096;
+  --status-blue-bg: #DCF2FE;
+
+  /* Amber: Pending, low stock warnings */
+  --status-amber-text: #AC7C20;
+  --status-amber-bg: #FEF1D1;
+
+  /* Teal: Repairs, neutral info */
+  --status-teal-text: #1E7777;
+  --status-teal-bg: #D6F7F1;
+
+  /* Red: Overdue, dues */
+  --status-red-text: #C04639;
+  --status-red-bg: #FFEAE6;
+
+  /* Chart Colors */
+  --chart-1: #D5713A;
+  --chart-2: #3F9B9B;
+  --chart-3: #275A78;
+  --chart-4: #E4B23E;
+  --chart-5: #DD9048;
+
+  /* UI Tokens */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+  --transition-smooth: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Status Chips (Paired Color + Soft Background) */
+.chip-green {
+  background-color: var(--status-green-bg, #D8F6E3) !important;
+  color: var(--status-green-text, #1F6E48) !important;
+  border: 1px solid rgba(31, 110, 72, 0.25) !important;
+}
+
+.chip-blue {
+  background-color: var(--status-blue-bg, #DCF2FE) !important;
+  color: var(--status-blue-text, #207096) !important;
+  border: 1px solid rgba(32, 112, 150, 0.25) !important;
+}
+
+.chip-amber {
+  background-color: var(--status-amber-bg, #FEF1D1) !important;
+  color: var(--status-amber-text, #AC7C20) !important;
+  border: 1px solid rgba(172, 124, 32, 0.25) !important;
+}
+
+.chip-teal {
+  background-color: var(--status-teal-bg, #D6F7F1) !important;
+  color: var(--status-teal-text, #1E7777) !important;
+  border: 1px solid rgba(30, 119, 119, 0.25) !important;
+}
+
+.chip-red {
+  background-color: var(--status-red-bg, #FFEAE6) !important;
+  color: var(--status-red-text, #C04639) !important;
+  border: 1px solid rgba(192, 70, 57, 0.25) !important;
+}
