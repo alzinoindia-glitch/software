@@ -672,7 +672,7 @@ export default function ExecutiveDashboard({
             </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>RECEIVED</div>
               <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--accent-primary)', marginTop: '0.15rem' }}>
@@ -698,6 +698,47 @@ export default function ExecutiveDashboard({
               </div>
             </div>
           </div>
+
+          {/* Structured Table with visible lines */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th style={{ textAlign: 'center' }}>Job Count</th>
+                  <th>Status Description</th>
+                  <th style={{ textAlign: 'right' }}>Pending Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>RECEIVED</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{repairStats.received}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>Intake awaiting bench inspection</td>
+                  <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>-</td>
+                </tr>
+                <tr>
+                  <td><strong style={{ color: 'var(--status-amber-text, #AC7C20)' }}>REPAIRING</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{repairStats.inProgress}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>Active repair in progress</td>
+                  <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>-</td>
+                </tr>
+                <tr>
+                  <td><strong style={{ color: 'var(--status-green-text, #1F6E48)' }}>READY</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{repairStats.ready}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>Completed & ready for pickup</td>
+                  <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--status-green-text, #1F6E48)' }}>₹{repairStats.totalPendingBalance.toLocaleString()}</td>
+                </tr>
+                <tr>
+                  <td><strong style={{ color: 'var(--text-secondary)' }}>DELIVERED</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{repairStats.delivered}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>Handed over to customer</td>
+                  <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>₹0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.6rem', display: 'flex', justifyContent: 'space-between' }}>
             <span>Pending collection on ready devices:</span>
             <strong style={{ color: 'var(--status-green-text, #1F6E48)' }}>₹{repairStats.totalPendingBalance.toLocaleString()}</strong>
@@ -722,7 +763,7 @@ export default function ExecutiveDashboard({
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.75rem' }}>
             <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>AAJ KA KHARCHA (TODAY)</div>
               <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--color-danger, #D33F3C)', marginTop: '0.15rem' }}>
@@ -738,6 +779,34 @@ export default function ExecutiveDashboard({
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{monthExpenses.length} Monthly Entries</div>
             </div>
+          </div>
+
+          {/* Structured Table with visible lines */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th style={{ textAlign: 'center' }}>Total Entries</th>
+                  <th style={{ textAlign: 'right' }}>Total Expense</th>
+                  <th style={{ textAlign: 'center' }}>Budget Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>AAJ KA KHARCHA (TODAY)</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{todayExpenses.length} Entries</td>
+                  <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--color-danger, #D33F3C)' }}>₹{todayExpensesTotal.toLocaleString()}</td>
+                  <td style={{ textAlign: 'center' }}><span className="mono-tag chip-green">Within daily budget</span></td>
+                </tr>
+                <tr>
+                  <td><strong>THIS MONTH (TOTAL)</strong></td>
+                  <td style={{ textAlign: 'center', fontWeight: 800 }}>{monthExpenses.length} Entries</td>
+                  <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--text-primary)' }}>₹{monthExpensesTotal.toLocaleString()}</td>
+                  <td style={{ textAlign: 'center' }}><span className="mono-tag chip-blue">Within monthly budget</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
