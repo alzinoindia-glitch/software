@@ -379,16 +379,9 @@ export default function ExecutiveDashboard({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2ND ROW: USED MOBILES, REPAIR PIPELINE, EXPENSES                         */}
+      {/* 2ND ROW: ITEM 5 - USED MOBILES OVERVIEW                                   */}
       {/* ========================================================================= */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: '1rem',
-        marginBottom: '1.25rem'
-      }}>
-        
-        {/* ITEM 5: USED MOBILES OVERVIEW */}
+      <div style={{ marginBottom: '1.25rem' }}>
         <div className="illoca-card" style={{ padding: '1.15rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -417,7 +410,7 @@ export default function ExecutiveDashboard({
 
             <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>PURCHASED</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--status-amber)', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--status-amber-text, #AC7C20)', marginTop: '0.2rem' }}>
                 {usedMobilesBoughtCount}
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Total ₹{usedMobilesBoughtValuation.toLocaleString()}</div>
@@ -425,97 +418,13 @@ export default function ExecutiveDashboard({
 
             <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>RESOLD</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--status-green)', marginTop: '0.2rem' }}>
+              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--status-green-text, #1F6E48)', marginTop: '0.2rem' }}>
                 {usedMobilesSoldCount}
               </div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Customer Invoices</div>
             </div>
           </div>
         </div>
-
-        {/* ITEM 8: REPAIR LAB PENDING PIPELINE */}
-        <div className="illoca-card" style={{ padding: '1.15rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Wrench size={18} color="var(--accent-primary)" />
-              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
-                8. Repair Lab Status Pipeline
-              </h4>
-            </div>
-            <span className="mono-tag" style={{ background: 'var(--status-amber-bg)', color: 'var(--status-amber)', fontWeight: 800 }}>
-              {repairStats.totalPending} Pending Jobs
-            </span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
-            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>RECEIVED</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--accent-primary)', marginTop: '0.15rem' }}>
-                {repairStats.received}
-              </div>
-            </div>
-            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>REPAIRING</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--status-amber)', marginTop: '0.15rem' }}>
-                {repairStats.inProgress}
-              </div>
-            </div>
-            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>READY</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--status-green)', marginTop: '0.15rem' }}>
-                {repairStats.ready}
-              </div>
-            </div>
-            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>DELIVERED</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                {repairStats.delivered}
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.6rem', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Pending collection on ready devices:</span>
-            <strong style={{ color: 'var(--status-green)' }}>₹{repairStats.totalPendingBalance.toLocaleString()}</strong>
-          </div>
-        </div>
-
-        {/* ITEM 9: EXPENSES (AAJ AUR IS MAHINE KA KHARCHA) */}
-        <div className="illoca-card" style={{ padding: '1.15rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Receipt size={18} color="var(--status-red)" />
-              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
-                9. Expenses (Aaj aur Is Mahine)
-              </h4>
-            </div>
-            <button
-              onClick={() => onNavigateTab('expenses')}
-              className="btn-secondary"
-              style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
-            >
-              Manage <ChevronRight size={12} />
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-            <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>AAJ KA KHARCHA (TODAY)</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--status-red)', marginTop: '0.15rem' }}>
-                ₹{todayExpensesTotal.toLocaleString()}
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{todayExpenses.length} Expense Entries</div>
-            </div>
-
-            <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>THIS MONTH (TOTAL)</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-                ₹{monthExpensesTotal.toLocaleString()}
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{monthExpenses.length} Monthly Entries</div>
-            </div>
-          </div>
-        </div>
-
       </div>
 
       {/* ========================================================================= */}
@@ -741,7 +650,100 @@ export default function ExecutiveDashboard({
       </div>
 
       {/* ========================================================================= */}
-      {/* 5TH ROW: WARRANTY & RETURNS (ITEM 10)                                     */}
+      {/* 5TH ROW: REPAIR PIPELINE (ITEM 8) & EXPENSES (ITEM 9)                     */}
+      {/* ========================================================================= */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '1rem',
+        marginBottom: '1.25rem'
+      }}>
+        {/* ITEM 8: REPAIR LAB PENDING PIPELINE */}
+        <div className="illoca-card" style={{ padding: '1.15rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Wrench size={18} color="var(--accent-primary)" />
+              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
+                8. Repair Lab Status Pipeline
+              </h4>
+            </div>
+            <span className="mono-tag chip-amber" style={{ fontWeight: 800 }}>
+              {repairStats.totalPending} Pending Jobs
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>RECEIVED</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--accent-primary)', marginTop: '0.15rem' }}>
+                {repairStats.received}
+              </div>
+            </div>
+            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>REPAIRING</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--status-amber-text, #AC7C20)', marginTop: '0.15rem' }}>
+                {repairStats.inProgress}
+              </div>
+            </div>
+            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>READY</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--status-green-text, #1F6E48)', marginTop: '0.15rem' }}>
+                {repairStats.ready}
+              </div>
+            </div>
+            <div style={{ background: 'var(--surface-primary)', padding: '0.5rem 0.4rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 700 }}>DELIVERED</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                {repairStats.delivered}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.6rem', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Pending collection on ready devices:</span>
+            <strong style={{ color: 'var(--status-green-text, #1F6E48)' }}>₹{repairStats.totalPendingBalance.toLocaleString()}</strong>
+          </div>
+        </div>
+
+        {/* ITEM 9: EXPENSES (AAJ AUR IS MAHINE KA KHARCHA) */}
+        <div className="illoca-card" style={{ padding: '1.15rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Receipt size={18} color="var(--color-danger, #D33F3C)" />
+              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
+                9. Expenses (Aaj aur Is Mahine)
+              </h4>
+            </div>
+            <button
+              onClick={() => onNavigateTab('expenses')}
+              className="btn-secondary"
+              style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
+            >
+              Manage <ChevronRight size={12} />
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+            <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>AAJ KA KHARCHA (TODAY)</div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--color-danger, #D33F3C)', marginTop: '0.15rem' }}>
+                ₹{todayExpensesTotal.toLocaleString()}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{todayExpenses.length} Expense Entries</div>
+            </div>
+
+            <div style={{ background: 'var(--surface-primary)', padding: '0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700 }}>THIS MONTH (TOTAL)</div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                ₹{monthExpensesTotal.toLocaleString()}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{monthExpenses.length} Monthly Entries</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 6TH ROW: WARRANTY & RETURNS (ITEM 10)                                     */}
       {/* ========================================================================= */}
       <div className="illoca-card" style={{ padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
