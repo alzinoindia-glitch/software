@@ -407,9 +407,18 @@ input, select, textarea {
   transform: translateY(-1px);
 }
 
-/* Mobile-only Menu Button in Header (hidden on Desktop) */
-.mobile-only-menu-btn {
-  display: none !important;
+/* Main Menu Button in Header (Visible on both Desktop and Mobile) */
+.main-menu-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.75rem;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-smooth);
 }
 
 /* Hide on mobile utility */
@@ -552,12 +561,6 @@ input, select, textarea {
   }
 
   /* Navigation Bar Adaptations */
-  .desktop-nav-bar {
-    display: none !important;
-  }
-  .mobile-only-menu-btn {
-    display: inline-flex !important;
-  }
   .mobile-bottom-nav {
     display: flex !important;
   }

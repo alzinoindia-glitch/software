@@ -34,11 +34,14 @@ export default function Header({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Close menu on ESC key
+  // Close menu on ESC key or toggle on M key
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && menuOpen) {
         setMenuOpen(false);
+      } else if ((e.key === 'm' || e.key === 'M') && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+        e.preventDefault();
+        setMenuOpen(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -48,16 +51,18 @@ export default function Header({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hotkey: 'F1' },
     { id: 'pos', label: 'POS Billing', icon: ShoppingCart, hotkey: 'F2' },
-    { id: 'inventory', label: 'Stock & IMEIs', icon: Package, count: lowStockCount || 5, alert: lowStockCount > 0 },
-    { id: 'used-phones', label: 'Used or Refurbished Mobiles', icon: Smartphone, badge: 'Aadhaar' },
-    { id: 'repairs', label: 'Repairs', icon: Wrench, count: pendingRepairsCount !== undefined && pendingRepairsCount !== null ? pendingRepairsCount : 2 },
-    { id: 'invoices', label: 'Invoices', icon: FileText, count: invoicesCount !== undefined && invoicesCount !== null ? invoicesCount : 4 },
+    { id: 'inventory', label: 'Stock & IMEIs', icon: Package, count: 5, alert: lowStockCount > 0 },
+    { id: 'used-phones', label: 'Used or Refurbished Mobiles', icon: Smartphone, badge: 'Aadhaar', hotkey: 'F4' },
+    { id: 'repairs', label: 'Repairs', icon: Wrench, count: 2, hotkey: 'F5' },
+    { id: 'invoices', label: 'Invoices', icon: FileText, count: 2 },
     { id: 'barcodes', label: 'Barcodes', icon: Barcode },
     { id: 'khata', label: 'Khata', icon: Users },
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'reports', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  const currentTabObj = navItems.find(item => item.id === activeTab);
 
   const handleSelectTab = (id) => {
     setActiveTab(id);
@@ -80,31 +85,47 @@ export default function Header({
         <div className="header-content-inner">
           {/* Left: 3 Lines Menu Button + Brand + Active Screen Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {/* 3 Lines Hamburger Menu Button (Mobile Only - Hidden on Desktop) */}
+            {/* 3 Lines Hamburger Main Menu Button (Visible in Desktop & Mobile) */}
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="btn-secondary mobile-only-menu-btn"
+              className="btn-secondary main-menu-btn"
               style={{
-                padding: '0.4rem 0.55rem',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                border: '1px solid var(--border-color)',
+                gap: '0.45rem',
+                padding: '0.42rem 0.75rem',
+                border: menuOpen ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
                 background: menuOpen ? 'var(--illoca-blue-subtle)' : 'var(--surface-card)',
                 color: menuOpen ? 'var(--accent-primary)' : 'var(--text-primary)',
+                cursor: 'pointer',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'var(--transition-smooth)'
               }}
-              title="Open Main Menu"
+              title="Open Main Menu (Press M)"
             >
               <Menu size={18} />
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
                 Menu
               </span>
+              <kbd className="hide-on-mobile" style={{
+                background: 'rgba(0,0,0,0.12)',
+                padding: '0.05rem 0.35rem',
+                borderRadius: '3px',
+                fontSize: '0.65rem',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)'
+              }}>M</kbd>
             </button>
 
-            {/* Minimal Brand Mark */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Brand Mark */}
+            <div 
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+              onClick={() => setActiveTab('dashboard')}
+              title="Go to Dashboard (F1)"
+            >
               <div style={{
-                width: '26px',
-                height: '26px',
+                width: '28px',
+                height: '28px',
                 background: 'var(--accent-primary)',
                 color: '#FFFFFF',
                 borderRadius: 'var(--radius-sm)',
@@ -113,7 +134,7 @@ export default function Header({
                 justifyContent: 'center',
                 fontWeight: 800,
                 fontFamily: 'var(--font-heading)',
-                fontSize: '0.92rem',
+                fontSize: '0.95rem',
                 letterSpacing: '-0.04em'
               }}>
                 A
@@ -129,7 +150,52 @@ export default function Header({
               </span>
             </div>
 
-            {/* End of Left Brand Mark */}
+            {/* Active Screen Indicator Badge in Desktop Mode */}
+            {currentTabObj && (
+              <div className="hide-on-mobile" style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                marginLeft: '0.35rem',
+                padding: '0.25rem 0.65rem',
+                borderRadius: '999px',
+                background: 'var(--surface-card)',
+                border: '1px solid var(--border-color)',
+                fontSize: '0.78rem',
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-heading)',
+                fontWeight: 600
+              }}>
+                <currentTabObj.icon size={13} color="var(--accent-primary)" />
+                <span>{currentTabObj.label}</span>
+                {currentTabObj.count !== undefined && currentTabObj.count !== null && (
+                  <span style={{
+                    fontSize: '0.62rem',
+                    background: 'var(--accent-primary)',
+                    color: '#FFF',
+                    padding: '0.05rem 0.35rem',
+                    borderRadius: '999px',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}>
+                    {currentTabObj.count}
+                  </span>
+                )}
+                {currentTabObj.badge && (
+                  <span style={{
+                    fontSize: '0.62rem',
+                    background: 'var(--badge-bg)',
+                    color: 'var(--badge-text)',
+                    padding: '0.05rem 0.35rem',
+                    borderRadius: '3px',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 600
+                  }}>
+                    {currentTabObj.badge}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right Actions: Minimalist & Clean */}
@@ -196,79 +262,6 @@ export default function Header({
               <Settings size={14} color={activeTab === 'settings' ? 'var(--accent-primary)' : 'var(--text-secondary)'} />
             </button>
           </div>
-        </div>
-
-        {/* Desktop View Navigation Buttons Bar Below Header */}
-        <div className="desktop-nav-bar" style={{
-          borderTop: '1px solid #1E2330',
-          borderBottom: '1px solid #1E2330',
-          background: '#000000',
-          padding: '0.45rem 1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.55rem',
-          overflowX: 'auto',
-        }}>
-          {navItems.filter(item => item.id !== 'settings').map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`desktop-nav-btn ${isActive ? 'active' : ''}`}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  padding: '0.38rem 0.8rem',
-                  fontSize: '0.8rem',
-                  fontFamily: 'var(--font-heading)',
-                  fontWeight: isActive ? 700 : 500,
-                  whiteSpace: 'nowrap',
-                  borderRadius: 'var(--radius-sm)',
-                  border: isActive ? '1px solid var(--accent-primary)' : '1px solid #232A3B',
-                  background: isActive ? 'var(--accent-primary)' : '#111622',
-                  color: isActive ? '#FFFFFF' : '#F1F5F9',
-                  cursor: 'pointer',
-                  boxShadow: isActive ? '0 2px 10px rgba(59, 96, 197, 0.45)' : 'none',
-                  transition: 'var(--transition-smooth)'
-                }}
-              >
-                <Icon size={14} color={isActive ? '#FFFFFF' : '#94A3B8'} />
-                <span>{item.label}</span>
-                {item.count && (
-                  <span style={{
-                    fontSize: '0.65rem',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 700,
-                    padding: '0.05rem 0.4rem',
-                    borderRadius: '999px',
-                    background: isActive ? 'rgba(255,255,255,0.25)' : 'var(--accent-primary)',
-                    color: '#FFFFFF'
-                  }}>
-                    {item.count}
-                  </span>
-                )}
-                {item.id === 'used-phones' && (
-                  <span style={{
-                    fontSize: '0.62rem',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    padding: '0.05rem 0.35rem',
-                    borderRadius: '3px',
-                    background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(59, 130, 246, 0.22)',
-                    color: isActive ? '#FFFFFF' : '#93C5FD',
-                    border: '1px solid rgba(59, 130, 246, 0.35)'
-                  }}>
-                    Aadhaar
-                  </span>
-                )}
-              </button>
-            );
-          })}
         </div>
       </header>
 
@@ -393,8 +386,22 @@ export default function Header({
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                      {item.count && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      {item.hotkey && (
+                        <kbd style={{
+                          fontSize: '0.65rem',
+                          fontFamily: 'var(--font-mono)',
+                          padding: '0.1rem 0.38rem',
+                          borderRadius: '3px',
+                          background: isActive ? 'rgba(255,255,255,0.22)' : 'var(--surface-primary)',
+                          border: `1px solid ${isActive ? 'rgba(255,255,255,0.3)' : 'var(--border-color)'}`,
+                          color: isActive ? '#FFFFFF' : 'var(--text-muted)'
+                        }}>
+                          {item.hotkey}
+                        </kbd>
+                      )}
+
+                      {item.count !== undefined && item.count !== null && (
                         <span style={{
                           fontSize: '0.68rem',
                           fontFamily: 'var(--font-mono)',
