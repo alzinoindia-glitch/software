@@ -62,8 +62,6 @@ export default function Header({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const currentTabObj = navItems.find(item => item.id === activeTab);
-
   const handleSelectTab = (id) => {
     setActiveTab(id);
     setMenuOpen(false);
@@ -149,54 +147,6 @@ export default function Header({
                 {shopConfig.name}
               </span>
             </div>
-
-            {/* Active Screen Indicator Badge in Desktop Mode */}
-            {currentTabObj && (
-              <div className="hide-on-mobile" style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                marginLeft: '0.35rem',
-                padding: '0.25rem 0.65rem',
-                borderRadius: '999px',
-                background: 'rgba(241, 239, 229, 0.08)',
-                border: '1px solid rgba(210, 222, 216, 0.2)',
-                fontSize: '0.78rem',
-                color: '#F1EFE5',
-                fontFamily: 'var(--font-heading)',
-                fontWeight: 600
-              }}>
-                <currentTabObj.icon size={13} color="#A9BC5C" />
-                <span>{currentTabObj.label}</span>
-                {currentTabObj.count !== undefined && currentTabObj.count !== null && (
-                  <span style={{
-                    fontSize: '0.62rem',
-                    background: '#A9BC5C',
-                    color: '#0F251E',
-                    padding: '0.05rem 0.35rem',
-                    borderRadius: '999px',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 700
-                  }}>
-                    {currentTabObj.count}
-                  </span>
-                )}
-                {currentTabObj.badge && (
-                  <span style={{
-                    fontSize: '0.62rem',
-                    background: 'rgba(169, 188, 92, 0.2)',
-                    color: '#A9BC5C',
-                    padding: '0.05rem 0.35rem',
-                    borderRadius: '3px',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    border: '1px solid rgba(169, 188, 92, 0.3)'
-                  }}>
-                    {currentTabObj.badge}
-                  </span>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Right Actions: Minimalist & Clean */}
