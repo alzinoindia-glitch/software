@@ -664,6 +664,261 @@ export default function PrintTemplates({
           </div>
         )}
 
+        {/* ========================================================== */}
+        {/* MODE 6: CUSTOMER KHATA ACCOUNT STATEMENT (A4)              */}
+        {/* ========================================================== */}
+        {printMode === 'khata-statement' && (
+          <div style={{ width: '210mm', minHeight: '297mm', padding: '14mm', boxSizing: 'border-box', fontFamily: 'var(--font-sans, system-ui, sans-serif)', fontSize: '12px', lineHeight: 1.4, color: '#152620' }}>
+            
+            {/* Header / Shop Banner */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #0F251E', paddingBottom: '10px', marginBottom: '14px' }}>
+              <div>
+                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 900, color: '#0F251E', letterSpacing: '-0.5px' }}>
+                  {shopConfig.name || 'ALZINO'}
+                </h1>
+                <div style={{ fontSize: '11px', color: '#63756E', fontWeight: 600, marginTop: '2px' }}>
+                  {shopConfig.tagline || 'Mobile Sales • Service • Accessories'}
+                </div>
+                <div style={{ fontSize: '11px', color: '#152620', marginTop: '2px' }}>
+                  {shopConfig.address || 'Station Road, Bodhan, Nizamabad Dist, Telangana - 503185'}
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                  <strong>Phone:</strong> {shopConfig.phone || '+91 98490 00000'} | <strong>GSTIN:</strong> {shopConfig.gstin || '36ABCDE1234F1Z5'}
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ background: '#0F251E', color: '#F1EFE5', padding: '6px 14px', borderRadius: '4px', fontWeight: 800, fontSize: '13px', display: 'inline-block', letterSpacing: '0.5px' }}>
+                  CUSTOMER KHATA STATEMENT
+                </div>
+                <div style={{ fontSize: '11px', marginTop: '8px' }}>
+                  <strong>Statement Date:</strong> {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+                <div style={{ fontSize: '10px', color: '#63756E' }}>
+                  Generated from ALZINO Offline POS
+                </div>
+              </div>
+            </div>
+
+            {/* Customer Details & Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ border: '1px solid #D2DED8', borderRadius: '6px', padding: '10px', background: '#FEFDFA' }}>
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#63756E', fontWeight: 800, letterSpacing: '0.5px', marginBottom: '4px' }}>
+                  Customer Details
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F251E' }}>
+                  {printData.customer?.name}
+                </div>
+                <div style={{ fontSize: '12px', marginTop: '2px' }}>
+                  <strong>Mobile:</strong> {printData.customer?.phone}
+                </div>
+                {printData.customer?.address && (
+                  <div style={{ fontSize: '11px', color: '#63756E', marginTop: '2px' }}>
+                    <strong>Address:</strong> {printData.customer?.address}
+                  </div>
+                )}
+                {printData.customer?.gstin && (
+                  <div style={{ fontSize: '11px', color: '#0C5B43', marginTop: '2px' }}>
+                    <strong>GSTIN:</strong> {printData.customer?.gstin}
+                  </div>
+                )}
+              </div>
+
+              {/* Outstanding Balance Highlight Box */}
+              <div style={{ border: '1.5px solid #0C5B43', borderRadius: '6px', padding: '10px', background: '#E1EEE5', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#0C5B43', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Current Outstanding Due (Baqaya)
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 900, color: printData.customer?.balanceDue > 0 ? '#D33F3C' : '#1F6E48', margin: '4px 0', fontFamily: 'monospace' }}>
+                  ₹{(printData.customer?.balanceDue || 0).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '10px', color: '#63756E' }}>
+                  {printData.customer?.balanceDue > 0 ? 'Payment pending in ledger account' : 'Account is fully settled and cleared'}
+                </div>
+              </div>
+            </div>
+
+            {/* Ledger Transactions Table */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '11px' }}>
+              <thead>
+                <tr style={{ background: '#0F251E', color: '#F1EFE5', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 6px', width: '75px' }}>Date</th>
+                  <th style={{ padding: '8px 6px', width: '90px' }}>Ref # / Type</th>
+                  <th style={{ padding: '8px 6px' }}>Particulars / Items</th>
+                  <th style={{ padding: '8px 6px', width: '85px', textAlign: 'right' }}>Debit (Billed)</th>
+                  <th style={{ padding: '8px 6px', width: '85px', textAlign: 'right' }}>Credit (Paid)</th>
+                  <th style={{ padding: '8px 6px', width: '95px', textAlign: 'right' }}>Running Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(printData.ledger || []).map((row, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #D2DED8', background: idx % 2 === 0 ? '#FFFFFF' : '#F8F7F1' }}>
+                    <td style={{ padding: '7px 6px', fontFamily: 'monospace' }}>{row.date}</td>
+                    <td style={{ padding: '7px 6px', fontWeight: 700 }}>
+                      <span style={{ 
+                        fontSize: '9px', 
+                        padding: '2px 5px', 
+                        borderRadius: '3px',
+                        background: row.type === 'INVOICE' ? '#DCF2FE' : '#D8F6E3',
+                        color: row.type === 'INVOICE' ? '#207096' : '#1F6E48'
+                      }}>
+                        {row.refNo}
+                      </span>
+                    </td>
+                    <td style={{ padding: '7px 6px' }}>
+                      <div style={{ fontWeight: 600 }}>{row.description}</div>
+                      <div style={{ fontSize: '9px', color: '#63756E' }}>Mode: {row.mode || 'Counter'}</div>
+                    </td>
+                    <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
+                      {row.debit > 0 ? `₹${row.debit.toLocaleString()}` : '—'}
+                    </td>
+                    <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 700, color: '#1F6E48', fontFamily: 'monospace' }}>
+                      {row.credit > 0 ? `₹${row.credit.toLocaleString()}` : '—'}
+                    </td>
+                    <td style={{ padding: '7px 6px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: row.runningBalance > 0 ? '#D33F3C' : '#1F6E48' }}>
+                      ₹{row.runningBalance.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Bottom Section: Payment UPI QR & Signatures */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '2px solid #0F251E', paddingTop: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', border: '1px solid #D2DED8', borderRadius: '6px', padding: '10px', background: '#FEFDFA' }}>
+                <img 
+                  src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', printData.customer?.balanceDue || 0, `KHATA-${printData.customer?.id}`)} 
+                  alt="UPI QR" 
+                  style={{ width: '80px', height: '80px', display: 'block' }}
+                />
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0F251E' }}>Scan to Pay via UPI</div>
+                  <div style={{ fontSize: '10px', color: '#63756E', marginTop: '2px' }}>GPay / PhonePe / Paytm / BHIM</div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, fontFamily: 'monospace', color: '#0C5B43', marginTop: '3px' }}>
+                    {shopConfig.upiId || 'alzino.bodhan@okhdfcbank'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '4px 0' }}>
+                <div style={{ fontSize: '10px', color: '#63756E', fontStyle: 'italic' }}>
+                  * For any balance discrepancy or confirmation, please contact our counter.
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0F251E' }}>For {shopConfig.name || 'ALZINO'}</div>
+                  <div style={{ marginTop: '28px', fontSize: '10px', borderTop: '1px dashed #63756E', display: 'inline-block', paddingTop: '3px', minWidth: '150px', textAlign: 'center' }}>
+                    Authorized Signatory / Cashier
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* MODE 7: DAY-END CASH REGISTER Z-REPORT (3-INCH THERMAL)   */}
+        {/* ========================================================== */}
+        {printMode === 'z-report' && (
+          <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3, color: '#000000' }}>
+            
+            {/* Header */}
+            <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '3mm', marginBottom: '3mm' }}>
+              <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{shopConfig.name || 'ALZINO'}</div>
+              <div style={{ fontSize: '10px' }}>{shopConfig.address || 'Station Road, Bodhan'}</div>
+              <div style={{ fontSize: '10px' }}>Tel: {shopConfig.phone || '+91 98490 00000'}</div>
+              <div style={{ fontSize: '12px', fontWeight: 'bold', margin: '3mm 0 1mm 0' }}>
+                *** DAY-END CASH DRAWER Z-REPORT ***
+              </div>
+              <div style={{ fontSize: '9px' }}>CLOSING DATE: {printData.today || new Date().toISOString().split('T')[0]}</div>
+              <div style={{ fontSize: '9px' }}>PRINTED AT: {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+
+            {/* 1. System Cash Drawer Flow */}
+            <div style={{ borderBottom: '1px dashed #000', paddingBottom: '2.5mm', marginBottom: '2.5mm' }}>
+              <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '1.5mm' }}>
+                1. SYSTEM CASH REGISTER FLOW
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Opening Cash Float:</span>
+                <span>₹{(printData.openingCash || 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>(+) Cash Sales (POS):</span>
+                <span>+₹{(printData.todayCashSales || 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>(-) Cash Expenses:</span>
+                <span>-₹{(printData.todayCashExpenses || 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>(-) Used Mobiles Payout:</span>
+                <span>-₹{(printData.todayUsedPhonePayouts || 0).toLocaleString()}</span>
+              </div>
+              <div style={{ borderTop: '1px solid #000', marginTop: '1.5mm', paddingTop: '1.5mm', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>EXPECTED DRAWER CASH:</span>
+                <span>₹{(printData.expectedCashInDrawer || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* 2. Physical Cash Tender Count */}
+            <div style={{ borderBottom: '1px dashed #000', paddingBottom: '2.5mm', marginBottom: '2.5mm' }}>
+              <div style={{ fontWeight: 'bold', textDecoration: 'underline', marginBottom: '1.5mm' }}>
+                2. PHYSICAL NOTE COUNT
+              </div>
+              {[500, 200, 100, 50, 20, 10].map(den => {
+                const count = printData.denominations?.[den] || 0;
+                if (count === 0) return null;
+                return (
+                  <div key={den} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>₹{den} x {count}:</span>
+                    <span>₹{(den * count).toLocaleString()}</span>
+                  </div>
+                );
+              })}
+              {printData.denominations?.coins > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Coins:</span>
+                  <span>₹{Number(printData.denominations.coins).toLocaleString()}</span>
+                </div>
+              )}
+              <div style={{ borderTop: '1px solid #000', marginTop: '1.5mm', paddingTop: '1.5mm', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                <span>TOTAL PHYSICAL CASH:</span>
+                <span>₹{(printData.totalCountedCash || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* 3. Variance / Reconciliation */}
+            <div style={{ borderBottom: '1px dashed #000', paddingBottom: '2.5mm', marginBottom: '2.5mm' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
+                <span>DRAWER VARIANCE:</span>
+                <span>
+                  {printData.cashDiscrepancy === 0 
+                    ? '₹0 (PERFECT MATCH)' 
+                    : printData.cashDiscrepancy > 0 
+                      ? `+₹${printData.cashDiscrepancy.toLocaleString()} (EXCESS)` 
+                      : `-₹${Math.abs(printData.cashDiscrepancy).toLocaleString()} (SHORTAGE)`}
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Cashier Sign-off */}
+            <div style={{ fontSize: '10px', lineHeight: 1.4 }}>
+              <div><strong>CASHIER:</strong> {printData.cashierName || 'Counter Admin'}</div>
+              {printData.closingRemarks && (
+                <div><strong>REMARKS:</strong> {printData.closingRemarks}</div>
+              )}
+              <div style={{ marginTop: '8mm', borderTop: '1px dotted #000', paddingTop: '1.5mm', textAlign: 'center' }}>
+                MANAGER / OWNER SIGNATURE
+              </div>
+              <div style={{ textAlign: 'center', marginTop: '2mm', fontSize: '8px' }}>
+                --- END OF Z-REPORT ---
+              </div>
+            </div>
+
+          </div>
+        )}
+
       </div>
     </div>
   );

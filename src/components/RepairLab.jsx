@@ -18,7 +18,9 @@ import {
   ShieldCheck,
   Check,
   User,
-  Phone
+  Phone,
+  Box,
+  X
 } from 'lucide-react';
 
 export default function RepairLab({ 
@@ -28,6 +30,8 @@ export default function RepairLab({
   setInvoices = () => {},
   customers = [],
   setCustomers = () => {},
+  inventory = [],
+  setInventory = () => {},
   shopConfig = {}, 
   onPrintRepairSlip = () => {},
   onPrintInvoice = () => {}
@@ -167,6 +171,68 @@ export default function RepairLab({
     'No Warranty (Liquid / Water Damaged Board)'
   ];
 
+  // Consumed Spare Parts state
+  const [consumedParts, setConsumedParts] = useState([]);
+  const [newPartName, setNewPartName] = useState('');
+  const [newPartCost, setNewPartCost] = useState('');
+  const [selectedInventoryPartId, setSelectedInventoryPartId] = useState('');
+
+  // QC Checklist Modal state
+  const [qcJob, setQcJob] = useState(null);
+  const [qcChecks, setQcChecks] = useState({});
+
+  const defaultQcItems = [
+    { id: 'display', label: 'Display & Touch Screen (No dead zones / phantom touch)' },
+    { id: 'earSpeaker', label: 'Ear Speaker (Clear voice audibility on call)' },
+    { id: 'mic', label: 'Microphone (Outgoing voice audibility)' },
+    { id: 'loudspeaker', label: 'Loudspeaker / Ringer & Media Sound' },
+    { id: 'charging', label: 'Charging Port & Amp Drawing (Fast Charge OK)' },
+    { id: 'cameraFront', label: 'Front Selfie Camera & Proximity Sensor' },
+    { id: 'cameraRear', label: 'Rear Camera, Autofocus & Flashlight LED' },
+    { id: 'connectivity', label: 'WiFi, Bluetooth & Hotspot Signals' },
+    { id: 'network', label: 'SIM 4G/5G Calling & Signal Reception' },
+    { id: 'biometric', label: 'Fingerprint Sensor / Face Unlock' },
+  ];
+
+  const handleOpenQcModal = (job) => {
+    setQcJob(job);
+    setQcChecks(job.qcChecklist || {});
+  };
+
+  const handleToggleQcItem = (itemId) => {
+    setQcChecks(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
+  const handleMarkAllQcPassed = () => {
+    const all = {};
+    defaultQcItems.forEach(it => { all[it.id] = true; });
+    setQcChecks(all);
+  };
+
+  const handleSaveQc = () => {
+    if (!qcJob) return;
+    const passedCount = defaultQcItems.filter(it => qcChecks[it.id]).length;
+    const isAllPassed = passedCount === defaultQcItems.length;
+
+    setRepairJobs(prev => prev.map(j => {
+      if (j.jobId === qcJob.jobId) {
+        return {
+          ...j,
+          qcChecklist: qcChecks,
+          qcPassed: isAllPassed || passedCount >= 8,
+          qcPassedCount: passedCount
+        };
+      }
+      return j;
+    }));
+
+    showToast(`QC checklist saved for ${qcJob.jobId}! (${passedCount}/${defaultQcItems.length} tests passed)`);
+    setQcJob(null);
+  };
+
   // Open Generate Bill Modal for a specific job
   const handleOpenBillModal = (job) => {
     setJobToBill(job);
@@ -177,7 +243,34 @@ export default function RepairLab({
     setRepairPaymentMode('Cash');
     setRepairDiscount(0);
     setRepairNotes('Device tested and confirmed working. Keep bill for warranty claims.');
+    setConsumedParts(job.consumedParts || []);
+    setNewPartName('');
+    setNewPartCost('');
+    setSelectedInventoryPartId('');
     setBillModalOpen(true);
+  };
+
+  const handleAddConsumedPart = () => {
+    if (!newPartName.trim()) {
+      alert("Please enter a spare part name or select an inventory item.");
+      return;
+    }
+    const cost = Math.max(0, parseFloat(newPartCost) || 0);
+    const newPart = {
+      id: `PART-${Date.now()}`,
+      name: newPartName.trim(),
+      cost,
+      inventoryId: selectedInventoryPartId || null,
+      qty: 1
+    };
+    setConsumedParts(prev => [...prev, newPart]);
+    setNewPartName('');
+    setNewPartCost('');
+    setSelectedInventoryPartId('');
+  };
+
+  const handleRemoveConsumedPart = (partId) => {
+    setConsumedParts(prev => prev.filter(p => p.id !== partId));
   };
 
   // Commit Bill & Generate Invoice
@@ -203,6 +296,16 @@ export default function RepairLab({
     const actualPaid = repairPaymentMode === 'Khata' ? advance : grandTotalPrice;
     const khataDue = repairPaymentMode === 'Khata' ? netBalanceToCollect : 0;
 
+    // Calculate spare parts cost vs profit
+    const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+    const buyPrice = totalSparePartsCost > 0 ? totalSparePartsCost : Math.round(finalPrice * 0.35);
+    const calculatedProfit = Math.max(0, grandTotalPrice - buyPrice);
+
+    // Spare parts summary text for notes
+    const partsText = consumedParts.length > 0 
+      ? ` | Parts Replaced: ${consumedParts.map(p => p.name).join(', ')}`
+      : '';
+
     // Construct official Invoice
     const newInvoice = {
       invoiceNo,
@@ -217,7 +320,7 @@ export default function RepairLab({
       customerGstin: '',
       paymentMode: repairPaymentMode,
       warrantyNotes: repairWarranty,
-      notes: `${repairNotes.trim()} [Intake Job: ${jobToBill.jobId} | Advance paid: ₹${advance}]`,
+      notes: `${repairNotes.trim()} [Intake Job: ${jobToBill.jobId} | Advance paid: ₹${advance}${partsText}]`,
       items: [
         {
           id: `SVC-${jobToBill.jobId}`,
@@ -227,11 +330,11 @@ export default function RepairLab({
           qty: 1,
           imeis: jobToBill.screenLock ? [`Ref: ${jobToBill.jobId} • Lock: ${jobToBill.screenLock}`] : [`Ref: ${jobToBill.jobId}`],
           rate: finalPrice,
-          buyPrice: Math.round(finalPrice * 0.4), // estimated parts cost
+          buyPrice: buyPrice,
           gstRate: isNonGst ? 0 : 18,
           taxable: isNonGst ? finalPrice : parseFloat((finalPrice / 1.18).toFixed(2)),
           total: finalPrice,
-          profit: Math.round(grandTotalPrice * 0.6), // labor & profit margin
+          profit: calculatedProfit,
           warranty: repairWarranty,
           condition: `Repaired & Tested (${jobToBill.issues.join(', ')})`,
         }
@@ -244,13 +347,28 @@ export default function RepairLab({
       grandTotal: grandTotalPrice,
       paidAmount: actualPaid,
       khataDue,
-      totalProfit: Math.round(grandTotalPrice * 0.6),
+      totalProfit: calculatedProfit,
     };
 
     // 1. Add to invoices
     setInvoices(prev => [newInvoice, ...prev]);
 
-    // 2. Update repair job status to Delivered & record invoiceNo
+    // 2. Deduct inventory if spare parts were drawn from store inventory
+    const inventoryItemsToDeduct = consumedParts.filter(p => p.inventoryId);
+    if (inventoryItemsToDeduct.length > 0 && typeof setInventory === 'function') {
+      setInventory(prev => prev.map(invItem => {
+        const matched = inventoryItemsToDeduct.find(p => p.inventoryId === invItem.id);
+        if (matched) {
+          return {
+            ...invItem,
+            stock: Math.max(0, (invItem.stock || 1) - (matched.qty || 1))
+          };
+        }
+        return invItem;
+      }));
+    }
+
+    // 3. Update repair job status to Delivered & record invoiceNo & consumed parts
     setRepairJobs(prev => prev.map(job => {
       if (job.jobId === jobToBill.jobId) {
         return {
@@ -259,7 +377,9 @@ export default function RepairLab({
           balanceDue: 0,
           invoiceNo: invoiceNo,
           billedAt: finalPrice,
-          deliveredDate: today
+          deliveredDate: today,
+          consumedParts: consumedParts,
+          partsCost: totalSparePartsCost
         };
       }
       return job;
@@ -451,10 +571,15 @@ export default function RepairLab({
               <div>
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                     <span className="mono-tag" style={{ fontSize: '0.8rem' }}>
                       {job.jobId}
                     </span>
+                    {job.qcPassed && (
+                      <span className="mono-tag chip-green" style={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                        ✓ QC PASSED
+                      </span>
+                    )}
                     {isBilled && (
                       <span className="mono-tag" style={{ background: 'var(--status-green-bg)', color: 'var(--status-green)', fontSize: '0.7rem', fontWeight: 700 }}>
                         ✓ {job.invoiceNo}
@@ -577,6 +702,25 @@ export default function RepairLab({
                   >
                     <Receipt size={14} />
                     <span>{isBilled ? 'Re-generate Bill' : 'Generate Bill'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenQcModal(job)}
+                    className="btn-outline"
+                    style={{
+                      padding: '0.4rem 0.55rem',
+                      fontSize: '0.78rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      borderColor: job.qcPassed ? 'var(--status-green)' : undefined,
+                      color: job.qcPassed ? 'var(--status-green)' : undefined,
+                      fontWeight: job.qcPassed ? 700 : 500
+                    }}
+                    title="Pre-delivery Quality & Functional Checklist"
+                  >
+                    <ShieldCheck size={13} />
+                    <span>{job.qcPassed ? 'QC OK' : 'QC Check'}</span>
                   </button>
 
                   <button
@@ -770,6 +914,84 @@ export default function RepairLab({
               />
             </div>
 
+            {/* Consumed Spare Parts Section */}
+            <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.85rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.85rem' }}>
+                  <Box size={14} color="var(--accent-primary)" />
+                  <span>Consumed Spare Parts & Hardware (Tracks Net Profit & Stock)</span>
+                </div>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                  Total Parts Cost: <strong style={{ color: 'var(--text-primary)' }}>₹{consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0), 0).toLocaleString()}</strong>
+                </span>
+              </div>
+
+              {/* Inputs to add a consumed part */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.1fr 90px auto', gap: '0.4rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <input
+                  type="text"
+                  placeholder="Part name (e.g. OLED Display Folder)"
+                  value={newPartName}
+                  onChange={(e) => setNewPartName(e.target.value)}
+                  className="input-field"
+                  style={{ fontSize: '0.78rem' }}
+                />
+                <select
+                  value={selectedInventoryPartId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedInventoryPartId(id);
+                    if (id) {
+                      const invItem = inventory.find(i => i.id === id);
+                      if (invItem) {
+                        setNewPartName(invItem.name);
+                        setNewPartCost(String(invItem.buyPrice || invItem.costPrice || 0));
+                      }
+                    }
+                  }}
+                  className="input-field"
+                  style={{ fontSize: '0.76rem' }}
+                >
+                  <option value="">Or Pick from Store Stock...</option>
+                  {inventory.filter(i => i.stock > 0).map(i => (
+                    <option key={i.id} value={i.id}>{i.name} ({i.stock} left - ₹{i.buyPrice || i.price})</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  placeholder="Cost ₹"
+                  value={newPartCost}
+                  onChange={(e) => setNewPartCost(e.target.value)}
+                  className="input-field"
+                  style={{ fontSize: '0.78rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddConsumedPart}
+                  className="btn-primary"
+                  style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                >
+                  + Add
+                </button>
+              </div>
+
+              {/* List of added parts */}
+              {consumedParts.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
+                  {consumedParts.map(part => (
+                    <span key={part.id} className="mono-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.2rem 0.5rem', fontSize: '0.72rem', background: 'var(--surface-primary)', border: '1px solid var(--border-color)' }}>
+                      <strong>{part.name}</strong> (Cost: ₹{part.cost})
+                      <button type="button" onClick={() => handleRemoveConsumedPart(part.id)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--status-red)', padding: 0, fontWeight: 900 }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  No extra spare parts logged. Standard repair labor margins applied.
+                </div>
+              )}
+            </div>
+
             {/* Warranty & Payment Configuration */}
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
               <div>
@@ -886,6 +1108,125 @@ export default function RepairLab({
                 <span>Print Official A4 Invoice</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: PRE-DELIVERY QUALITY / TESTING CHECKLIST                           */}
+      {/* ========================================================================= */}
+      {qcJob && (
+        <div 
+          className="drawer-overlay" 
+          onClick={() => setQcJob(null)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 3500 }}
+        >
+          <div 
+            className="illoca-card animate-fade-in" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ 
+              maxWidth: '540px', 
+              width: '100%', 
+              maxHeight: '90vh', 
+              overflowY: 'auto',
+              padding: '1.5rem', 
+              background: 'var(--surface-primary)',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.5)'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ShieldCheck size={20} color="var(--status-green)" />
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>
+                    Pre-Delivery QC Checklist — {qcJob.jobId}
+                  </h3>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  {qcJob.deviceModel} • Customer: {qcJob.customerName} ({qcJob.customerMobile})
+                </div>
+              </div>
+              <button 
+                onClick={() => setQcJob(null)}
+                style={{ fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)', border: 'none', background: 'transparent' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Sub-bar with quick pass */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', background: 'var(--surface-card)', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.82rem' }}>
+                Tested: <strong style={{ color: 'var(--status-green)' }}>{defaultQcItems.filter(it => qcChecks[it.id]).length}</strong> / {defaultQcItems.length} Features
+              </div>
+              <button
+                type="button"
+                onClick={handleMarkAllQcPassed}
+                className="btn-outline"
+                style={{ padding: '0.3rem 0.65rem', fontSize: '0.76rem', color: 'var(--status-green)', borderColor: 'var(--status-green)' }}
+              >
+                ✓ Mark All Passed
+              </button>
+            </div>
+
+            {/* Checklist Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {defaultQcItems.map(item => {
+                const isPassed = Boolean(qcChecks[item.id]);
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleQcItem(item.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.6rem 0.85rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: `1.5px solid ${isPassed ? 'var(--status-green)' : 'var(--border-color)'}`,
+                      background: isPassed ? 'rgba(31, 110, 72, 0.08)' : 'var(--surface-primary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.82rem', fontWeight: isPassed ? 700 : 500, color: isPassed ? 'var(--status-green)' : 'var(--text-primary)' }}>
+                      {item.label}
+                    </span>
+                    <span className="mono-tag" style={{
+                      background: isPassed ? 'var(--status-green-bg)' : 'var(--border-color)',
+                      color: isPassed ? 'var(--status-green)' : 'var(--text-muted)',
+                      fontWeight: 800,
+                      fontSize: '0.72rem'
+                    }}>
+                      {isPassed ? 'PASSED ✓' : 'NOT TESTED'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Save Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+              <button 
+                type="button" 
+                onClick={() => setQcJob(null)}
+                className="btn-outline"
+                style={{ padding: '0.55rem 1rem' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={handleSaveQc}
+                className="btn-primary"
+                style={{ padding: '0.55rem 1.25rem' }}
+              >
+                Save QC Certification
+              </button>
+            </div>
+
           </div>
         </div>
       )}

@@ -131,6 +131,16 @@ export default function App() {
     setPrintMode('barcodes');
   };
 
+  const handlePrintKhataStatement = (statementData) => {
+    setPrintData(statementData);
+    setPrintMode('khata-statement');
+  };
+
+  const handlePrintZReport = (zData) => {
+    setPrintData(zData);
+    setPrintMode('z-report');
+  };
+
   // Barcode Jump helper from Inventory
   const handleSelectBarcodeFromInventory = (item) => {
     setSelectedItemForBarcode(item);
@@ -220,6 +230,8 @@ export default function App() {
             setInvoices={setInvoices}
             customers={customers}
             setCustomers={setCustomers}
+            inventory={inventory}
+            setInventory={setInventory}
             shopConfig={shopConfig}
             onPrintRepairSlip={handlePrintRepairSlip}
             onPrintInvoice={handlePrintInvoice}
@@ -261,7 +273,9 @@ export default function App() {
             customers={customers}
             setCustomers={setCustomers}
             invoices={invoices}
+            repairJobs={repairJobs}
             shopConfig={shopConfig}
+            onPrintKhataStatement={handlePrintKhataStatement}
           />
         )}
 
@@ -285,7 +299,9 @@ export default function App() {
             customers={customers}
             usedPurchases={usedPurchases}
             repairJobs={repairJobs}
+            shopConfig={shopConfig}
             onPrintInvoice={handlePrintInvoice}
+            onPrintZReport={handlePrintZReport}
             role={role}
           />
         )}

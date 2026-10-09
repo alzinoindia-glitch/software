@@ -20,7 +20,13 @@ import {
   Percent,
   Tag,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  Calculator,
+  Receipt,
+  FileText,
+  AlertTriangle,
+  Coins,
+  Check
 } from 'lucide-react';
 
 export default function AnalyticsReports({ 
@@ -30,12 +36,31 @@ export default function AnalyticsReports({
   customers = [], 
   usedPurchases = [],
   repairJobs = [],
-  onPrintInvoice = () => {}, 
+  onPrintInvoice = () => {},
+  onPrintZReport = () => {},
+  shopConfig = {},
   role = 'admin' 
 }) {
+  // Navigation: 'overview' | 'z-report' | 'gstr1' | 'products'
+  const [activeReportTab, setActiveReportTab] = useState('overview');
+
   const [dateFilter, setDateFilter] = useState('all'); // 'today' | 'month' | 'all'
   const [selectedCategoryTab, setSelectedCategoryTab] = useState('All');
   const [productSearchTerm, setProductSearchTerm] = useState('');
+
+  // Day-End Z-Report Cash Drawer State
+  const [openingCash, setOpeningCash] = useState(2000); // Default drawer float in Bodhan
+  const [denominations, setDenominations] = useState({
+    500: 0,
+    200: 0,
+    100: 0,
+    50: 0,
+    20: 0,
+    10: 0,
+    coins: 0
+  });
+  const [cashierName, setCashierName] = useState('Admin / Cashier');
+  const [closingRemarks, setClosingRemarks] = useState('');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const currentMonthStr = todayStr.substring(0, 7);
@@ -217,6 +242,137 @@ export default function AnalyticsReports({
     });
   }, [productAnalytics, selectedCategoryTab, productSearchTerm]);
 
+  // =========================================================================
+  // DAY-END CASH DRAWER (Z-REPORT) CALCULATIONS
+  // =========================================================================
+  const todayInvoices = useMemo(() => invoices.filter(inv => inv.date === todayStr), [invoices, todayStr]);
+  const todayCashSales = useMemo(() => {
+    return todayInvoices
+      .filter(inv => inv.paymentMode === 'Cash' || inv.paymentMode?.includes('Cash'))
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+  }, [todayInvoices]);
+
+  const todayUpiSales = useMemo(() => {
+    return todayInvoices
+      .filter(inv => inv.paymentMode?.includes('UPI'))
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+  }, [todayInvoices]);
+
+  const todayCardSales = useMemo(() => {
+    return todayInvoices
+      .filter(inv => inv.paymentMode === 'Card' || inv.paymentMode?.includes('Card'))
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+  }, [todayInvoices]);
+
+  const todayExpensesList = useMemo(() => expenses.filter(e => e.date === todayStr), [expenses, todayStr]);
+  const todayCashExpenses = useMemo(() => {
+    return todayExpensesList
+      .filter(e => e.paidBy === 'Cash')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  }, [todayExpensesList]);
+
+  const todayUsedPhonePayouts = useMemo(() => {
+    return usedPurchases
+      .filter(p => p.date === todayStr && p.paymentMode === 'Cash')
+      .reduce((sum, p) => sum + (Number(p.buyPrice) || 0), 0);
+  }, [usedPurchases, todayStr]);
+
+  const expectedCashInDrawer = Math.max(0, openingCash + todayCashSales - todayCashExpenses - todayUsedPhonePayouts);
+
+  const totalCountedCash = (
+    (Number(denominations[500]) || 0) * 500 +
+    (Number(denominations[200]) || 0) * 200 +
+    (Number(denominations[100]) || 0) * 100 +
+    (Number(denominations[50]) || 0) * 50 +
+    (Number(denominations[20]) || 0) * 20 +
+    (Number(denominations[10]) || 0) * 10 +
+    (Number(denominations.coins) || 0)
+  );
+
+  const cashDiscrepancy = totalCountedCash - expectedCashInDrawer;
+
+  // =========================================================================
+  // GSTR-1 TAX DATA CALCULATIONS (B2B, B2C, HSN SUMMARY)
+  // =========================================================================
+  const b2bInvoices = useMemo(() => {
+    return filteredInvoices.filter(inv => 
+      !inv.isNonGst && inv.customerGstin && inv.customerGstin.trim().length >= 10
+    );
+  }, [filteredInvoices]);
+
+  const b2cInvoices = useMemo(() => {
+    return filteredInvoices.filter(inv => !b2bInvoices.includes(inv));
+  }, [filteredInvoices, b2bInvoices]);
+
+  const b2bTaxableTotal = b2bInvoices.reduce((s, inv) => s + (Number(inv.taxableAmount) || Number(inv.subtotal) || 0), 0);
+  const b2bCgstTotal = b2bInvoices.reduce((s, inv) => s + (Number(inv.cgstTotal) || 0), 0);
+  const b2bSgstTotal = b2bInvoices.reduce((s, inv) => s + (Number(inv.sgstTotal) || 0), 0);
+  const b2bGrandTotal = b2bInvoices.reduce((s, inv) => s + (Number(inv.grandTotal) || 0), 0);
+
+  const b2cTaxableTotal = b2cInvoices.reduce((s, inv) => s + (Number(inv.taxableAmount) || Number(inv.subtotal) || 0), 0);
+  const b2cCgstTotal = b2cInvoices.reduce((s, inv) => s + (Number(inv.cgstTotal) || 0), 0);
+  const b2cSgstTotal = b2cInvoices.reduce((s, inv) => s + (Number(inv.sgstTotal) || 0), 0);
+  const b2cGrandTotal = b2cInvoices.reduce((s, inv) => s + (Number(inv.grandTotal) || 0), 0);
+
+  const totalGstLiability = b2bCgstTotal + b2bSgstTotal + b2cCgstTotal + b2cSgstTotal;
+
+  // HSN Summary Aggregation
+  const hsnSummaryList = useMemo(() => {
+    const map = {};
+    filteredInvoices.forEach(inv => {
+      (inv.items || []).forEach(it => {
+        const hsn = it.hsn || '851712';
+        if (!map[hsn]) {
+          map[hsn] = {
+            hsn,
+            desc: hsn === '851712' ? 'Smartphones & Mobile Devices' : hsn === '851770' ? 'Accessories & Spare Parts' : hsn === '8516' ? 'Home Appliances' : 'Consumer Goods',
+            uqc: 'NOS',
+            qty: 0,
+            taxable: 0,
+            cgst: 0,
+            sgst: 0,
+            totalTax: 0
+          };
+        }
+        const itQty = Number(it.qty) || 1;
+        const itTaxable = Number(it.taxable) || Number(it.total) || 0;
+        const itRate = Number(it.gstRate) || (inv.isNonGst ? 0 : 18);
+        const itTax = inv.isNonGst ? 0 : Math.round((itTaxable * itRate) / 100);
+
+        map[hsn].qty += itQty;
+        map[hsn].taxable += itTaxable;
+        map[hsn].cgst += Math.round(itTax / 2);
+        map[hsn].sgst += Math.round(itTax / 2);
+        map[hsn].totalTax += itTax;
+      });
+    });
+    return Object.values(map);
+  }, [filteredInvoices]);
+
+  // Export GSTR-1 to CSV (CA Ready Format)
+  const handleExportGstr1CSV = () => {
+    let csv = "data:text/csv;charset=utf-8,";
+    csv += "Section,Invoice Number,Invoice Date,Customer Name,Customer GSTIN,Place of Supply,Reverse Charge,Taxable Value,CGST Amount,SGST Amount,IGST Amount,Total Invoice Value\n";
+
+    b2bInvoices.forEach(inv => {
+      const taxable = Number(inv.taxableAmount) || Number(inv.subtotal) || 0;
+      csv += `"B2B","${inv.invoiceNo}","${inv.date}","${inv.customerName || 'B2B Client'}","${inv.customerGstin}","36-Telangana","N",${taxable},${inv.cgstTotal || 0},${inv.sgstTotal || 0},0,${inv.grandTotal}\n`;
+    });
+
+    b2cInvoices.forEach(inv => {
+      const taxable = Number(inv.taxableAmount) || Number(inv.subtotal) || 0;
+      csv += `"B2C Small","${inv.invoiceNo}","${inv.date}","${inv.customerName || 'Retail Customer'}","URP","36-Telangana","N",${taxable},${inv.cgstTotal || 0},${inv.sgstTotal || 0},0,${inv.grandTotal}\n`;
+    });
+
+    const encoded = encodeURI(csv);
+    const link = document.createElement("a");
+    link.setAttribute("href", encoded);
+    link.setAttribute("download", `ALZINO_GSTR1_Report_${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Export Complete Financial & Product Analytics to CSV
   const handleExportAnalyticsCSV = () => {
     let csv = "data:text/csv;charset=utf-8,";
@@ -255,13 +411,13 @@ export default function AnalyticsReports({
       {/* Top Header & Period Selector */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Financial Intelligence & Profit Analytics</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Financial Intelligence & Store Reports</h2>
           <span style={{ fontSize: '0.78rem', color: 'var(--status-green)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
             Net Store Profit: ₹{netProfit.toLocaleString()}
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Period selector */}
           <div className="segmented-bar">
             {[
@@ -280,26 +436,58 @@ export default function AnalyticsReports({
             ))}
           </div>
 
-          <button
-            onClick={handleExportAnalyticsCSV}
-            className="btn-secondary"
-            style={{ padding: '0.38rem 0.75rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-            title="Download product-wise profit analysis in CSV"
-          >
-            <FileSpreadsheet size={14} color="#10B981" />
-            <span>Export Product P&L</span>
-          </button>
+          {activeReportTab === 'gstr1' ? (
+            <button
+              onClick={handleExportGstr1CSV}
+              className="btn-primary"
+              style={{ padding: '0.38rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <Download size={14} />
+              <span>Export GSTR-1 CSV (CA Format)</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleExportAnalyticsCSV}
+              className="btn-secondary"
+              style={{ padding: '0.38rem 0.75rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              title="Download product-wise profit analysis in CSV"
+            >
+              <FileSpreadsheet size={14} color="#10B981" />
+              <span>Export P&L</span>
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Sub-Navigation Tabs */}
+      <div className="segmented-bar" style={{ alignSelf: 'flex-start', flexWrap: 'wrap', gap: '0.25rem' }}>
+        {[
+          { id: 'overview', label: '📊 Financial Overview & P&L', icon: TrendingUp },
+          { id: 'z-report', label: '💵 Day-End Cash Z-Report', icon: Calculator },
+          { id: 'gstr1', label: '📑 GSTR-1 Tax Return (CA Export)', icon: FileText },
+          { id: 'products', label: '🏷️ Product Margins & Pricing', icon: Tag },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveReportTab(tab.id)}
+            className={`segmented-item ${activeReportTab === tab.id ? 'active-blue' : ''}`}
+            style={{ fontSize: '0.82rem', padding: '0.38rem 0.85rem' }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* ========================================================================= */}
-      {/* 1. CASH INFLOW & CASH OUTFLOW DUAL REGISTER                                */}
+      {/* 1. CASH INFLOW & CASH OUTFLOW DUAL REGISTER (OVERVIEW TAB)                */}
       {/* ========================================================================= */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: '1rem'
-      }}>
+      {activeReportTab === 'overview' && (
+        <>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: '1rem'
+          }}>
         {/* CASH INFLOW CARD */}
         <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--status-green)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
@@ -508,11 +696,409 @@ export default function AnalyticsReports({
           ))}
         </div>
       </div>
+    </>
+  )}
 
-      {/* ========================================================================= */}
-      {/* 4. INDIVIDUAL PRODUCT PROFIT ANALYSIS TABLE                                */}
-      {/* ========================================================================= */}
+  {/* ========================================================================= */}
+  {/* TAB 2: DAY-END CASH DRAWER RECONCILIATION (Z-REPORT)                       */}
+  {/* ========================================================================= */}
+  {activeReportTab === 'z-report' && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+      
+      {/* Top Banner with Print Action */}
+      <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderLeft: '4px solid var(--accent-primary)' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Calculator size={20} color="var(--accent-primary)" />
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>
+              Day-End Cash Drawer Reconciliation (Z-Report)
+            </h3>
+          </div>
+          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            Date: <strong>{todayStr}</strong> • Bodhan Counter Sign-off. Verify physical cash in drawer against counter billing.
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            onPrintZReport({
+              date: todayStr,
+              openingCash,
+              todayCashSales,
+              todayUpiSales,
+              todayCardSales,
+              todayCashExpenses,
+              todayUsedPhonePayouts,
+              expectedCashInDrawer,
+              denominations,
+              totalCountedCash,
+              cashDiscrepancy,
+              cashierName,
+              closingRemarks,
+              shopConfig
+            });
+          }}
+          className="btn-primary"
+          style={{ padding: '0.5rem 1.1rem', fontSize: '0.85rem' }}
+        >
+          <Printer size={15} />
+          <span>Print Day-End Z-Report Slip</span>
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '1.25rem' }}>
+        
+        {/* Left: System Cash Drawer Flow */}
+        <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+            1. System Calculated Cash Drawer Flow
+          </h4>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', fontSize: '0.84rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.65rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)' }}>
+              <span>Opening Cash in Drawer (Float):</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>₹</span>
+                <input
+                  type="number"
+                  value={openingCash}
+                  onChange={(e) => setOpeningCash(Number(e.target.value) || 0)}
+                  className="input-field"
+                  style={{ width: '100px', padding: '0.25rem 0.5rem', fontWeight: 700, textAlign: 'right' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.65rem', background: 'rgba(31, 110, 72, 0.08)', borderRadius: 'var(--radius-sm)', color: 'var(--status-green)' }}>
+              <span>(+) Today's Cash Collected (POS Sales):</span>
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>+₹{todayCashSales.toLocaleString()}</strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.65rem', background: 'rgba(211, 63, 60, 0.08)', borderRadius: 'var(--radius-sm)', color: 'var(--color-danger, #D33F3C)' }}>
+              <span>(-) Cash Paid Out for Shop Expenses:</span>
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>-₹{todayCashExpenses.toLocaleString()}</strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.65rem', background: 'rgba(211, 63, 60, 0.08)', borderRadius: 'var(--radius-sm)', color: 'var(--color-danger, #D33F3C)' }}>
+              <span>(-) Cash Paid for Buying Second-hand Mobiles:</span>
+              <strong style={{ fontFamily: 'var(--font-mono)' }}>-₹{todayUsedPhonePayouts.toLocaleString()}</strong>
+            </div>
+
+            <div style={{ borderTop: '2px solid var(--border-color)', paddingTop: '0.65rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>EXPECTED CASH IN DRAWER:</span>
+              <span style={{ fontSize: '1.4rem', fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>
+                ₹{expectedCashInDrawer.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Digital Collections (Not in physical drawer) */}
+          <div style={{ background: 'var(--surface-primary)', padding: '0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.78rem' }}>
+            <div style={{ fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+              Digital Collections Today (Bank Account / UPI / Card):
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+              <span>• UPI Payments (PhonePe / GPay / Paytm):</span>
+              <strong>₹{todayUpiSales.toLocaleString()}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>• Card Machine (POS Swipes):</span>
+              <strong>₹{todayCardSales.toLocaleString()}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Physical Denomination Counter */}
+        <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+              2. Physical Cash Tender Counter
+            </h4>
+            <span className="mono-tag" style={{ fontSize: '0.72rem' }}>Count Notes in Hand</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.82rem' }}>
+            {[500, 200, 100, 50, 20, 10].map(val => (
+              <div key={val} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontWeight: 700, minWidth: '55px' }}>₹{val} x</span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  min="0"
+                  value={denominations[val] || ''}
+                  onChange={(e) => setDenominations({ ...denominations, [val]: Math.max(0, parseInt(e.target.value) || 0) })}
+                  className="input-field"
+                  style={{ width: '65px', padding: '0.2rem 0.4rem', textAlign: 'center', fontWeight: 700 }}
+                />
+                <span style={{ fontFamily: 'var(--font-mono)', minWidth: '60px', textAlign: 'right', fontWeight: 600 }}>
+                  = ₹{((denominations[val] || 0) * val).toLocaleString()}
+                </span>
+              </div>
+            ))}
+
+            {/* Coins */}
+            <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontWeight: 700 }}>Loose Coins (Total ₹):</span>
+              <input
+                type="number"
+                placeholder="0"
+                min="0"
+                value={denominations.coins || ''}
+                onChange={(e) => setDenominations({ ...denominations, coins: Math.max(0, parseFloat(e.target.value) || 0) })}
+                className="input-field"
+                style={{ width: '100px', padding: '0.2rem 0.4rem', textAlign: 'right', fontWeight: 700 }}
+              />
+              <span style={{ fontFamily: 'var(--font-mono)', minWidth: '60px', textAlign: 'right', fontWeight: 600 }}>
+                = ₹{(Number(denominations.coins) || 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Total Counted vs Discrepancy */}
+          <div style={{ marginTop: '0.35rem', padding: '0.85rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <span style={{ fontWeight: 800 }}>TOTAL PHYSICAL CASH COUNTED:</span>
+              <span style={{ fontSize: '1.35rem', fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                ₹{totalCountedCash.toLocaleString()}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: '0.45rem' }}>
+              <span>Drawer Discrepancy:</span>
+              {cashDiscrepancy === 0 ? (
+                <span className="mono-tag chip-green" style={{ fontWeight: 800, padding: '0.25rem 0.6rem' }}>
+                  ✓ Perfect Match (₹0 Difference)
+                </span>
+              ) : cashDiscrepancy > 0 ? (
+                <span className="mono-tag chip-amber" style={{ fontWeight: 800, padding: '0.25rem 0.6rem' }}>
+                  🟡 Cash Excess: +₹{cashDiscrepancy.toLocaleString()}
+                </span>
+              ) : (
+                <span className="mono-tag chip-red" style={{ fontWeight: 800, padding: '0.25rem 0.6rem' }}>
+                  🔴 Cash Shortage: -₹{Math.abs(cashDiscrepancy).toLocaleString()}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Cashier Sign-off details */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.2rem' }}>
+            <div>
+              <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Cashier / Signee Name</label>
+              <input
+                type="text"
+                value={cashierName}
+                onChange={(e) => setCashierName(e.target.value)}
+                className="input-field"
+                style={{ fontSize: '0.8rem' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Closing Remarks</label>
+              <input
+                type="text"
+                placeholder="e.g. Handed to owner"
+                value={closingRemarks}
+                onChange={(e) => setClosingRemarks(e.target.value)}
+                className="input-field"
+                style={{ fontSize: '0.8rem' }}
+              />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )}
+
+  {/* ========================================================================= */}
+  {/* TAB 3: GSTR-1 TAX RETURN & CHARTERED ACCOUNTANT (CA) EXPORT               */}
+  {/* ========================================================================= */}
+  {activeReportTab === 'gstr1' && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      
+      {/* Top GST Summary Ribbon */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+        <div className="illoca-card" style={{ padding: '1rem', borderLeft: '4px solid var(--accent-primary)' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700 }}>TOTAL TAXABLE VALUE</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 900, marginTop: '0.25rem' }}>
+            ₹{(b2bTaxableTotal + b2cTaxableTotal).toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Net value subject to GST</div>
+        </div>
+
+        <div className="illoca-card" style={{ padding: '1rem', borderLeft: '4px solid var(--status-green)' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700 }}>TOTAL CGST (CENTRAL)</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--status-green)', marginTop: '0.25rem' }}>
+            ₹{(b2bCgstTotal + b2cCgstTotal).toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>9% Rate on eligible items</div>
+        </div>
+
+        <div className="illoca-card" style={{ padding: '1rem', borderLeft: '4px solid var(--status-green)' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700 }}>TOTAL SGST (TELANGANA 36)</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--status-green)', marginTop: '0.25rem' }}>
+            ₹{(b2bSgstTotal + b2cSgstTotal).toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>9% State Tax</div>
+        </div>
+
+        <div className="illoca-card" style={{ padding: '1rem', borderLeft: '4px solid var(--status-amber)' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 700 }}>TOTAL OUTPUT GST PAYABLE</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--status-amber-text, #AC7C20)', marginTop: '0.25rem' }}>
+            ₹{totalGstLiability.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Payable to GST Department</div>
+        </div>
+      </div>
+
+      {/* Table 1: B2B Invoices (Table 4) */}
       <div className="illoca-card" style={{ padding: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+              1. GSTR-1 Table 4: B2B Invoices (Sales to GST Registered Dealers)
+            </h4>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              Invoices issued with customer GSTIN (Mandatory for input tax credit claiming).
+            </div>
+          </div>
+          <span className="mono-tag chip-blue">{b2bInvoices.length} B2B Invoices</span>
+        </div>
+
+        {b2bInvoices.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            No B2B sales in this date range. (All sales were retail counter B2C customers).
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+              <thead>
+                <tr>
+                  <th>Invoice No</th>
+                  <th>Date</th>
+                  <th>Customer Name</th>
+                  <th>Customer GSTIN</th>
+                  <th style={{ textAlign: 'right' }}>Taxable Value</th>
+                  <th style={{ textAlign: 'right' }}>CGST (9%)</th>
+                  <th style={{ textAlign: 'right' }}>SGST (9%)</th>
+                  <th style={{ textAlign: 'right' }}>Total Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b2bInvoices.map(inv => (
+                  <tr key={inv.id || inv.invoiceNo}>
+                    <td style={{ fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{inv.invoiceNo}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{inv.date}</td>
+                    <td style={{ fontWeight: 700 }}>{inv.customerName}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-primary)' }}>{inv.customerGstin}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>₹{(Number(inv.taxableAmount) || Number(inv.subtotal) || 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>₹{(Number(inv.cgstTotal) || 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>₹{(Number(inv.sgstTotal) || 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 800 }}>₹{(Number(inv.grandTotal) || 0).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Table 2: B2C Small Invoices Summary (Table 7) */}
+      <div className="illoca-card" style={{ padding: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+              2. GSTR-1 Table 7: B2C Small (Retail Counter Walk-in Sales)
+            </h4>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              Intrastate retail sales in Telangana (State Code: 36) to consumers without GSTIN.
+            </div>
+          </div>
+          <span className="mono-tag chip-green">{b2cInvoices.length} Retail Invoices</span>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Place of Supply</th>
+                <th>Applicable Tax Rate</th>
+                <th style={{ textAlign: 'right' }}>Total Taxable Value</th>
+                <th style={{ textAlign: 'right' }}>CGST Amount</th>
+                <th style={{ textAlign: 'right' }}>SGST Amount</th>
+                <th style={{ textAlign: 'right' }}>Total Retail Invoice Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>B2C Others (Counter Retail)</strong></td>
+                <td>36-Telangana</td>
+                <td>18% (Smartphones & Electronics)</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>₹{b2cTaxableTotal.toLocaleString()}</td>
+                <td style={{ textAlign: 'right' }}>₹{b2cCgstTotal.toLocaleString()}</td>
+                <td style={{ textAlign: 'right' }}>₹{b2cSgstTotal.toLocaleString()}</td>
+                <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--accent-primary)' }}>₹{b2cGrandTotal.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Table 3: HSN Summary (Table 12) */}
+      <div className="illoca-card" style={{ padding: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+              3. GSTR-1 Table 12: HSN Summary of Outward Supplies
+            </h4>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              Mandatory HSN-wise aggregation required by GST department.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+            <thead>
+              <tr>
+                <th>HSN Code</th>
+                <th>Description</th>
+                <th style={{ textAlign: 'center' }}>UQC</th>
+                <th style={{ textAlign: 'center' }}>Total Qty</th>
+                <th style={{ textAlign: 'right' }}>Total Taxable Value</th>
+                <th style={{ textAlign: 'right' }}>CGST Amount</th>
+                <th style={{ textAlign: 'right' }}>SGST Amount</th>
+                <th style={{ textAlign: 'right' }}>Total Tax Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hsnSummaryList.map(h => (
+                <tr key={h.hsn}>
+                  <td style={{ fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{h.hsn}</td>
+                  <td>{h.desc}</td>
+                  <td style={{ textAlign: 'center' }}>{h.uqc}</td>
+                  <td style={{ textAlign: 'center', fontWeight: 700 }}>{h.qty}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 700 }}>₹{h.taxable.toLocaleString()}</td>
+                  <td style={{ textAlign: 'right' }}>₹{h.cgst.toLocaleString()}</td>
+                  <td style={{ textAlign: 'right' }}>₹{h.sgst.toLocaleString()}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--status-green)' }}>₹{h.totalTax.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  )}
+
+  {/* ========================================================================= */}
+  {/* TAB 4: INDIVIDUAL PRODUCT PROFIT ANALYSIS TABLE                            */}
+  {/* ========================================================================= */}
+  {activeReportTab === 'products' && (
+    <div className="illoca-card" style={{ padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -647,7 +1233,8 @@ export default function AnalyticsReports({
           </div>
         )}
       </div>
+    )}
 
-    </div>
-  );
+  </div>
+);
 }
