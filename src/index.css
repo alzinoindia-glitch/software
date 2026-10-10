@@ -625,9 +625,20 @@ input, select, textarea {
   .main-menu-drawer {
     width: 340px !important;
     max-width: 85vw !important;
-    right: auto !important;
-    border-right: 1px solid var(--border-color);
-    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.25);
+    left: auto !important;
+    right: 0 !important;
+    border-left: 1px solid var(--border-color) !important;
+    border-right: none !important;
+    box-shadow: -10px 0 40px rgba(0, 0, 0, 0.25) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-search-middle {
+    display: none !important;
+  }
+  .header-search-mobile {
+    display: inline-flex !important;
   }
 }
 

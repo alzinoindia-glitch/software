@@ -97,9 +97,100 @@ export default function Header({
         boxSizing: 'border-box'
       }}>
         <div className="header-content-inner">
-          {/* Left: Main Menu Button + Brand Logo & Shop Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            {/* 3 Lines Hamburger Main Menu Button (On the Left!) */}
+          {/* Left: Brand Logo & Shop Name */}
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', flexShrink: 0 }}
+            onClick={() => setActiveTab('dashboard')}
+            title="Go to Dashboard (F1)"
+          >
+            <div style={{
+              width: '28px',
+              height: '28px',
+              background: '#A9BC5C',
+              color: '#0F251E',
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontFamily: 'var(--font-heading)',
+              fontSize: '0.95rem',
+              letterSpacing: '-0.04em'
+            }}>
+              A
+            </div>
+            <span style={{ 
+              fontFamily: 'var(--font-heading)', 
+              fontWeight: 800, 
+              fontSize: '1.12rem', 
+              letterSpacing: '-0.03em',
+              color: '#F1EFE5'
+            }}>
+              {shopConfig.name}
+            </span>
+          </div>
+
+          {/* Middle: Quick Search (Desktop) */}
+          <div className="header-search-middle" style={{ flex: 1, maxWidth: '420px', margin: '0 0.85rem' }}>
+            <button 
+              onClick={openSearch}
+              className="btn-secondary"
+              title="Global Search (Press ⌘K or F8)"
+              style={{ 
+                width: '100%',
+                padding: '0.42rem 0.85rem', 
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.22)',
+                color: '#F1EFE5',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Search size={14} color="#A9BC5C" />
+                <span style={{ color: 'rgba(241, 239, 229, 0.75)', fontWeight: 500, fontSize: '0.78rem' }}>
+                  Search stock, IMEIs, customers...
+                </span>
+              </div>
+              <kbd style={{ 
+                background: 'rgba(241, 239, 229, 0.12)', 
+                padding: '0.05rem 0.35rem', 
+                borderRadius: '3px', 
+                fontSize: '0.68rem',
+                fontFamily: 'var(--font-mono)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: 'rgba(241, 239, 229, 0.75)'
+              }}>⌘K</kbd>
+            </button>
+          </div>
+
+          {/* Right: Search (on mobile before menu) + Menu on Right */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {/* Mobile Search Button (before Menu) */}
+            <button 
+              onClick={openSearch}
+              className="btn-secondary header-search-mobile"
+              title="Search (⌘K)"
+              style={{ 
+                padding: '0.42rem 0.55rem', 
+                fontSize: '0.8rem',
+                display: 'none',
+                alignItems: 'center',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.22)',
+                color: '#F1EFE5',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <Search size={16} color="#A9BC5C" />
+            </button>
+
+            {/* 3 Lines Hamburger Main Menu Button (On the Right!) */}
             <button
               onClick={() => setMenuOpen(!menuOpen)}
               className="btn-secondary main-menu-btn"
@@ -129,72 +220,6 @@ export default function Header({
                 fontFamily: 'var(--font-mono)',
                 color: menuOpen ? '#0F251E' : 'rgba(241, 239, 229, 0.8)'
               }}>M</kbd>
-            </button>
-
-            {/* Brand Logo & Shop Name */}
-            <div 
-              style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer' }}
-              onClick={() => setActiveTab('dashboard')}
-              title="Go to Dashboard (F1)"
-            >
-              <div style={{
-                width: '28px',
-                height: '28px',
-                background: '#A9BC5C',
-                color: '#0F251E',
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontFamily: 'var(--font-heading)',
-                fontSize: '0.95rem',
-                letterSpacing: '-0.04em'
-              }}>
-                A
-              </div>
-              <span style={{ 
-                fontFamily: 'var(--font-heading)', 
-                fontWeight: 800, 
-                fontSize: '1.12rem', 
-                letterSpacing: '-0.03em',
-                color: '#F1EFE5'
-              }}>
-                {shopConfig.name}
-              </span>
-            </div>
-          </div>
-
-          {/* Right: ONLY Global Search! */}
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <button 
-              onClick={openSearch}
-              className="btn-secondary"
-              title="Global Search (Press ⌘K or F8)"
-              style={{ 
-                padding: '0.38rem 0.75rem', 
-                fontSize: '0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                background: 'rgba(241, 239, 229, 0.08)',
-                border: '1px solid rgba(210, 222, 216, 0.22)',
-                color: '#F1EFE5',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer'
-              }}
-            >
-              <Search size={14} color="#A9BC5C" />
-              <span className="hide-on-mobile" style={{ color: 'rgba(241, 239, 229, 0.9)', fontWeight: 600 }}>Search</span>
-              <kbd className="hide-on-mobile" style={{ 
-                background: 'rgba(241, 239, 229, 0.12)', 
-                padding: '0.05rem 0.35rem', 
-                borderRadius: '3px', 
-                fontSize: '0.68rem',
-                fontFamily: 'var(--font-mono)',
-                border: '1px solid rgba(210, 222, 216, 0.2)',
-                color: 'rgba(241, 239, 229, 0.75)'
-              }}>⌘K</kbd>
             </button>
           </div>
         </div>
