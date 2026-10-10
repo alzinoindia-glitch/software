@@ -252,9 +252,9 @@ export default function PrintTemplates({
             <div style={{ textAlign: 'center', marginTop: '3mm', padding: '2mm 0', borderTop: '1px dashed #000' }}>
               <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '1mm' }}>SCAN TO PAY VIA ANY UPI APP</div>
               <img 
-                src={getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
+                src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
                 alt="UPI QR"
-                style={{ width: '32mm', height: '32mm', margin: '0 auto', display: 'block' }}
+                style={{ width: '32mm', height: '32mm', margin: '0 auto', display: 'block', objectFit: 'contain' }}
               />
               <div style={{ fontSize: '8px', marginTop: '1mm' }}>{shopConfig.upiId}</div>
             </div>
@@ -445,13 +445,21 @@ export default function PrintTemplates({
                   </div>
                 )}
 
-                <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
+                <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontSize: '11px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
                     <div><strong>Bank:</strong> {shopConfig.bankName}</div>
                     <div><strong>Account No:</strong> {shopConfig.accountNo}</div>
                     <div><strong>IFSC Code:</strong> {shopConfig.ifsc}</div>
                     <div><strong>UPI ID:</strong> {shopConfig.upiId}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', marginLeft: '3mm' }}>
+                    <img 
+                      src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
+                      alt="UPI QR"
+                      style={{ width: '22mm', height: '22mm', objectFit: 'contain', display: 'block', margin: '0 auto', border: '1px solid #E5E5E5', padding: '1mm', background: '#FFF' }}
+                    />
+                    <div style={{ fontSize: '7.5px', fontWeight: 800, marginTop: '1px' }}>SCAN & PAY</div>
                   </div>
                 </div>
               </div>

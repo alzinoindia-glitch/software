@@ -31,7 +31,8 @@ import {
   Copy,
   Landmark,
   Percent,
-  Clock
+  Clock,
+  Image as ImageIcon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
@@ -88,6 +89,34 @@ export default function PosBilling({
   const [splitUpiAmount, setSplitUpiAmount] = useState(0);
   const [splitUpiTxnRef, setSplitUpiTxnRef] = useState('');
   const [splitVerified, setSplitVerified] = useState(false);
+
+  // Multi-Bank UPI & Standee QR state
+  const upiAccountsList = useMemo(() => {
+    if (shopConfig.upiAccounts && shopConfig.upiAccounts.length > 0) {
+      return shopConfig.upiAccounts;
+    }
+    return [{
+      id: 'default',
+      bankName: shopConfig.bankName || 'Primary Bank (HDFC)',
+      upiId: shopConfig.upiId || 'alzino.bodhan@okhdfcbank',
+      accountName: shopConfig.name || 'ALZINO MOBILES',
+      qrCodeImage: shopConfig.qrCodeImage || null,
+      isDefault: true
+    }];
+  }, [shopConfig]);
+
+  const [selectedUpiAccountId, setSelectedUpiAccountId] = useState(() => {
+    const list = (shopConfig.upiAccounts && shopConfig.upiAccounts.length > 0)
+      ? shopConfig.upiAccounts
+      : [{ id: 'default', isDefault: true }];
+    return (list.find(a => a.isDefault) || list[0]).id;
+  });
+
+  const [qrDisplayMode, setQrDisplayMode] = useState('dynamic'); // 'dynamic' | 'standee'
+
+  const currentUpiAccount = useMemo(() => {
+    return upiAccountsList.find(a => a.id === selectedUpiAccountId) || upiAccountsList[0];
+  }, [upiAccountsList, selectedUpiAccountId]);
 
   // EMI Financing State (Manual Counter Entry)
   const [emiFinancier, setEmiFinancier] = useState('Bajaj Finserv');
@@ -444,6 +473,9 @@ export default function PosBilling({
       alert("Cart is empty! Add items to cart first.");
       return;
     }
+    const def = upiAccountsList.find(a => a.isDefault) || upiAccountsList[0];
+    if (def) setSelectedUpiAccountId(def.id);
+    setQrDisplayMode('dynamic');
     setCashTendered(grandTotal);
     setUpiTxnRef('');
     setUpiVerified(false);
@@ -2017,6 +2049,74 @@ export default function PosBilling({
                 <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>
                   Customer Scans Dynamic UPI QR Code
                 </div>
+
+                {/* Multiple Bank / UPI Account Selector (If > 1 account configured) */}
+                {upiAccountsList.length > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                    {upiAccountsList.map(acc => (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => setSelectedUpiAccountId(acc.id)}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          borderRadius: '20px',
+                          fontSize: '0.74rem',
+                          fontWeight: selectedUpiAccountId === acc.id ? 800 : 500,
+                          background: selectedUpiAccountId === acc.id ? 'var(--accent-primary)' : 'var(--surface-card)',
+                          color: selectedUpiAccountId === acc.id ? '#FFFFFF' : 'var(--text-secondary)',
+                          border: selectedUpiAccountId === acc.id ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
+                        }}
+                      >
+                        <Landmark size={12} />
+                        <span>{acc.bankName || 'UPI Bank'}</span>
+                        {acc.isDefault && <span style={{ fontSize: '0.65rem', color: '#FEF08A' }}>★</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Toggle: Dynamic QR (Amount pre-filled) vs Uploaded Standee QR */}
+                {currentUpiAccount.qrCodeImage && (
+                  <div style={{ display: 'inline-flex', background: 'var(--surface-card)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '0.65rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setQrDisplayMode('dynamic')}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.72rem',
+                        fontWeight: qrDisplayMode === 'dynamic' ? 800 : 500,
+                        background: qrDisplayMode === 'dynamic' ? 'var(--accent-primary)' : 'transparent',
+                        color: qrDisplayMode === 'dynamic' ? '#FFF' : 'var(--text-secondary)',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⚡ Dynamic QR (₹{grandTotal})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrDisplayMode('standee')}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.72rem',
+                        fontWeight: qrDisplayMode === 'standee' ? 800 : 500,
+                        background: qrDisplayMode === 'standee' ? 'var(--accent-primary)' : 'transparent',
+                        color: qrDisplayMode === 'standee' ? '#FFF' : 'var(--text-secondary)',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🖼️ Shop Standee QR
+                    </button>
+                  </div>
+                )}
                 
                 <div style={{
                   background: '#FFFFFF',
@@ -2026,43 +2126,65 @@ export default function PosBilling({
                   boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                   marginBottom: '0.65rem'
                 }}>
-                  <img
-                    src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', grandTotal, 'BILL')}
-                    alt="Scan UPI QR Code"
-                    style={{ width: '190px', height: '190px', display: 'block', margin: '0 auto' }}
-                  />
-                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0A0D14', marginTop: '0.35rem' }}>
-                    Pay: ₹{grandTotal.toLocaleString()}
-                  </div>
+                  {qrDisplayMode === 'standee' && currentUpiAccount.qrCodeImage ? (
+                    <div>
+                      <img
+                        src={currentUpiAccount.qrCodeImage}
+                        alt="Shop Standee QR"
+                        style={{ width: '190px', height: '190px', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+                      />
+                      <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#0A0D14', marginTop: '0.35rem' }}>
+                        Scan Standee & Enter ₹{grandTotal.toLocaleString()}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <img
+                        src={getUpiQrUrl(currentUpiAccount.upiId || 'alzino.bodhan@okhdfcbank', currentUpiAccount.accountName || shopConfig.name || 'ALZINO', grandTotal, 'BILL')}
+                        alt="Scan Dynamic UPI QR Code"
+                        style={{ width: '190px', height: '190px', display: 'block', margin: '0 auto' }}
+                      />
+                      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0A0D14', marginTop: '0.35rem' }}>
+                        Pay: ₹{grandTotal.toLocaleString()}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                  <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                    UPI ID: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{shopConfig.upiId || 'alzino.bodhan@okhdfcbank'}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(shopConfig.upiId || 'alzino.bodhan@okhdfcbank');
-                      setCopiedUpi(true);
-                      setTimeout(() => setCopiedUpi(false), 2000);
-                    }}
-                    style={{
-                      background: 'var(--surface-card)',
-                      border: '1px solid var(--border-color)',
-                      padding: '0.2rem 0.45rem',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.7rem',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                      color: copiedUpi ? 'var(--status-green)' : 'var(--text-secondary)'
-                    }}
-                  >
-                    {copiedUpi ? <Check size={12} /> : <Copy size={12} />}
-                    <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', marginBottom: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                      UPI ID: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{currentUpiAccount.upiId || 'alzino.bodhan@okhdfcbank'}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(currentUpiAccount.upiId || 'alzino.bodhan@okhdfcbank');
+                        setCopiedUpi(true);
+                        setTimeout(() => setCopiedUpi(false), 2000);
+                      }}
+                      style={{
+                        background: 'var(--surface-card)',
+                        border: '1px solid var(--border-color)',
+                        padding: '0.2rem 0.45rem',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        color: copiedUpi ? 'var(--status-green)' : 'var(--text-secondary)'
+                      }}
+                    >
+                      {copiedUpi ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  {currentUpiAccount.bankName && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                      🏦 {currentUpiAccount.bankName} {currentUpiAccount.accountName ? `(${currentUpiAccount.accountName})` : ''}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ textAlign: 'left', marginBottom: '0.75rem' }}>
@@ -2251,7 +2373,7 @@ export default function PosBilling({
                     </div>
                     <div style={{ background: '#FFFFFF', padding: '0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                       <img
-                        src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', splitUpiAmount, 'SPLIT')}
+                        src={getUpiQrUrl(currentUpiAccount.upiId || 'alzino.bodhan@okhdfcbank', currentUpiAccount.accountName || shopConfig.name || 'ALZINO', splitUpiAmount, 'SPLIT')}
                         alt="Split UPI QR"
                         style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
                       />
@@ -2404,7 +2526,7 @@ export default function PosBilling({
                     {Number(emiDownPayment) > 0 && emiDownPaymentMode === 'UPI' && (
                       <div style={{ marginTop: '0.4rem', textAlign: 'center', background: '#FFFFFF', padding: '0.4rem', borderRadius: '4px' }}>
                         <img
-                          src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', Number(emiDownPayment), 'DOWNPAY')}
+                          src={getUpiQrUrl(currentUpiAccount.upiId || 'alzino.bodhan@okhdfcbank', currentUpiAccount.accountName || shopConfig.name || 'ALZINO', Number(emiDownPayment), 'DOWNPAY')}
                           alt="Down Payment QR"
                           style={{ width: '90px', height: '90px', display: 'block', margin: '0 auto' }}
                         />

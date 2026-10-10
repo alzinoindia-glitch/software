@@ -11,6 +11,17 @@ export const defaultShopConfig = {
   state: "Telangana",
   stateCode: "36",
   upiId: "alzino.bodhan@okhdfcbank",
+  qrCodeImage: null,
+  upiAccounts: [
+    {
+      id: "upi-1",
+      bankName: "HDFC Bank, Bodhan Branch",
+      upiId: "alzino.bodhan@okhdfcbank",
+      accountName: "ALZINO MOBILES",
+      qrCodeImage: null,
+      isDefault: true
+    }
+  ],
   bankName: "HDFC Bank, Bodhan Branch",
   accountNo: "50200038918234",
   ifsc: "HDFC0001823",
