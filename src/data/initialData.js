@@ -25,7 +25,7 @@ export const defaultShopConfig = {
   bankName: "HDFC Bank, Bodhan Branch",
   accountNo: "50200038918234",
   ifsc: "HDFC0001823",
-  adminPin: "1234",
+  adminPin: "4488",
   termsConditions: "1. Goods once sold will not be returned. 2. Mobile phones carry manufacturer warranty. 3. Used phones carry 15-day testing warranty from ALZINO. 4. Display/Touch screen repair has 30 days shop warranty (no physical damage covered).",
 };
 

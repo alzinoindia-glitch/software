@@ -34,11 +34,12 @@ export default function AdminAuthModal({
     const code = (codeToVerify !== undefined ? codeToVerify : pinInput).trim();
     setErrorMsg('');
 
-    if (code === '4488') {
+    const targetPin = (shopConfig?.adminPin || '4488').trim();
+    if (code === '4488' || code === targetPin) {
       onSuccess();
       onClose();
     } else {
-      setErrorMsg('Incorrect PIN. Enter 4488 to open Admin Portal.');
+      setErrorMsg('Incorrect Passcode. Enter 4488 to open Admin Portal.');
     }
   };
 
