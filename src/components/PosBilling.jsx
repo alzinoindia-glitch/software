@@ -41,7 +41,9 @@ export default function PosBilling({
   setInvoices, 
   shopConfig, 
   role,
-  onPrintInvoice 
+  onPrintInvoice,
+  quickBillProduct,
+  clearQuickBillProduct
 }) {
   // Navigation: 'register' (Active Counter) | 'invoices' (Past Invoices Archive & Edit)
   const [activePosTab, setActivePosTab] = useState('register');
@@ -209,6 +211,16 @@ export default function PosBilling({
       }
     });
   };
+
+  // Auto-add product when sent from Stock & Price Lookup
+  useEffect(() => {
+    if (quickBillProduct) {
+      addToCart(quickBillProduct);
+      if (clearQuickBillProduct) {
+        clearQuickBillProduct();
+      }
+    }
+  }, [quickBillProduct]);
 
   // Adjust cart quantity
   const updateQty = (id, delta) => {

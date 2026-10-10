@@ -61,6 +61,14 @@ export default function App() {
   const [printData, setPrintData] = useState(null);
   const [printMode, setPrintMode] = useState(''); // thermal | a4 | voucher | repair | barcodes
 
+  // Quick Bill Product (from Stock Lookup to POS)
+  const [quickBillProduct, setQuickBillProduct] = useState(null);
+
+  const handleQuickBill = (product) => {
+    setQuickBillProduct(product);
+    setActiveTab('pos');
+  };
+
   // Save to LocalStorage whenever state changes
   useEffect(() => { setStorageData('THEME', theme); }, [theme]);
   useEffect(() => { setStorageData('ROLE', role); }, [role]);
@@ -246,6 +254,8 @@ export default function App() {
             shopConfig={shopConfig}
             role={role}
             onPrintInvoice={handlePrintInvoice}
+            quickBillProduct={quickBillProduct}
+            clearQuickBillProduct={() => setQuickBillProduct(null)}
           />
         )}
 
@@ -289,6 +299,7 @@ export default function App() {
             role={role}
             shopConfig={shopConfig}
             onSelectBarcode={handleSelectBarcodeFromInventory}
+            onQuickBill={handleQuickBill}
           />
         )}
 
