@@ -295,9 +295,10 @@ input, select, textarea {
   border-spacing: 0 !important;
   font-size: 0.84rem;
   background: var(--surface-card, #FEFDFA);
-  border: 1px solid var(--border-color, #C2D2CB) !important;
+  border: 1.5px solid var(--border-color, #C2D2CB) !important;
   border-radius: var(--radius-sm);
   margin-top: 0.35rem;
+  overflow: hidden;
 }
 
 .data-table th {
@@ -309,16 +310,30 @@ input, select, textarea {
   color: var(--color-body-text, #152620);
   background: var(--color-secondary-fill, #E1EEE5) !important;
   text-transform: uppercase;
-  border: 1px solid var(--border-color, #C2D2CB) !important;
+  border-right: 1.5px solid var(--border-color, #C2D2CB) !important;
+  border-bottom: 2px solid var(--border-color, #B0C4BA) !important;
   font-weight: 700;
   white-space: nowrap;
 }
 
+.data-table th:last-child {
+  border-right: none !important;
+}
+
 .data-table td {
   padding: 0.72rem 0.85rem;
-  border: 1px solid var(--border-color, #C2D2CB) !important;
+  border-right: 1.5px solid var(--border-color, #C2D2CB) !important;
+  border-bottom: 1px solid var(--border-color, #D2DED8) !important;
   color: var(--text-primary, #152620);
   vertical-align: middle;
+}
+
+.data-table td:last-child {
+  border-right: none !important;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none !important;
 }
 
 .data-table tr {
