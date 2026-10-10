@@ -623,38 +623,39 @@ export default function PosBilling({
       
       {/* Top Header & Sub-Navigation */}
       <div style={{
-        background: 'var(--surface-card)',
+        background: 'var(--surface-primary)',
         padding: '0.65rem 1rem',
-        borderRadius: 'var(--radius-md)',
+        borderRadius: '12px',
         border: '1px solid var(--border-color)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: '0.75rem',
-        width: '100%',
-        maxWidth: '100%',
-        boxSizing: 'border-box'
+        boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--illoca-blue-subtle)',
-            color: 'var(--accent-primary)',
+            width: '34px',
+            height: '34px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #0C5B43 0%, #152620 100%)',
+            color: '#A9BC5C',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            boxShadow: '0 0 10px rgba(169, 188, 92, 0.25)'
           }}>
             <ShoppingCart size={18} />
           </div>
           <div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>
-              POS Billing & Invoicing Counter
-            </h2>
-            <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-              Create official GST tax invoices or cash memos, customize product lines, customer details & warranties, or edit past bills.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 900, margin: 0, fontFamily: 'var(--font-heading)', letterSpacing: '0.02em' }}>
+                POS BILLING COUNTER
+              </h2>
+              <span className="mono-tag" style={{ background: 'var(--status-green-bg)', color: 'var(--status-green)', fontWeight: 800, fontSize: '0.62rem' }}>
+                TERMINAL #01
+              </span>
             </div>
           </div>
         </div>
@@ -663,47 +664,21 @@ export default function PosBilling({
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
           <button
             onClick={() => setActivePosTab('register')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.8rem',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: activePosTab === 'register' ? 700 : 500,
-              background: activePosTab === 'register' ? 'var(--accent-primary)' : 'var(--surface-primary)',
-              color: activePosTab === 'register' ? '#FFFFFF' : 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              transition: 'var(--transition-smooth)'
-            }}
+            className={`hud-pill ${activePosTab === 'register' ? 'active' : ''}`}
+            style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
           >
-            <ShoppingCart size={14} />
-            <span>Active Billing Counter ({cart.length})</span>
+            <ShoppingCart size={13} />
+            <span>COUNTER ({cart.length})</span>
           </button>
 
           {role === 'admin' && (
             <button
               onClick={() => setActivePosTab('invoices')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.8rem',
-                fontFamily: 'var(--font-heading)',
-                fontWeight: activePosTab === 'invoices' ? 700 : 500,
-                background: activePosTab === 'invoices' ? 'var(--accent-primary)' : 'var(--surface-primary)',
-                color: activePosTab === 'invoices' ? '#FFFFFF' : 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                transition: 'var(--transition-smooth)'
-              }}
+              className={`hud-pill ${activePosTab === 'invoices' ? 'active' : ''}`}
+              style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
             >
-              <History size={14} />
-              <span>Manage & Edit Invoices ({invoices.length})</span>
+              <History size={13} />
+              <span>INVOICES ({invoices.length})</span>
             </button>
           )}
         </div>
@@ -713,28 +688,38 @@ export default function PosBilling({
       {/* 1. ACTIVE BILLING REGISTER COUNTER                                        */}
       {/* ========================================================================= */}
       {activePosTab === 'register' && (
-        <div className="pos-register-grid">
+        <div className="pos-register-grid" style={{ marginTop: '0.75rem' }}>
           
           {/* Left: Product Catalog & Fast Search */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             
             {/* Search & Mode Bar */}
-            <div className="illoca-card" style={{ padding: '0.75rem', width: '100%', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="hud-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Search / Scan Box */}
                 <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
                   <Search 
-                    size={16} 
-                    style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} 
+                    size={15} 
+                    style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} 
                   />
                   <input
                     ref={searchInputRef}
                     type="text"
-                    placeholder="Search model, brand, IMEI (e.g. 'iphone', 'cable')..."
+                    placeholder="Search model, barcode, or IMEI (Enter to scan)..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
                     className="input-field"
-                    style={{ minWidth: 0, width: '100%', boxSizing: 'border-box', paddingLeft: '2.2rem', paddingRight: searchTerm ? '2rem' : '0.75rem', height: '36px', fontSize: '0.84rem' }}
+                    style={{
+                      width: '100%',
+                      paddingLeft: '2.1rem',
+                      paddingRight: searchTerm ? '2.1rem' : '0.75rem',
+                      height: '36px',
+                      fontSize: '0.84rem',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--border-color)',
+                      background: 'var(--bg-main)'
+                    }}
                     autoFocus
                   />
                   {searchTerm && (
@@ -742,103 +727,111 @@ export default function PosBilling({
                       onClick={() => setSearchTerm('')}
                       style={{ 
                         position: 'absolute', 
-                        right: '10px', 
+                        right: '8px', 
                         top: '50%', 
                         transform: 'translateY(-50%)', 
+                        background: 'none',
+                        border: 'none',
                         color: 'var(--text-muted)', 
-                        fontSize: '0.75rem',
-                        cursor: 'pointer' 
+                        cursor: 'pointer',
+                        padding: '2px'
                       }}
                     >
-                      ✕
+                      <X size={14} />
                     </button>
                   )}
                 </div>
 
-                {/* Billing Mode Segmented Pill */}
-                <div className="segmented-bar" style={{ height: '36px', padding: '2px' }}>
+                {/* Tax Mode Segmented Pills */}
+                <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                   <button
                     type="button"
                     onClick={() => setBillingType('gst')}
-                    className={`segmented-item ${billingType === 'gst' ? 'active-blue' : ''}`}
-                    style={{ height: '30px', padding: '0 0.75rem' }}
-                    title="Official GST Tax Invoice (18% / 12% with HSN breakdown)"
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      fontFamily: 'var(--font-mono)',
+                      background: billingType === 'gst' ? 'var(--accent-primary)' : 'transparent',
+                      color: billingType === 'gst' ? '#0F251E' : 'var(--text-secondary)',
+                      cursor: 'pointer'
+                    }}
                   >
-                    GST Invoice
+                    GST 18%
                   </button>
                   <button
                     type="button"
                     onClick={() => setBillingType('non-gst')}
-                    className={`segmented-item ${billingType === 'non-gst' ? 'active-blue' : ''}`}
-                    style={{ height: '30px', padding: '0 0.75rem' }}
-                    title="Cash Memo / Non-GST Estimate (0% tax)"
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      fontFamily: 'var(--font-mono)',
+                      background: billingType === 'non-gst' ? 'var(--accent-primary)' : 'transparent',
+                      color: billingType === 'non-gst' ? '#0F251E' : 'var(--text-secondary)',
+                      cursor: 'pointer'
+                    }}
                   >
-                    Non-GST Memo
+                    CASH MEMO (0%)
                   </button>
                 </div>
               </div>
 
-              {/* Minimalist Categories & Tax Filter Row */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.55rem', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: '0.25rem', overflowX: 'auto' }}>
+              {/* Minimalist Categories & Custom Item button */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '0.25rem', overflowX: 'auto', paddingBottom: '2px' }}>
                   {categories.map(cat => {
                     const isActive = selectedCategory === cat;
                     return (
                       <button
                         key={cat}
                         onClick={() => setSelectedCategory(cat)}
-                        style={{
-                          padding: '0.22rem 0.55rem',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.75rem',
-                          fontFamily: 'var(--font-heading)',
-                          border: isActive ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                          background: isActive ? 'var(--illoca-blue-subtle)' : 'var(--surface-primary)',
-                          color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          fontWeight: isActive ? 700 : 500,
-                          whiteSpace: 'nowrap'
-                        }}
+                        className={`hud-pill ${isActive ? 'active' : ''}`}
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
                       >
-                        {cat}
+                        {cat.replace('Mobile Accessories', 'Accessories').replace('Home Appliances', 'Appliances')}
                       </button>
                     );
                   })}
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                   <button
                     onClick={() => setShowAddCustomModal(true)}
-                    className="btn-outline"
-                    style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
-                    title="Add an unlisted or custom service/product directly to bill"
+                    className="hud-pill"
+                    style={{ borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)', fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
+                    title="Add custom item to bill"
                   >
                     <Plus size={12} />
-                    <span>+ Custom Item</span>
+                    <span>Custom</span>
                   </button>
 
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    {filteredProducts.length} items
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                    {filteredProducts.length}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Product Grid */}
+            {/* Product Grid: High-speed tap cards */}
             <div className="pos-product-catalog-grid" style={{
-              maxHeight: 'calc(100vh - 250px)',
+              maxHeight: 'calc(100vh - 230px)',
               overflowY: 'auto',
               paddingRight: '0.25rem'
             }}>
               {filteredProducts.map(prod => {
                 const isOut = prod.stock <= 0;
                 const isLowStock = prod.stock > 0 && prod.stock <= (prod.lowStockThreshold || 2);
-                const isItemGst = (prod.gstRate && prod.gstRate > 0) || prod.isGst;
+                const inCartItem = cart.find(c => c.id === prod.id);
 
                 return (
                   <div 
                     key={prod.id} 
-                    className="illoca-card" 
+                    className="hud-card"
                     onClick={() => !isOut && addToCart(prod)}
                     style={{ 
                       padding: '0.75rem', 
@@ -847,42 +840,74 @@ export default function PosBilling({
                       justifyContent: 'space-between',
                       opacity: isOut ? 0.45 : 1,
                       cursor: isOut ? 'not-allowed' : 'pointer',
-                      border: isLowStock ? '1px solid var(--status-amber)' : undefined,
+                      border: inCartItem ? '1.5px solid var(--accent-primary)' : isLowStock ? '1px solid var(--status-amber)' : undefined,
+                      position: 'relative'
                     }}
                   >
+                    {inCartItem && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '6px',
+                        right: '6px',
+                        background: 'var(--accent-primary)',
+                        color: '#0F251E',
+                        borderRadius: '999px',
+                        padding: '0.1rem 0.4rem',
+                        fontSize: '0.66rem',
+                        fontWeight: 900,
+                        fontFamily: 'var(--font-mono)'
+                      }}>
+                        {inCartItem.qty} in cart
+                      </div>
+                    )}
+
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                        <span className="mono-tag" style={{ fontSize: '0.62rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontFamily: 'var(--font-mono)',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          color: 'var(--accent-primary)',
+                          background: 'rgba(169, 188, 92, 0.1)',
+                          padding: '0.1rem 0.35rem',
+                          borderRadius: '4px'
+                        }}>
                           {prod.brand}
                         </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                          <span className="mono-tag" style={{ fontSize: '0.6rem', background: 'var(--illoca-blue-subtle)', color: 'var(--accent-primary)', fontWeight: 700 }} title="Warehouse Storage Coordinates">
-                            📍 {prod.rack || 'R-01'}/{prod.bin || 'B-01'}
-                          </span>
+                        
+                        {!inCartItem && (
                           <span style={{
                             fontSize: '0.68rem',
                             fontFamily: 'var(--font-mono)',
-                            fontWeight: 600,
-                            color: isOut ? 'var(--status-red)' : isLowStock ? 'var(--status-amber)' : 'var(--status-green)',
+                            fontWeight: 700,
+                            color: isOut ? 'var(--status-red)' : isLowStock ? 'var(--status-amber)' : 'var(--status-green)'
                           }}>
-                            {isOut ? 'Out' : `${prod.stock} in stock`}
+                            ● {isOut ? 'OUT' : prod.stock}
                           </span>
-                        </div>
+                        )}
                       </div>
 
-                      <h4 style={{ fontSize: '0.84rem', fontWeight: 600, marginBottom: '0.2rem', lineHeight: 1.25 }}>
+                      <h4 style={{ 
+                        fontSize: '0.86rem', 
+                        fontWeight: 700, 
+                        marginBottom: '0.3rem', 
+                        lineHeight: 1.25,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}>
                         {prod.name}
                       </h4>
 
-                      {prod.warranty && (
-                        <div style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', marginBottom: '0.25rem' }}>
-                          🛡️ {prod.warranty}
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>📍 {prod.rack || 'R-01'}:{prod.bin || 'B-01'}</span>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.4rem', borderTop: '1px solid var(--border-color)', marginTop: '0.35rem' }}>
-                      <div style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.45rem', borderTop: '1px solid var(--border-color)', marginTop: '0.4rem' }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 900, fontFamily: 'var(--font-heading)', color: 'var(--accent-primary)' }}>
                         ₹{prod.sellPrice.toLocaleString()}
                       </div>
                       <button
@@ -891,8 +916,8 @@ export default function PosBilling({
                           addToCart(prod);
                         }}
                         disabled={isOut}
-                        className="btn-secondary"
-                        style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem' }}
+                        className="btn-primary"
+                        style={{ padding: '0.2rem 0.6rem', fontSize: '0.74rem', fontWeight: 800 }}
                       >
                         + Add
                       </button>
@@ -904,27 +929,32 @@ export default function PosBilling({
           </div>
 
           {/* Right: Active Sale Cart & Customer Invoice Details */}
-          <div className="illoca-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', height: 'fit-content' }}>
+          <div className="hud-card" style={{ padding: '0.95rem', display: 'flex', flexDirection: 'column', height: 'fit-content' }}>
             
             {/* Cart Header */}
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center', 
-              paddingBottom: '0.65rem',
+              paddingBottom: '0.55rem',
               borderBottom: '1px solid var(--border-color)',
-              marginBottom: '0.75rem' 
+              marginBottom: '0.65rem' 
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <ShoppingCart size={17} color="var(--accent-primary)" />
-                <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Current Invoice Cart</h3>
-                <span className="mono-tag">{cart.length} Items</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <ShoppingCart size={16} color="var(--accent-primary)" />
+                <h3 style={{ fontSize: '0.98rem', fontWeight: 900, margin: 0, fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}>
+                  ACTIVE CART
+                </h3>
+                <span className="mono-tag" style={{ background: 'rgba(169, 188, 92, 0.15)', color: 'var(--accent-primary)', fontWeight: 800 }}>
+                  {cart.length} ITEMS
+                </span>
               </div>
 
               {cart.length > 0 && (
                 <button 
                   onClick={() => setCart([])} 
-                  style={{ fontSize: '0.74rem', color: 'var(--status-red)', display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', border: 'none', background: 'transparent' }}
+                  style={{ fontSize: '0.72rem', color: 'var(--status-red)', display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', border: 'none', background: 'transparent' }}
+                  title="Clear Cart"
                 >
                   <Trash2 size={13} />
                   <span>Clear</span>
@@ -932,93 +962,85 @@ export default function PosBilling({
               )}
             </div>
 
-            {/* Customer Details Box with Autocomplete */}
+            {/* Customer Quick Info */}
             <div style={{ 
-              background: 'var(--surface-primary)', 
-              padding: '0.65rem 0.75rem', 
-              borderRadius: 'var(--radius-sm)', 
+              background: 'var(--bg-main)', 
+              padding: '0.55rem 0.65rem', 
+              borderRadius: '8px', 
               border: '1px solid var(--border-color)',
-              marginBottom: '0.75rem' 
+              marginBottom: '0.65rem' 
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <User size={13} color="var(--accent-primary)" />
-                  <span>Customer & WhatsApp Info</span>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <User size={12} color="var(--accent-primary)" />
+                  <span>CUSTOMER INFO</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMoreCustomerFields(!showMoreCustomerFields)}
-                  style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', cursor: 'pointer', background: 'transparent', border: 'none', textDecoration: 'underline' }}
+                  style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', cursor: 'pointer', background: 'transparent', border: 'none' }}
                 >
-                  {showMoreCustomerFields ? 'Hide Address/GST' : '+ Address & GSTIN'}
+                  {showMoreCustomerFields ? 'Hide Details' : '+ Address & GSTIN'}
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.45rem' }}>
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Customer Name (e.g. Ramesh)"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="input-field"
-                    style={{ padding: '0.35rem 0.55rem', fontSize: '0.8rem', fontWeight: 600 }}
-                  />
-                </div>
-
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Mobile No (10-digit)"
-                    value={customerPhone}
-                    onChange={(e) => handleCustomerPhoneInput(e.target.value)}
-                    className="input-field"
-                    style={{ padding: '0.35rem 0.55rem', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.4rem' }}>
+                <input
+                  type="text"
+                  placeholder="Customer Name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className="input-field"
+                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.78rem', fontWeight: 600, height: '32px' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Mobile (10 digits)"
+                  value={customerPhone}
+                  onChange={(e) => handleCustomerPhoneInput(e.target.value)}
+                  className="input-field"
+                  style={{ padding: '0.3rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', height: '32px' }}
+                />
               </div>
 
-              {/* Match hint from CRM */}
               {customerMatchHint && (
                 <div 
                   onClick={() => handleSelectCustomer(customerMatchHint)}
                   style={{
                     marginTop: '0.35rem',
-                    padding: '0.3rem 0.5rem',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--illoca-blue-subtle)',
+                    padding: '0.25rem 0.45rem',
+                    borderRadius: '4px',
+                    background: 'rgba(169, 188, 92, 0.15)',
                     border: '1px solid var(--accent-primary)',
-                    fontSize: '0.72rem',
+                    fontSize: '0.7rem',
                     color: 'var(--accent-primary)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     cursor: 'pointer'
                   }}
-                  title="Click to auto-apply customer profile"
                 >
-                  <span>Known Customer: <strong>{customerMatchHint.name}</strong></span>
-                  <span>Spent: ₹{customerMatchHint.totalSpent?.toLocaleString()} (Click to use)</span>
+                  <span>✓ Known: <strong>{customerMatchHint.name}</strong></span>
+                  <span>₹{customerMatchHint.totalSpent?.toLocaleString()} spent</span>
                 </div>
               )}
 
-              {/* Extended Customer Address & GSTIN */}
               {showMoreCustomerFields && (
-                <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginTop: '0.45rem' }}>
+                <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.4rem' }}>
                   <input
                     type="text"
-                    placeholder="Address (Bodhan, Telangana)"
+                    placeholder="Address"
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                     className="input-field"
-                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.76rem' }}
+                    style={{ padding: '0.25rem 0.45rem', fontSize: '0.74rem', height: '30px' }}
                   />
                   <input
                     type="text"
-                    placeholder="Customer GSTIN (Optional)"
+                    placeholder="GSTIN (Optional)"
                     value={customerGstin}
                     onChange={(e) => setCustomerGstin(e.target.value)}
                     className="input-field"
-                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.76rem' }}
+                    style={{ padding: '0.25rem 0.45rem', fontSize: '0.74rem', height: '30px' }}
                   />
                 </div>
               )}
@@ -1027,86 +1049,55 @@ export default function PosBilling({
             {/* Cart Items List */}
             <div style={{ 
               flex: 1, 
-              maxHeight: '300px', 
+              maxHeight: '260px', 
               overflowY: 'auto', 
-              marginBottom: '0.75rem',
+              marginBottom: '0.65rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.45rem'
+              gap: '0.4rem'
             }}>
               {cart.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
-                  <ShoppingCart size={28} style={{ margin: '0 auto 0.4rem', opacity: 0.35 }} />
-                  <p style={{ fontSize: '0.82rem' }}>Cart is empty. Scan barcode, tap products, or click "+ Custom Item".</p>
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)' }}>
+                  <ShoppingCart size={24} style={{ margin: '0 auto 0.35rem', opacity: 0.3 }} />
+                  <p style={{ fontSize: '0.8rem', margin: 0 }}>Cart empty. Scan or tap items on left.</p>
                 </div>
               ) : (
                 cart.map(item => (
                   <div 
                     key={item.id} 
                     style={{ 
-                      padding: '0.55rem 0.7rem', 
-                      borderRadius: 'var(--radius-sm)', 
-                      background: 'var(--surface-primary)',
+                      padding: '0.5rem 0.65rem', 
+                      borderRadius: '8px', 
+                      background: 'var(--bg-main)',
                       border: '1px solid var(--border-color)',
                     }}
                   >
                     {/* Item Title and Delete */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.25rem' }}>
-                      <div style={{ flex: 1, marginRight: '0.5rem' }}>
-                        <input
-                          type="text"
-                          value={item.name}
-                          onChange={(e) => updateItemName(item.id, e.target.value)}
-                          className="input-field"
-                          style={{
-                            padding: '0.15rem 0.35rem',
-                            fontSize: '0.82rem',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                            background: 'transparent',
-                            border: '1px solid transparent',
-                            width: '100%'
-                          }}
-                          onFocus={(e) => e.target.style.border = '1px solid var(--accent-primary)'}
-                          onBlur={(e) => e.target.style.border = '1px solid transparent'}
-                          title="Click to edit item name on invoice"
-                        />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.82rem', color: 'var(--text-primary)', flex: 1 }}>
+                        {item.name}
                       </div>
                       <button 
                         onClick={() => removeFromCart(item.id)}
                         style={{ color: 'var(--text-muted)', cursor: 'pointer', padding: '0 2px', border: 'none', background: 'transparent' }}
-                        title="Remove item"
+                        title="Remove"
                       >
                         <Trash2 size={13} />
                       </button>
                     </div>
 
-                    {/* Warranty on invoice */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Warranty:</span>
-                      <input
-                        type="text"
-                        placeholder="e.g. 1 Year Brand Warranty"
-                        value={item.warranty || ''}
-                        onChange={(e) => updateItemWarranty(item.id, e.target.value)}
-                        className="input-field"
-                        style={{ padding: '0.1rem 0.35rem', fontSize: '0.72rem', color: 'var(--accent-primary)' }}
-                        title="Warranty text shown on printed bill"
-                      />
-                    </div>
-
-                    {/* IMEI Selector & Custom IMEI input */}
+                    {/* IMEI selector if present */}
                     {(item.allImeis.length > 0 || item.selectedImeis.length > 0) && (
-                      <div style={{ marginBottom: '0.35rem', padding: '0.25rem 0.4rem', background: 'var(--badge-bg)', borderRadius: '3px' }}>
+                      <div style={{ marginBottom: '0.3rem', padding: '0.2rem 0.35rem', background: 'rgba(169, 188, 92, 0.08)', borderRadius: '4px' }}>
                         {item.selectedImeis.map((selectedImei, idx) => (
-                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
-                            <span className="font-mono" style={{ fontSize: '0.68rem', color: 'var(--badge-text)' }}>IMEI #{idx + 1}:</span>
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <span style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>IMEI:</span>
                             {item.allImeis.length > 0 ? (
                               <select
                                 value={selectedImei}
                                 onChange={(e) => updateItemImei(item.id, idx, e.target.value)}
                                 className="input-field"
-                                style={{ padding: '0.15rem 0.35rem', fontSize: '0.74rem', fontFamily: 'var(--font-mono)' }}
+                                style={{ padding: '0.1rem 0.3rem', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', height: '24px' }}
                               >
                                 <option value="">-- Choose IMEI --</option>
                                 {item.allImeis.map(im => (
@@ -1116,52 +1107,51 @@ export default function PosBilling({
                             ) : null}
                             <input
                               type="text"
-                              placeholder="Or type custom IMEI..."
+                              placeholder="Or type IMEI..."
                               value={selectedImei}
                               onChange={(e) => updateItemImei(item.id, idx, e.target.value)}
                               className="input-field"
-                              style={{ padding: '0.15rem 0.35rem', fontSize: '0.74rem', fontFamily: 'var(--font-mono)', flex: 1 }}
+                              style={{ padding: '0.1rem 0.3rem', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', flex: 1, height: '24px' }}
                             />
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {/* Qty, Price and Line Total */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {/* Quantity Stepper & Price */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                         <button 
                           onClick={() => updateQty(item.id, -1)}
                           className="btn-secondary"
-                          style={{ padding: '0.15rem 0.35rem' }}
+                          style={{ padding: '0.15rem 0.35rem', height: '22px' }}
                         >
                           <Minus size={11} />
                         </button>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, minWidth: '20px', textAlign: 'center', fontSize: '0.82rem' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, minWidth: '18px', textAlign: 'center', fontSize: '0.8rem' }}>
                           {item.qty}
                         </span>
                         <button 
                           onClick={() => updateQty(item.id, 1)}
                           className="btn-secondary"
-                          style={{ padding: '0.15rem 0.35rem' }}
+                          style={{ padding: '0.15rem 0.35rem', height: '22px' }}
                         >
                           <Plus size={11} />
                         </button>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>@ ₹</span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>@ ₹</span>
                         <input
                           type="number"
                           value={item.rate}
                           onChange={(e) => updateItemRate(item.id, e.target.value)}
                           className="input-field"
-                          style={{ width: '85px', padding: '0.2rem 0.35rem', fontSize: '0.84rem', fontWeight: 700 }}
-                          title="Click to edit selling price"
+                          style={{ width: '75px', padding: '0.15rem 0.3rem', fontSize: '0.78rem', fontWeight: 700, height: '24px' }}
                         />
                       </div>
 
-                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem' }}>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
                         ₹{(item.rate * item.qty).toLocaleString()}
                       </div>
                     </div>
@@ -1170,37 +1160,14 @@ export default function PosBilling({
               )}
             </div>
 
-            {/* Invoice Notes / Remarks Expander */}
-            <div style={{ marginBottom: '0.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowNotesField(!showNotesField)}
-                  style={{ fontSize: '0.72rem', color: 'var(--accent-primary)', cursor: 'pointer', background: 'transparent', border: 'none', textDecoration: 'underline' }}
-                >
-                  {showNotesField ? 'Hide Invoice Notes' : '+ Add Invoice Remarks / Terms'}
-                </button>
-              </div>
-              {showNotesField && (
-                <textarea
-                  placeholder="Special remarks or terms printed on invoice (e.g. 6-month warranty on original battery)..."
-                  value={invoiceNotes}
-                  onChange={(e) => setInvoiceNotes(e.target.value)}
-                  rows={2}
-                  className="input-field animate-fade-in"
-                  style={{ marginTop: '0.35rem', fontSize: '0.78rem', resize: 'vertical' }}
-                />
-              )}
-            </div>
-
-            {/* Calculations & Taxes */}
+            {/* Financial Summary */}
             <div style={{ 
               borderTop: '1px solid var(--border-color)', 
-              paddingTop: '0.65rem',
+              paddingTop: '0.55rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.3rem',
-              fontSize: '0.82rem'
+              gap: '0.25rem',
+              fontSize: '0.78rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                 <span>Subtotal:</span>
@@ -1213,7 +1180,7 @@ export default function PosBilling({
                     GST (18%):
                     <button 
                       onClick={() => setIsInterstate(!isInterstate)}
-                      style={{ marginLeft: '0.3rem', fontSize: '0.68rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer' }}
+                      style={{ marginLeft: '0.25rem', fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', border: 'none', background: 'none' }}
                     >
                       {isInterstate ? '[IGST]' : '[CGST+SGST]'}
                     </button>
@@ -1222,8 +1189,8 @@ export default function PosBilling({
                 </div>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                  <span>Tax Mode:</span>
-                  <span className="font-mono">0% (Non-GST Memo)</span>
+                  <span>Tax Class:</span>
+                  <span className="font-mono">0% Non-GST</span>
                 </div>
               )}
 
@@ -1234,48 +1201,46 @@ export default function PosBilling({
                   value={discount}
                   onChange={(e) => setDiscount(e.target.value)}
                   className="input-field"
-                  style={{ width: '70px', padding: '0.18rem 0.35rem', fontSize: '0.8rem', textAlign: 'right' }}
+                  style={{ width: '65px', padding: '0.15rem 0.3rem', fontSize: '0.78rem', textAlign: 'right', height: '24px' }}
                 />
               </div>
 
+              {/* GRAND TOTAL SPOTLIGHT */}
               <div style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 alignItems: 'baseline', 
-                marginTop: '0.3rem', 
-                paddingTop: '0.45rem',
-                borderTop: '1px dashed var(--border-color)'
+                marginTop: '0.35rem', 
+                padding: '0.5rem 0.65rem',
+                borderRadius: '8px',
+                background: 'var(--bg-main)',
+                border: '1.5px solid var(--border-color)'
               }}>
-                <div>
-                  <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.05rem' }}>
-                    Total:
-                  </span>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '0.35rem' }}>
-                    {isNonGst ? 'Non-GST' : 'Incl. GST'}
-                  </span>
-                </div>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.35rem', color: 'var(--accent-primary)' }}>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '0.95rem', letterSpacing: '0.04em' }}>
+                  TOTAL DUE
+                </span>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.45rem', color: 'var(--accent-primary)', letterSpacing: '-0.02em' }}>
                   ₹{grandTotal.toLocaleString()}
                 </span>
               </div>
             </div>
 
-            {/* Payment Mode Selector */}
-            <div style={{ marginTop: '0.65rem' }}>
-              <div className="segmented-bar" style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            {/* 1-Tap Payment Selector */}
+            <div style={{ marginTop: '0.55rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.25rem' }}>
                 {[
-                  { id: 'UPI', label: 'UPI / QR' },
-                  { id: 'Cash', label: 'Cash' },
-                  { id: 'Card', label: 'Card' },
-                  { id: 'Khata', label: 'Khata' },
+                  { id: 'UPI', label: '📱 UPI' },
+                  { id: 'Cash', label: '💵 Cash' },
+                  { id: 'Card', label: '💳 Card' },
+                  { id: 'Khata', label: '📒 Khata' },
                 ].map(pm => {
                   const isSelected = paymentMode === pm.id;
                   return (
                     <button
                       key={pm.id}
                       onClick={() => setPaymentMode(pm.id)}
-                      className={`segmented-item ${isSelected ? 'active-blue' : ''}`}
-                      style={{ textAlign: 'center', padding: '0.35rem 0.2rem' }}
+                      className={`hud-pill ${isSelected ? 'active' : ''}`}
+                      style={{ justifyContent: 'center', padding: '0.3rem 0.2rem', fontSize: '0.72rem' }}
                     >
                       {pm.label}
                     </button>
@@ -1284,22 +1249,33 @@ export default function PosBilling({
               </div>
             </div>
 
-            {/* Proceed to Payment Verification Button */}
+            {/* Giant Primary Charge CTA Button */}
             <button
               onClick={handleInitiatePayment}
               disabled={cart.length === 0}
-              className="btn-primary"
               style={{
-                marginTop: '0.75rem',
+                marginTop: '0.65rem',
                 width: '100%',
+                display: 'flex',
+                alignItems: 'center',
                 justifyContent: 'center',
+                gap: '0.45rem',
                 padding: '0.75rem',
+                borderRadius: '8px',
+                background: cart.length === 0 ? 'var(--bg-main)' : 'var(--accent-primary)',
+                color: cart.length === 0 ? 'var(--text-muted)' : '#0F251E',
+                fontFamily: 'var(--font-heading)',
                 fontSize: '0.95rem',
-                opacity: cart.length === 0 ? 0.5 : 1
+                fontWeight: 900,
+                letterSpacing: '0.04em',
+                border: 'none',
+                cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
+                boxShadow: cart.length === 0 ? 'none' : '0 4px 16px rgba(169, 188, 92, 0.35)',
+                transition: 'all 0.2s ease'
               }}
             >
-              <CheckCircle2 size={16} />
-              <span>Proceed to Payment · ₹{grandTotal.toLocaleString()}</span>
+              <CheckCircle2 size={18} />
+              <span>CHARGE ₹{grandTotal.toLocaleString()}</span>
             </button>
           </div>
         </div>
@@ -1309,18 +1285,19 @@ export default function PosBilling({
       {/* 2. PAST INVOICES ARCHIVE & EDITING                                       */}
       {/* ========================================================================= */}
       {activePosTab === 'invoices' && (
-        <div className="illoca-card" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0 }}>
-                Store Invoices Archive & Bill Editing
+        <div className="hud-card" style={{ padding: '1rem', marginTop: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <History size={16} color="var(--accent-primary)" />
+              <h3 style={{ fontSize: '1rem', fontWeight: 900, margin: 0, fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}>
+                INVOICES ARCHIVE
               </h3>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Click "Edit Data" on any invoice to update customer name, mobile, address, line items, rates, or warranty terms.
-              </div>
+              <span className="mono-tag" style={{ background: 'rgba(169, 188, 92, 0.15)', color: 'var(--accent-primary)', fontWeight: 800 }}>
+                {filteredInvoices.length} RECORDS
+              </span>
             </div>
 
-            <div style={{ width: '320px', position: 'relative' }}>
+            <div style={{ width: '300px', position: 'relative' }}>
               <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 type="text"
@@ -1328,7 +1305,7 @@ export default function PosBilling({
                 value={invoiceSearchTerm}
                 onChange={(e) => setInvoiceSearchTerm(e.target.value)}
                 className="input-field"
-                style={{ paddingLeft: '2rem', fontSize: '0.82rem' }}
+                style={{ paddingLeft: '2rem', height: '32px', fontSize: '0.8rem', borderRadius: '8px' }}
               />
             </div>
           </div>
