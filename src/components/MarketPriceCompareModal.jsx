@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Globe, 
   RefreshCw, 
@@ -28,33 +28,43 @@ export default function MarketPriceCompareModal({
 }) {
   if (!isOpen || !product) return null;
 
-  // Initial comparison data from product or defaults
-  const comp = product.marketComparison || {
-    model: product.name,
-    ram: product.ram || '8GB',
-    storage: product.storage || '128GB',
-    color: product.color || 'Standard',
-    alzinoBuyRate: product.buyPrice || 0,
-    amazonNormalPrice: product.sellPrice ? Math.round(product.sellPrice * 1.02) : 0,
-    amazonCoupon: 0,
-    amazonBankOffer: 1500,
-    amazonExchangeBonus: 3000,
-    flipkartNormalPrice: product.sellPrice || 0,
-    flipkartBankOffer: 1250,
-    flipkartExchangeBonus: 3200,
-    brandPrice: product.mrp || (product.sellPrice ? Math.round(product.sellPrice * 1.08) : 0),
-    distributorRate: product.buyPrice || 0,
-    lastUpdated: '2026-10-05 16:30',
-    source: 'Amazon & Flipkart Real-Time Feed'
+  // Build comparison data safely from product
+  const getInitialComp = (p) => {
+    return p.marketComparison || {
+      model: p.name,
+      ram: p.ram || '',
+      storage: p.storage || '',
+      color: p.color || '',
+      alzinoBuyRate: p.buyPrice || 0,
+      amazonNormalPrice: p.sellPrice ? Math.round(p.sellPrice * 1.02) : 0,
+      amazonCoupon: 0,
+      amazonBankOffer: p.sellPrice > 10000 ? 1500 : 0,
+      amazonExchangeBonus: p.sellPrice > 10000 ? 3000 : 0,
+      flipkartNormalPrice: p.sellPrice || 0,
+      flipkartBankOffer: p.sellPrice > 10000 ? 1250 : 0,
+      flipkartExchangeBonus: p.sellPrice > 10000 ? 3200 : 0,
+      brandPrice: p.mrp || (p.sellPrice ? Math.round(p.sellPrice * 1.08) : 0),
+      distributorRate: p.buyPrice || 0,
+      lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      source: 'Amazon & Flipkart Real-Time Feed'
+    };
   };
 
   // State for editable inputs
-  const [prices, setPrices] = useState(comp);
+  const [prices, setPrices] = useState(() => getInitialComp(product));
   const [minMarginType, setMinMarginType] = useState('fixed'); // 'fixed' (₹) | 'percent' (%)
   const [minMarginValue, setMinMarginValue] = useState(1200); // ₹1,200 default
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isEditingManual, setIsEditingManual] = useState(false);
   const [activeTab, setActiveTab] = useState('compare'); // 'compare' | 'used-calc'
+
+  // Sync state whenever selected product changes
+  useEffect(() => {
+    if (product) {
+      setPrices(getInitialComp(product));
+      setIsEditingManual(false);
+    }
+  }, [product?.id]);
 
   // Lowest genuine online price calculation (Strictly ignores exchange bonus and coupons)
   const validPrices = [
@@ -136,7 +146,10 @@ export default function MarketPriceCompareModal({
   const usedGradeBQuote = Math.round(lowestGenuineOnlinePrice * 0.50);
   const usedGradeCQuote = Math.round(lowestGenuineOnlinePrice * 0.38);
 
-  const searchKeywords = encodeURIComponent(`${product.brand} ${product.name} ${prices.ram} ${prices.storage}`);
+  // Construct clean search query for Amazon / Flipkart
+  const brandPrefix = product.brand && !product.name.toLowerCase().startsWith(product.brand.toLowerCase()) ? product.brand : '';
+  const cleanSearchTerm = `${brandPrefix} ${product.name}`.trim();
+  const searchKeywords = encodeURIComponent(cleanSearchTerm);
 
   return (
     <div 

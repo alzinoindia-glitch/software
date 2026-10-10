@@ -27,7 +27,11 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Layers,
-  Calendar
+  Calendar,
+  Copy,
+  Landmark,
+  Percent,
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
@@ -68,7 +72,7 @@ export default function PosBilling({
   const [showNotesField, setShowNotesField] = useState(false);
 
   // Billing options
-  const [paymentMode, setPaymentMode] = useState('UPI'); // Cash | UPI | Card | Khata | Split
+  const [paymentMode, setPaymentMode] = useState('UPI'); // Cash | UPI | Card | Khata | Split | EMI
   const [paidAmount, setPaidAmount] = useState(0);
   const [discount, setDiscount] = useState(0);
   const [isInterstate, setIsInterstate] = useState(false);
@@ -77,9 +81,25 @@ export default function PosBilling({
   const [showPaymentVerifyModal, setShowPaymentVerifyModal] = useState(false);
   const [cashTendered, setCashTendered] = useState('');
   const [upiTxnRef, setUpiTxnRef] = useState('');
+  const [upiVerified, setUpiVerified] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
   const [cardAuthCode, setCardAuthCode] = useState('');
   const [splitCashAmount, setSplitCashAmount] = useState(0);
   const [splitUpiAmount, setSplitUpiAmount] = useState(0);
+  const [splitUpiTxnRef, setSplitUpiTxnRef] = useState('');
+  const [splitVerified, setSplitVerified] = useState(false);
+
+  // EMI Financing State (Manual Counter Entry)
+  const [emiFinancier, setEmiFinancier] = useState('Bajaj Finserv');
+  const [customFinancier, setCustomFinancier] = useState('');
+  const [emiDownPayment, setEmiDownPayment] = useState(0);
+  const [emiDownPaymentMode, setEmiDownPaymentMode] = useState('Cash'); // Cash | UPI
+  const [emiDownPaymentUpiRef, setEmiDownPaymentUpiRef] = useState('');
+  const [emiTenureMonths, setEmiTenureMonths] = useState(6);
+  const [emiMonthlyAmount, setEmiMonthlyAmount] = useState(0);
+  const [emiApprovalCode, setEmiApprovalCode] = useState('');
+  const [emiCustomerAadhaar, setEmiCustomerAadhaar] = useState('');
+  const [emiVerified, setEmiVerified] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [completedInvoice, setCompletedInvoice] = useState(null);
 
@@ -403,6 +423,16 @@ export default function PosBilling({
     return sum + itemProfit;
   }, 0) - Number(discount);
 
+  // EMI auto-calculated loan amount
+  const emiLoanAmount = Math.max(0, grandTotal - (Number(emiDownPayment) || 0));
+
+  // Sync monthly EMI calculation when loan amount or tenure changes
+  useEffect(() => {
+    if (emiTenureMonths > 0) {
+      setEmiMonthlyAmount(Math.round(emiLoanAmount / emiTenureMonths));
+    }
+  }, [emiLoanAmount, emiTenureMonths]);
+
   // Sync paidAmount default
   useEffect(() => {
     setPaidAmount(grandTotal);
@@ -416,9 +446,20 @@ export default function PosBilling({
     }
     setCashTendered(grandTotal);
     setUpiTxnRef('');
+    setUpiVerified(false);
+    setCopiedUpi(false);
     setCardAuthCode('');
     setSplitCashAmount(Math.round(grandTotal / 2));
     setSplitUpiAmount(grandTotal - Math.round(grandTotal / 2));
+    setSplitUpiTxnRef('');
+    setSplitVerified(false);
+    setEmiDownPayment(0);
+    setEmiDownPaymentMode('Cash');
+    setEmiDownPaymentUpiRef('');
+    setEmiTenureMonths(6);
+    setEmiMonthlyAmount(Math.round(grandTotal / 6));
+    setEmiApprovalCode('');
+    setEmiVerified(false);
     setShowPaymentVerifyModal(true);
   };
 
@@ -433,8 +474,49 @@ export default function PosBilling({
     const sgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);
     const igstTotal = isNonGst ? 0 : (isInterstate ? totalGst : 0);
 
-    const actualPaid = paymentMode === 'Khata' ? 0 : Number(paidAmount);
-    const khataDue = Math.max(0, grandTotal - actualPaid);
+    const isEmi = paymentMode === 'EMI';
+    const isSplit = paymentMode === 'Split';
+
+    let actualPaid = 0;
+    let khataDue = 0;
+    let effectivePaymentMode = paymentMode;
+
+    if (paymentMode === 'Khata') {
+      actualPaid = 0;
+      khataDue = grandTotal;
+      effectivePaymentMode = 'Khata';
+    } else if (isEmi) {
+      actualPaid = Number(emiDownPayment) || 0;
+      khataDue = 0; // Balance is funded by loan partner
+      const activeFinancier = emiFinancier === 'Other' ? (customFinancier.trim() || 'Third-Party Finance') : emiFinancier;
+      effectivePaymentMode = `EMI (${activeFinancier})`;
+    } else if (isSplit) {
+      actualPaid = (Number(splitCashAmount) || 0) + (Number(splitUpiAmount) || 0);
+      khataDue = Math.max(0, grandTotal - actualPaid);
+      effectivePaymentMode = 'Split (Cash + UPI)';
+    } else {
+      actualPaid = Number(paidAmount);
+      khataDue = Math.max(0, grandTotal - actualPaid);
+    }
+
+    const emiDetails = isEmi ? {
+      isEmi: true,
+      financier: emiFinancier === 'Other' ? (customFinancier.trim() || 'Third-Party Finance') : emiFinancier,
+      downPayment: Number(emiDownPayment) || 0,
+      downPaymentMode: emiDownPaymentMode,
+      downPaymentRef: emiDownPaymentMode === 'UPI' ? emiDownPaymentUpiRef : 'CASH',
+      loanAmount: emiLoanAmount,
+      tenureMonths: Number(emiTenureMonths) || 1,
+      monthlyEmi: Number(emiMonthlyAmount) || Math.round(emiLoanAmount / (Number(emiTenureMonths) || 1)),
+      approvalCode: emiApprovalCode.trim(),
+      customerAadhaar: emiCustomerAadhaar.trim()
+    } : null;
+
+    const splitDetails = isSplit ? {
+      cashAmount: Number(splitCashAmount) || 0,
+      upiAmount: Number(splitUpiAmount) || 0,
+      upiRef: splitUpiTxnRef.trim()
+    } : null;
 
     const newInvoice = {
       invoiceNo,
@@ -445,10 +527,14 @@ export default function PosBilling({
       customerPhone: customerPhone.trim(),
       customerAddress: customerAddress.trim() || 'Bodhan, Telangana',
       customerGstin: isNonGst ? '' : customerGstin.trim(),
-      paymentMode,
-      paymentStatus: paymentMode === 'Khata' ? 'KHATA_DUE' : 'PAID',
+      paymentMode: effectivePaymentMode,
+      paymentStatus: paymentMode === 'Khata' ? 'KHATA_DUE' : (isEmi ? 'EMI_SANCTIONED' : 'PAID'),
       paymentConfirmedAt: new Date().toISOString(),
-      paymentRef: verifiedPaymentRef || upiTxnRef || cardAuthCode || (paymentMode === 'Cash' ? 'CASH_VERIFIED' : 'CONFIRMED'),
+      paymentRef: verifiedPaymentRef || upiTxnRef || (isEmi ? (emiApprovalCode ? `DO:${emiApprovalCode}` : 'EMI_APPROVED') : (isSplit ? (splitUpiTxnRef ? `UPI:${splitUpiTxnRef}` : 'SPLIT_VERIFIED') : cardAuthCode || (paymentMode === 'Cash' ? 'CASH_VERIFIED' : 'CONFIRMED'))),
+      emiDetails,
+      splitDetails,
+      cashTendered: paymentMode === 'Cash' ? (Number(cashTendered) || grandTotal) : null,
+      changeReturned: paymentMode === 'Cash' ? Math.max(0, (Number(cashTendered) || grandTotal) - grandTotal) : 0,
       notes: invoiceNotes.trim(),
       items: cart.map(item => ({
         id: item.id,
@@ -1881,21 +1967,34 @@ export default function PosBilling({
 
             {/* Payment Method Tabs */}
             <div style={{ marginBottom: '1.25rem' }}>
-              <label className="input-label" style={{ marginBottom: '0.4rem', fontWeight: 700 }}>
+              <label className="input-label" style={{ marginBottom: '0.45rem', fontWeight: 700, fontSize: '0.82rem' }}>
                 Select Received Payment Method:
               </label>
-              <div className="segmented-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '0.35rem', background: 'var(--surface-card)', padding: '0.3rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                 {[
-                  { id: 'UPI', label: '📱 UPI / QR' },
+                  { id: 'UPI', label: '📱 Online UPI' },
                   { id: 'Cash', label: '💵 Cash' },
+                  { id: 'Split', label: '⚡ Split Cash+UPI' },
+                  { id: 'EMI', label: '🏷️ EMI Finance' },
                   { id: 'Card', label: '💳 Card' },
                   { id: 'Khata', label: '📒 Khata' },
                 ].map(pm => (
                   <button
                     key={pm.id}
+                    type="button"
                     onClick={() => setPaymentMode(pm.id)}
-                    className={`segmented-item ${paymentMode === pm.id ? 'active-blue' : ''}`}
-                    style={{ textAlign: 'center', padding: '0.5rem 0.25rem', fontSize: '0.85rem', fontWeight: 700 }}
+                    style={{
+                      padding: '0.45rem 0.25rem',
+                      fontSize: '0.78rem',
+                      fontWeight: paymentMode === pm.id ? 800 : 600,
+                      borderRadius: 'var(--radius-sm)',
+                      border: paymentMode === pm.id ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                      background: paymentMode === pm.id ? 'var(--badge-bg)' : 'transparent',
+                      color: paymentMode === pm.id ? 'var(--badge-text)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      transition: 'var(--transition-smooth)'
+                    }}
                   >
                     {pm.label}
                   </button>
@@ -1904,7 +2003,7 @@ export default function PosBilling({
             </div>
 
             {/* ========================================================================= */}
-            {/* 1. UPI QR PAYMENT PANEL */}
+            {/* 1. ONLINE UPI QR PAYMENT PANEL WITH MANUAL VERIFICATION */}
             {/* ========================================================================= */}
             {paymentMode === 'UPI' && (
               <div style={{
@@ -1915,8 +2014,8 @@ export default function PosBilling({
                 marginBottom: '1.25rem',
                 textAlign: 'center'
               }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>
-                  Ask Customer to Scan Dynamic UPI QR Code
+                <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>
+                  Customer Scans Dynamic UPI QR Code
                 </div>
                 
                 <div style={{
@@ -1925,43 +2024,82 @@ export default function PosBilling({
                   borderRadius: 'var(--radius-sm)',
                   display: 'inline-block',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                  marginBottom: '0.75rem'
+                  marginBottom: '0.65rem'
                 }}>
                   <img
-                    src={getUpiQrUrl(shopConfig.upiId, shopConfig.name, grandTotal, 'BILL')}
+                    src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', grandTotal, 'BILL')}
                     alt="Scan UPI QR Code"
                     style={{ width: '190px', height: '190px', display: 'block', margin: '0 auto' }}
                   />
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0A0D14', marginTop: '0.35rem' }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0A0D14', marginTop: '0.35rem' }}>
                     Pay: ₹{grandTotal.toLocaleString()}
                   </div>
                 </div>
 
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                  UPI ID: <strong style={{ color: 'var(--text-primary)' }}>{shopConfig.upiId}</strong> ({shopConfig.name})
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                    UPI ID: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{shopConfig.upiId || 'alzino.bodhan@okhdfcbank'}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(shopConfig.upiId || 'alzino.bodhan@okhdfcbank');
+                      setCopiedUpi(true);
+                      setTimeout(() => setCopiedUpi(false), 2000);
+                    }}
+                    style={{
+                      background: 'var(--surface-card)',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.2rem 0.45rem',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.7rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      color: copiedUpi ? 'var(--status-green)' : 'var(--text-secondary)'
+                    }}
+                  >
+                    {copiedUpi ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
+                  </button>
                 </div>
 
-                <div style={{ textAlign: 'left', marginBottom: '0.85rem' }}>
-                  <label className="input-label" style={{ fontSize: '0.75rem' }}>
-                    UPI Reference / UTR Number (Optional):
+                <div style={{ textAlign: 'left', marginBottom: '0.75rem' }}>
+                  <label className="input-label" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                    12-Digit UPI Reference / UTR Number (From Customer Phone):
                   </label>
                   <input
                     type="text"
                     value={upiTxnRef}
                     onChange={(e) => setUpiTxnRef(e.target.value)}
-                    placeholder="e.g. 428190284910"
+                    placeholder="e.g. 428190284910 (GooglePay / PhonePe / Paytm)"
                     className="input-field"
-                    style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem' }}
+                    style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem', fontFamily: 'var(--font-mono)' }}
                   />
                 </div>
 
+                {/* Manual Verification Checkbox */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textAlign: 'left', background: 'var(--surface-card)', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.95rem', cursor: 'pointer', fontSize: '0.78rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={upiVerified}
+                    onChange={(e) => setUpiVerified(e.target.checked)}
+                    style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <span>
+                    <strong>Payment Alert Verified</strong> in PhonePe / GPay Soundbox or Bank SMS
+                  </span>
+                </label>
+
                 <button
-                  onClick={() => handleConfirmAndGenerateInvoice(upiTxnRef ? `UPI:${upiTxnRef}` : 'UPI:QR_CONFIRMED')}
+                  type="button"
+                  onClick={() => handleConfirmAndGenerateInvoice(upiTxnRef ? `UPI:${upiTxnRef}` : 'UPI:QR_VERIFIED')}
                   className="btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.95rem' }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm UPI Payment Received (₹{grandTotal.toLocaleString()})</span>
+                  <span>Confirm Online UPI Received (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -1978,21 +2116,21 @@ export default function PosBilling({
                 marginBottom: '1.25rem'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>💵 Cash Payment Details</span>
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>💵 Cash Payment Counter</span>
                   <span className="mono-tag" style={{ background: 'var(--status-green-bg)', color: 'var(--status-green)' }}>
-                    Tender & Change
+                    Exact Tender & Change
                   </span>
                 </div>
 
                 <div style={{ marginBottom: '0.85rem' }}>
-                  <label className="input-label">Cash Received from Customer (₹):</label>
+                  <label className="input-label" style={{ fontWeight: 700 }}>Cash Received from Customer (₹):</label>
                   <input
                     type="number"
                     value={cashTendered}
                     onChange={(e) => setCashTendered(e.target.value)}
                     placeholder="Enter cash given by customer"
                     className="input-field"
-                    style={{ fontSize: '1.15rem', fontWeight: 800, padding: '0.5rem 0.75rem' }}
+                    style={{ fontSize: '1.15rem', fontWeight: 800, padding: '0.5rem 0.75rem', fontFamily: 'var(--font-mono)' }}
                   />
                 </div>
 
@@ -2034,6 +2172,7 @@ export default function PosBilling({
                   <span style={{
                     fontSize: '1.25rem',
                     fontWeight: 900,
+                    fontFamily: 'var(--font-mono)',
                     color: Number(cashTendered) >= grandTotal ? 'var(--status-green)' : 'var(--status-amber)'
                   }}>
                     ₹{Math.max(0, (Number(cashTendered) || grandTotal) - grandTotal).toLocaleString()}
@@ -2041,9 +2180,10 @@ export default function PosBilling({
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => handleConfirmAndGenerateInvoice('CASH:TENDER_VERIFIED')}
                   className="btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.95rem' }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
                   <span>Confirm Cash Received (₹{grandTotal.toLocaleString()})</span>
@@ -2052,7 +2192,323 @@ export default function PosBilling({
             )}
 
             {/* ========================================================================= */}
-            {/* 3. CARD PAYMENT PANEL */}
+            {/* 3. SPLIT PAYMENT PANEL (CASH + ONLINE UPI QR) */}
+            {/* ========================================================================= */}
+            {paymentMode === 'Split' && (
+              <div style={{
+                background: 'var(--surface-primary)',
+                border: '1.5px solid var(--accent-primary)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1.15rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--accent-primary)' }}>
+                    ⚡ Split Payment: Cash + Online UPI QR
+                  </span>
+                  <span className="mono-tag" style={{ background: 'var(--badge-bg)', color: 'var(--badge-text)' }}>
+                    Total: ₹{grandTotal.toLocaleString()}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label className="input-label" style={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                      💵 Cash Portion (₹):
+                    </label>
+                    <input
+                      type="number"
+                      value={splitCashAmount}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(grandTotal, Number(e.target.value) || 0));
+                        setSplitCashAmount(val);
+                        setSplitUpiAmount(Math.max(0, grandTotal - val));
+                      }}
+                      className="input-field"
+                      style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="input-label" style={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                      📱 Online UPI Balance (₹):
+                    </label>
+                    <input
+                      type="number"
+                      value={splitUpiAmount}
+                      readOnly
+                      className="input-field"
+                      style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-mono)', background: 'var(--surface-card)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Dynamic QR for Split UPI Amount */}
+                {splitUpiAmount > 0 && (
+                  <div style={{ textAlign: 'center', background: 'var(--surface-card)', padding: '0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.85rem' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                      Customer Scans QR for Remaining UPI Portion: <strong>₹{splitUpiAmount.toLocaleString()}</strong>
+                    </div>
+                    <div style={{ background: '#FFFFFF', padding: '0.5rem', borderRadius: 'var(--radius-sm)', display: 'inline-block', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                      <img
+                        src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', splitUpiAmount, 'SPLIT')}
+                        alt="Split UPI QR"
+                        style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
+                      />
+                    </div>
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <input
+                        type="text"
+                        value={splitUpiTxnRef}
+                        onChange={(e) => setSplitUpiTxnRef(e.target.value)}
+                        placeholder="UPI UTR / Reference No. (e.g. 428190284910)"
+                        className="input-field"
+                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem', fontFamily: 'var(--font-mono)', width: '100%', maxWidth: '320px', margin: '0 auto' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-card)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.95rem', cursor: 'pointer', fontSize: '0.78rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={splitVerified}
+                    onChange={(e) => setSplitVerified(e.target.checked)}
+                    style={{ accentColor: 'var(--accent-primary)', width: '15px', height: '15px' }}
+                  />
+                  <span>
+                    <strong>Verified:</strong> Received ₹{Number(splitCashAmount || 0).toLocaleString()} in cash and ₹{Number(splitUpiAmount || 0).toLocaleString()} via Online UPI
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => handleConfirmAndGenerateInvoice(splitUpiTxnRef ? `SPLIT:CASH_${splitCashAmount}_UPI_${splitUpiAmount}_${splitUpiTxnRef}` : `SPLIT:CASH_${splitCashAmount}_UPI_${splitUpiAmount}`)}
+                  className="btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
+                >
+                  <CheckCircle2 size={18} />
+                  <span>Confirm Split Payment (₹{grandTotal.toLocaleString()})</span>
+                </button>
+              </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 4. MANUAL EMI FINANCING PANEL (BAJAJ, HDB, IDFC, TVS, CC EMI, IN-HOUSE) */}
+            {/* ========================================================================= */}
+            {paymentMode === 'EMI' && (
+              <div style={{
+                background: 'var(--surface-primary)',
+                border: '1.5px solid var(--status-teal)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1.15rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Landmark size={16} color="var(--status-teal)" />
+                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--status-teal)' }}>
+                      Consumer Durable / Smartphone EMI Finance
+                    </span>
+                  </div>
+                  <span className="mono-tag" style={{ background: 'var(--status-teal-bg)', color: 'var(--status-teal)', fontWeight: 700 }}>
+                    Total: ₹{grandTotal.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Financier Selector */}
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label className="input-label" style={{ fontWeight: 700, fontSize: '0.76rem' }}>
+                    Select Finance Partner / Loan Provider:
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.35rem', marginBottom: '0.45rem' }}>
+                    {[
+                      'Bajaj Finserv',
+                      'HDB Financial Services',
+                      'IDFC First Bank',
+                      'TVS Credit',
+                      'Home Credit / DMI',
+                      'Credit Card EMI',
+                      'Store In-House EMI',
+                      'Other'
+                    ].map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setEmiFinancier(f)}
+                        style={{
+                          padding: '0.35rem 0.5rem',
+                          fontSize: '0.74rem',
+                          fontWeight: emiFinancier === f ? 800 : 500,
+                          borderRadius: 'var(--radius-sm)',
+                          border: emiFinancier === f ? '1px solid var(--status-teal)' : '1px solid var(--border-color)',
+                          background: emiFinancier === f ? 'var(--status-teal-bg)' : 'var(--surface-card)',
+                          color: emiFinancier === f ? 'var(--status-teal)' : 'var(--text-primary)',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+
+                  {emiFinancier === 'Other' && (
+                    <input
+                      type="text"
+                      value={customFinancier}
+                      onChange={(e) => setCustomFinancier(e.target.value)}
+                      placeholder="Enter Custom Financier / Bank Name"
+                      className="input-field"
+                      style={{ fontSize: '0.82rem', padding: '0.4rem 0.6rem', marginTop: '0.3rem' }}
+                    />
+                  )}
+                </div>
+
+                {/* Down Payment & Loan Breakdown */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem', background: 'var(--surface-card)', padding: '0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label className="input-label" style={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                      Upfront Down Payment Received (₹):
+                    </label>
+                    <input
+                      type="number"
+                      value={emiDownPayment}
+                      onChange={(e) => setEmiDownPayment(Math.max(0, Math.min(grandTotal, Number(e.target.value) || 0)))}
+                      placeholder="0 for Zero Down Payment"
+                      className="input-field"
+                      style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}
+                    />
+
+                    {Number(emiDownPayment) > 0 && (
+                      <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.4rem' }}>
+                        {['Cash', 'UPI'].map(m => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setEmiDownPaymentMode(m)}
+                            className="btn-secondary"
+                            style={{
+                              padding: '0.2rem 0.5rem',
+                              fontSize: '0.72rem',
+                              background: emiDownPaymentMode === m ? 'var(--badge-bg)' : 'transparent',
+                              color: emiDownPaymentMode === m ? 'var(--badge-text)' : 'var(--text-secondary)'
+                            }}
+                          >
+                            {m === 'Cash' ? '💵 Cash Down Payment' : '📱 UPI Down Payment'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {Number(emiDownPayment) > 0 && emiDownPaymentMode === 'UPI' && (
+                      <div style={{ marginTop: '0.4rem', textAlign: 'center', background: '#FFFFFF', padding: '0.4rem', borderRadius: '4px' }}>
+                        <img
+                          src={getUpiQrUrl(shopConfig.upiId || 'alzino.bodhan@okhdfcbank', shopConfig.name || 'ALZINO', Number(emiDownPayment), 'DOWNPAY')}
+                          alt="Down Payment QR"
+                          style={{ width: '90px', height: '90px', display: 'block', margin: '0 auto' }}
+                        />
+                        <span style={{ fontSize: '0.65rem', color: '#111', fontWeight: 700 }}>Scan ₹{Number(emiDownPayment).toLocaleString()} DP</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Financed / Loan Balance:</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--status-teal)', fontFamily: 'var(--font-mono)', marginTop: '0.15rem' }}>
+                      ₹{emiLoanAmount.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                      Disbursed by {emiFinancier === 'Other' ? (customFinancier || 'Financier') : emiFinancier}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tenure Selector & Monthly EMI */}
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label className="input-label" style={{ fontWeight: 700, fontSize: '0.75rem', margin: 0 }}>
+                      Loan Tenure Duration:
+                    </label>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--status-teal)', fontFamily: 'var(--font-mono)' }}>
+                      EMI: ₹{Number(emiMonthlyAmount || 0).toLocaleString()} / month
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                    {[3, 6, 8, 9, 10, 12, 18, 24].map(months => (
+                      <button
+                        key={months}
+                        type="button"
+                        onClick={() => setEmiTenureMonths(months)}
+                        style={{
+                          padding: '0.3rem 0.55rem',
+                          fontSize: '0.74rem',
+                          fontWeight: emiTenureMonths === months ? 800 : 500,
+                          borderRadius: 'var(--radius-sm)',
+                          border: emiTenureMonths === months ? '1px solid var(--status-teal)' : '1px solid var(--border-color)',
+                          background: emiTenureMonths === months ? 'var(--status-teal-bg)' : 'transparent',
+                          color: emiTenureMonths === months ? 'var(--status-teal)' : 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {months}M
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label className="input-label" style={{ fontSize: '0.72rem' }}>Monthly Installment (₹/mo):</label>
+                      <input
+                        type="number"
+                        value={emiMonthlyAmount}
+                        onChange={(e) => setEmiMonthlyAmount(Number(e.target.value) || 0)}
+                        className="input-field"
+                        style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="input-label" style={{ fontSize: '0.72rem' }}>DO / Approval No. *:</label>
+                      <input
+                        type="text"
+                        value={emiApprovalCode}
+                        onChange={(e) => setEmiApprovalCode(e.target.value)}
+                        placeholder="e.g. DO-982142 / Loan Ref"
+                        className="input-field"
+                        style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Verification Checkbox */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--surface-card)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.95rem', cursor: 'pointer', fontSize: '0.78rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={emiVerified}
+                    onChange={(e) => setEmiVerified(e.target.checked)}
+                    style={{ accentColor: 'var(--status-teal)', width: '15px', height: '15px' }}
+                  />
+                  <span>
+                    <strong>Verified:</strong> EMI Loan Sanctioned & Delivery Order (DO) confirmed on partner terminal
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => handleConfirmAndGenerateInvoice(emiApprovalCode ? `DO:${emiApprovalCode}` : `EMI:${emiFinancier}`)}
+                  className="btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem', background: 'var(--status-teal)', borderColor: 'var(--status-teal)', color: '#FFFFFF' }}
+                >
+                  <CheckCircle2 size={18} />
+                  <span>Confirm EMI Purchase (DP: ₹{Number(emiDownPayment || 0).toLocaleString()} | Loan: ₹{emiLoanAmount.toLocaleString()})</span>
+                </button>
+              </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* 5. CARD PAYMENT PANEL */}
             {/* ========================================================================= */}
             {paymentMode === 'Card' && (
               <div style={{
@@ -2066,7 +2522,7 @@ export default function PosBilling({
                   💳 Card Terminal / POS Machine Swipe
                 </div>
                 <p style={{ margin: '0 0 0.85rem 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  Swipe / Tap credit or debit card for ₹{grandTotal.toLocaleString()} on your physical EDC terminal.
+                  Swipe / Tap credit or debit card for ₹{grandTotal.toLocaleString()} on physical EDC terminal.
                 </p>
 
                 <div style={{ marginBottom: '0.85rem' }}>
@@ -2077,14 +2533,15 @@ export default function PosBilling({
                     onChange={(e) => setCardAuthCode(e.target.value)}
                     placeholder="e.g. AUTH-88219"
                     className="input-field"
-                    style={{ fontSize: '0.85rem' }}
+                    style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}
                   />
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => handleConfirmAndGenerateInvoice(cardAuthCode ? `CARD:${cardAuthCode}` : 'CARD:SWIPE_VERIFIED')}
                   className="btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.95rem' }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
                   <span>Confirm Card Swipe Approved (₹{grandTotal.toLocaleString()})</span>
@@ -2093,7 +2550,7 @@ export default function PosBilling({
             )}
 
             {/* ========================================================================= */}
-            {/* 4. KHATA CREDIT SALE PANEL */}
+            {/* 6. KHATA CREDIT SALE PANEL */}
             {/* ========================================================================= */}
             {paymentMode === 'Khata' && (
               <div style={{
@@ -2132,9 +2589,10 @@ export default function PosBilling({
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => handleConfirmAndGenerateInvoice('KHATA:CREDIT_AUTHORIZED')}
                   className="btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.95rem', background: 'var(--status-amber)', borderColor: 'var(--status-amber)', color: '#000' }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem', background: 'var(--status-amber)', borderColor: 'var(--status-amber)', color: '#000' }}
                 >
                   <CheckCircle2 size={18} />
                   <span>Confirm Khata Credit Sale (₹{grandTotal.toLocaleString()})</span>
@@ -2156,7 +2614,25 @@ export default function PosBilling({
             }}>
               <ShieldCheck size={16} color="var(--accent-primary)" />
               <span>
-                <strong>Payment Confirmation Safeguard Active:</strong> Final invoice barcode, sequential invoice number, and stock deduction will only trigger upon confirming payment above.
+                <strong>Store Counter Safeguard Active:</strong> Real-time inventory deduction and sequential invoice numbers trigger only after payment verification above.
+              </span>
+            </div>
+
+            {/* Security Guarantee Note */}
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.05)',
+              border: '1px solid var(--border-accent)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '0.65rem 0.85rem',
+              fontSize: '0.74rem',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <ShieldCheck size={16} color="var(--accent-primary)" />
+              <span>
+                <strong>Store Counter Safeguard Active:</strong> Real-time inventory deduction and sequential invoice numbers trigger only after payment verification above.
               </span>
             </div>
 
@@ -2217,16 +2693,34 @@ export default function PosBilling({
                 <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
                 <span className="mono-tag">{completedInvoice.paymentMode}</span>
               </div>
+              
+              {/* EMI Details Spotlight */}
+              {completedInvoice.emiDetails && (
+                <div style={{ background: 'var(--status-teal-bg)', color: 'var(--status-teal)', padding: '0.55rem 0.75rem', borderRadius: 'var(--radius-sm)', margin: '0.45rem 0', fontSize: '0.78rem' }}>
+                  <div style={{ fontWeight: 800, marginBottom: '0.15rem' }}>
+                    🏷️ EMI Financed by {completedInvoice.emiDetails.financier}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem' }}>
+                    <span>Down Payment: ₹{Number(completedInvoice.emiDetails.downPayment || 0).toLocaleString()}</span>
+                    <span>Loan: ₹{Number(completedInvoice.emiDetails.loanAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', marginTop: '0.15rem' }}>
+                    Tenure: {completedInvoice.emiDetails.tenureMonths} Months @ ₹{Number(completedInvoice.emiDetails.monthlyEmi || 0).toLocaleString()} / mo
+                    {completedInvoice.emiDetails.approvalCode && ` • DO: ${completedInvoice.emiDetails.approvalCode}`}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Total Paid:</span>
-                <span style={{ fontWeight: 800, color: 'var(--accent-primary)', fontSize: '1.05rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Amount Paid:</span>
+                <span style={{ fontWeight: 800, color: 'var(--accent-primary)', fontSize: '1.05rem', fontFamily: 'var(--font-mono)' }}>
                   ₹{completedInvoice.paidAmount.toLocaleString()}
                 </span>
               </div>
               {completedInvoice.khataDue > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-red)' }}>
                   <span>Added to Khata (Due):</span>
-                  <span style={{ fontWeight: 700 }}>₹{completedInvoice.khataDue.toLocaleString()}</span>
+                  <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>₹{completedInvoice.khataDue.toLocaleString()}</span>
                 </div>
               )}
             </div>

@@ -49,6 +49,7 @@ export default function InventoryManager({
   setInventory, 
   role, 
   onSelectBarcode,
+  onPrintBarcodeSheet,
   shopConfig,
   onQuickBill,
   initialSearchTerm,
@@ -1440,13 +1441,26 @@ export default function InventoryManager({
                 }}
                 className="btn-secondary"
                 style={{ flex: 1, padding: '0.55rem', fontSize: '0.8rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                title="Open Studio to print full 24 or 40 barcode label sheets"
               >
-                <span>Studio Sheets ➔</span>
+                <span>Full Sheet Studio ➔</span>
               </button>
 
               <button
                 onClick={() => {
-                  window.print();
+                  if (onPrintBarcodeSheet) {
+                    onPrintBarcodeSheet({
+                      title: quickBarcodeItem.name,
+                      barcode: quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`,
+                      price: quickBarcodeItem.sellPrice,
+                      mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
+                      copies: 1,
+                      format: 'single',
+                    });
+                    setQuickBarcodeItem(null);
+                  } else {
+                    window.print();
+                  }
                 }}
                 className="btn-primary"
                 style={{ flex: 1.2, padding: '0.55rem', fontSize: '0.82rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-contrast, #FFFFFF)' }}

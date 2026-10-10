@@ -73,6 +73,9 @@ export default function InvoicesHub({
         inv.customerPhone || '',
         inv.date || '',
         inv.paymentMode || '',
+        inv.paymentRef || '',
+        inv.emiDetails ? `${inv.emiDetails.financier || ''} ${inv.emiDetails.approvalCode || ''} ${inv.emiDetails.customerAadhaar || ''} emi finance loan` : '',
+        inv.splitDetails ? `split cash ${inv.splitDetails.cashAmount || ''} upi ${inv.splitDetails.upiAmount || ''} ${inv.splitDetails.upiTxnRef || ''}` : '',
         inv.notes || '',
         inv.warrantyNotes || '',
         ...(inv.items || []).map(it => `${it.name} ${it.imeis ? it.imeis.join(' ') : ''} ${it.warranty || ''}`)
@@ -533,7 +536,44 @@ export default function InvoicesHub({
 
                       {/* Payment */}
                       <td style={{ padding: '0.75rem 0.5rem' }}>
-                        <span className="mono-tag">{inv.paymentMode}</span>
+                        {inv.emiDetails ? (
+                          <div>
+                            <span className="mono-tag" style={{ background: '#EEF2FF', color: '#4F46E5', fontWeight: 700 }}>
+                              🏷️ EMI: {inv.emiDetails.financier}
+                            </span>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                              DP: ₹{Number(inv.emiDetails.downPayment || 0).toLocaleString()} • {inv.emiDetails.tenureMonths}M @ ₹{Number(inv.emiDetails.monthlyInstallment || 0).toLocaleString()}/m
+                            </div>
+                            {inv.emiDetails.approvalCode && (
+                              <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', marginTop: '0.1rem' }}>
+                                DO #{inv.emiDetails.approvalCode}
+                              </div>
+                            )}
+                          </div>
+                        ) : inv.splitDetails ? (
+                          <div>
+                            <span className="mono-tag" style={{ background: '#ECFDF5', color: '#047857', fontWeight: 700 }}>
+                              ⚡ Split: Cash+UPI
+                            </span>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                              Cash ₹{inv.splitDetails.cashAmount?.toLocaleString()} + UPI ₹{inv.splitDetails.upiAmount?.toLocaleString()}
+                            </div>
+                            {inv.splitDetails.upiTxnRef && (
+                              <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                                UTR: {inv.splitDetails.upiTxnRef}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="mono-tag">{inv.paymentMode}</span>
+                            {inv.paymentRef && inv.paymentMode !== 'Cash' && (
+                              <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                                Ref: {inv.paymentRef}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {inv.khataDue > 0 && (
                           <div style={{ fontSize: '0.7rem', color: 'var(--status-red)', fontWeight: 700, marginTop: '0.15rem' }}>
                             Due: ₹{inv.khataDue.toLocaleString()}

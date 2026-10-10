@@ -181,6 +181,65 @@ export default function PrintTemplates({
                 <span>PAYMENT MODE:</span>
                 <span>{printData.paymentMode}</span>
               </div>
+
+              {/* Thermal EMI Details */}
+              {printData.emiDetails && (
+                <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '1.5mm 0', margin: '1.5mm 0', fontSize: '9px' }}>
+                  <div style={{ fontWeight: 'bold', textAlign: 'center', fontSize: '10px', marginBottom: '1mm' }}>
+                    *** EMI FINANCE DETAILS ***
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>FINANCIER:</span>
+                    <strong>{printData.emiDetails.financier}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>DOWN PAYMENT:</span>
+                    <span>₹{Number(printData.emiDetails.downPayment || 0).toLocaleString()} ({printData.emiDetails.downPaymentMode || 'PAID'})</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>LOAN AMOUNT:</span>
+                    <span>₹{Number(printData.emiDetails.loanAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>TENURE:</span>
+                    <span>{printData.emiDetails.tenureMonths} Months @ ₹{Number(printData.emiDetails.monthlyEmi || 0).toLocaleString()}/mo</span>
+                  </div>
+                  {printData.emiDetails.approvalCode && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>APPROVAL / DO:</span>
+                      <strong>{printData.emiDetails.approvalCode}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Thermal Split Details */}
+              {printData.splitDetails && (
+                <div style={{ borderTop: '1px dashed #000', padding: '1.5mm 0', margin: '1.5mm 0', fontSize: '9px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>CASH RECEIVED:</span>
+                    <span>₹{Number(printData.splitDetails.cashAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>ONLINE UPI:</span>
+                    <span>₹{Number(printData.splitDetails.upiAmount || 0).toLocaleString()}</span>
+                  </div>
+                  {printData.splitDetails.upiRef && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>UPI UTR:</span>
+                      <span>{printData.splitDetails.upiRef}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {printData.paymentRef && !printData.emiDetails && !printData.splitDetails && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', marginTop: '1mm' }}>
+                  <span>REF / UTR:</span>
+                  <span>{printData.paymentRef}</span>
+                </div>
+              )}
+
               {printData.khataDue > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 'bold', color: '#D00', marginTop: '1mm' }}>
                   <span>KHATA / DUE BALANCE:</span>
@@ -367,6 +426,25 @@ export default function PrintTemplates({
                   </div>
                 </div>
 
+                {/* A4 EMI Finance Sanction Details */}
+                {printData.emiDetails && (
+                  <div style={{ padding: '3mm', background: '#F0FDF4', border: '1.5px solid #16A34A', borderRadius: '4px', marginBottom: '4mm' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#15803D', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>CONSUMER FINANCE / EMI DETAILS:</span>
+                      <span style={{ background: '#DCFCE7', color: '#166534', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>SANCTIONED</span>
+                    </div>
+                    <div style={{ fontSize: '10.5px', lineHeight: 1.45 }}>
+                      <div><strong>Financier Partner:</strong> {printData.emiDetails.financier}</div>
+                      <div><strong>Down Payment Received:</strong> ₹{Number(printData.emiDetails.downPayment || 0).toLocaleString()} ({printData.emiDetails.downPaymentMode || 'PAID'})</div>
+                      <div><strong>Loan / Financed Amount:</strong> ₹{Number(printData.emiDetails.loanAmount || 0).toLocaleString()}</div>
+                      <div><strong>Tenure & Installments:</strong> {printData.emiDetails.tenureMonths} Months @ ₹{Number(printData.emiDetails.monthlyEmi || 0).toLocaleString()} / month</div>
+                      {printData.emiDetails.approvalCode && (
+                        <div><strong>Approval / DO Number:</strong> {printData.emiDetails.approvalCode}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px' }}>
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
                   <div style={{ fontSize: '11px' }}>
@@ -405,6 +483,26 @@ export default function PrintTemplates({
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #3B60C5', marginTop: '3mm', paddingTop: '2mm', fontSize: '16px', fontWeight: 800, color: '#3B60C5' }}>
                   <span>{printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:'}</span>
                   <span>₹{printData.grandTotal.toLocaleString()}</span>
+                </div>
+
+                {/* Payment Mode & Reference info */}
+                <div style={{ marginTop: '2mm', paddingTop: '2mm', borderTop: '1px dashed #DDD', fontSize: '10.5px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1px' }}>
+                    <span>Payment Mode:</span>
+                    <strong>{printData.paymentMode}</strong>
+                  </div>
+                  {printData.paymentRef && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '10px' }}>
+                      <span>Ref / UTR Number:</span>
+                      <span style={{ fontFamily: 'monospace' }}>{printData.paymentRef}</span>
+                    </div>
+                  )}
+                  {printData.khataDue > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#DC2626', fontWeight: 700, marginTop: '1px' }}>
+                      <span>Khata Balance Due:</span>
+                      <span style={{ fontFamily: 'monospace' }}>₹{printData.khataDue.toLocaleString()}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -626,42 +724,58 @@ export default function PrintTemplates({
         )}
 
         {/* ========================================================== */}
-        {/* MODE 5: BARCODE LABELS PRINT SHEET                         */}
+        {/* MODE 5: BARCODE LABELS PRINT SHEET / SINGLE STICKER        */}
         {/* ========================================================== */}
         {printMode === 'barcodes' && (
-          <div style={{ width: '210mm', minHeight: '297mm', padding: '10mm', boxSizing: 'border-box' }}>
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: printData.format === 'sheet40' ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', 
-              gap: '4mm' 
-            }}>
-              {Array.from({ length: printData.copies || 24 }).map((_, idx) => (
-                <div 
-                  key={idx}
-                  style={{
-                    border: '1px solid #CCC',
-                    borderRadius: '4px',
-                    padding: '2mm',
-                    textAlign: 'center',
-                    background: '#FFF',
-                    pageBreakInside: 'avoid'
-                  }}
-                >
-                  <div style={{ fontSize: '9px', fontWeight: 800 }}>{shopConfig.name} • BODHAN</div>
-                  <div style={{ fontSize: '8px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {printData.title}
-                  </div>
-                  <div 
-                    style={{ margin: '1mm 0' }}
-                    dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(printData.barcode, 160, 40, true) }} 
-                  />
-                  <div style={{ fontSize: '9px', fontWeight: 800 }}>
-                    ₹{printData.price} {printData.mrp ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{printData.mrp}</span> : null}
-                  </div>
-                </div>
-              ))}
+          printData.copies === 1 || printData.format === 'single' ? (
+            <div style={{ width: '50mm', minHeight: '28mm', padding: '2.5mm', boxSizing: 'border-box', textAlign: 'center', background: '#FFF' }}>
+              <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px' }}>{shopConfig.name} • BODHAN</div>
+              <div style={{ fontSize: '8.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '1px 0' }}>
+                {printData.title}
+              </div>
+              <div 
+                style={{ margin: '1.5mm 0' }}
+                dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(printData.barcode, 150, 36, true) }} 
+              />
+              <div style={{ fontSize: '10.5px', fontWeight: 900 }}>
+                ₹{Number(printData.price || 0).toLocaleString()} {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7.5px', color: '#666', marginLeft: '4px' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ width: '210mm', minHeight: '297mm', padding: '10mm', boxSizing: 'border-box' }}>
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: printData.format === 'sheet40' ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', 
+                gap: '4mm' 
+              }}>
+                {Array.from({ length: printData.copies || 24 }).map((_, idx) => (
+                  <div 
+                    key={idx}
+                    style={{
+                      border: '1px solid #CCC',
+                      borderRadius: '4px',
+                      padding: '2mm',
+                      textAlign: 'center',
+                      background: '#FFF',
+                      pageBreakInside: 'avoid'
+                    }}
+                  >
+                    <div style={{ fontSize: '9px', fontWeight: 800 }}>{shopConfig.name} • BODHAN</div>
+                    <div style={{ fontSize: '8px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {printData.title}
+                    </div>
+                    <div 
+                      style={{ margin: '1mm 0' }}
+                      dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(printData.barcode, 160, 40, true) }} 
+                    />
+                    <div style={{ fontSize: '9px', fontWeight: 800 }}>
+                      ₹{printData.price} {printData.mrp ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{printData.mrp}</span> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
         )}
 
         {/* ========================================================== */}

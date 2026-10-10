@@ -322,6 +322,7 @@ export default function App() {
             role={role}
             shopConfig={shopConfig}
             onSelectBarcode={handleSelectBarcodeFromInventory}
+            onPrintBarcodeSheet={handlePrintBarcodeSheet}
             onQuickBill={handleQuickBill}
             initialSearchTerm={inventorySearchTerm}
             onClearInitialSearchTerm={() => setInventorySearchTerm('')}
