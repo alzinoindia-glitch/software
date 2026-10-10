@@ -97,179 +97,9 @@ export default function Header({
         boxSizing: 'border-box'
       }}>
         <div className="header-content-inner">
-          {/* Left: Brand Logo & Shop Name */}
-          <div 
-            style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer' }}
-            onClick={() => setActiveTab('dashboard')}
-            title="Go to Dashboard (F1)"
-          >
-            <div style={{
-              width: '28px',
-              height: '28px',
-              background: '#A9BC5C',
-              color: '#0F251E',
-              borderRadius: 'var(--radius-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontFamily: 'var(--font-heading)',
-              fontSize: '0.95rem',
-              letterSpacing: '-0.04em'
-            }}>
-              A
-            </div>
-            <span style={{ 
-              fontFamily: 'var(--font-heading)', 
-              fontWeight: 800, 
-              fontSize: '1.12rem', 
-              letterSpacing: '-0.03em',
-              color: '#F1EFE5'
-            }}>
-              {shopConfig.name}
-            </span>
-          </div>
-
-          {/* Right: Desktop Actions (Hidden on mobile) + Main Menu (Visible on all screens) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            
-            {/* Desktop Only Actions - Hidden on mobile screen */}
-            <div className="header-desktop-actions">
-              {/* PORTAL ROLE SWITCHER BUTTON */}
-              {role === 'admin' ? (
-                <button
-                  onClick={onLockToCashier}
-                  className="btn-secondary"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.35rem 0.65rem',
-                    background: 'rgba(169, 188, 92, 0.16)',
-                    border: '1px solid #A9BC5C',
-                    color: '#F1EFE5',
-                    cursor: 'pointer',
-                    fontSize: '0.78rem',
-                    fontWeight: 700,
-                    borderRadius: 'var(--radius-sm)',
-                    transition: 'var(--transition-fast)'
-                  }}
-                  title="Active: Store Owner Admin Portal. Click to open Cashier Portal."
-                >
-                  <ShieldCheck size={14} color="#A9BC5C" />
-                  <span>👑 Admin</span>
-                  <span style={{ fontSize: '0.68rem', color: '#A9BC5C', marginLeft: '0.1rem' }}>Open Cashier ➔</span>
-                </button>
-              ) : (
-                <button
-                  onClick={onOpenAdminAuth}
-                  className="btn-secondary"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.35rem 0.65rem',
-                    background: 'rgba(234, 179, 8, 0.22)',
-                    border: '1.5px solid #EAB308',
-                    color: '#FEF08A',
-                    cursor: 'pointer',
-                    fontSize: '0.78rem',
-                    fontWeight: 800,
-                    borderRadius: 'var(--radius-sm)',
-                    animation: 'pulse 2s infinite',
-                    transition: 'var(--transition-fast)'
-                  }}
-                  title="Active: Cashier Portal. Click to open Admin Portal."
-                >
-                  <Lock size={14} color="#EAB308" />
-                  <span>👤 Cashier</span>
-                  <span style={{ fontSize: '0.68rem', color: '#FEF08A', marginLeft: '0.1rem' }}>Open Admin ➔</span>
-                </button>
-              )}
-
-              {/* Quick Search */}
-              <button 
-                onClick={openSearch}
-                className="btn-secondary"
-                title="Global Search (Press ⌘K or F8)"
-                style={{ 
-                  padding: '0.35rem 0.65rem', 
-                  fontSize: '0.78rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  background: 'rgba(241, 239, 229, 0.08)',
-                  border: '1px solid rgba(210, 222, 216, 0.2)',
-                  color: '#F1EFE5'
-                }}
-              >
-                <Search size={13} color="#A9BC5C" />
-                <span style={{ color: 'rgba(241, 239, 229, 0.85)' }}>Search</span>
-                <kbd style={{ 
-                  background: 'rgba(241, 239, 229, 0.12)', 
-                  padding: '0.05rem 0.3rem', 
-                  borderRadius: '3px', 
-                  fontSize: '0.68rem',
-                  fontFamily: 'var(--font-mono)',
-                  border: '1px solid rgba(210, 222, 216, 0.2)',
-                  color: 'rgba(241, 239, 229, 0.7)'
-                }}>⌘K</kbd>
-              </button>
-
-              {/* Quick Tools & Bench Drawer in Header */}
-              <button 
-                onClick={openPullout}
-                className="btn-secondary"
-                style={{ 
-                  padding: '0.35rem 0.55rem',
-                  background: 'rgba(241, 239, 229, 0.08)',
-                  border: '1px solid rgba(210, 222, 216, 0.2)',
-                  color: '#F1EFE5'
-                }}
-                title="Quick Tools & Bench Drawer"
-              >
-                <SlidersHorizontal size={14} color="#A9BC5C" />
-              </button>
-
-              {/* Theme Switcher */}
-              <button 
-                onClick={toggleTheme}
-                className="btn-secondary"
-                style={{ 
-                  padding: '0.35rem 0.55rem',
-                  background: 'rgba(241, 239, 229, 0.08)',
-                  border: '1px solid rgba(210, 222, 216, 0.2)',
-                  color: '#F1EFE5'
-                }}
-                title={theme === 'cream' ? 'Switch to Dark Mode' : 'Switch to Warm Mode'}
-              >
-                {theme === 'cream' ? <Moon size={14} color="#F1EFE5" /> : <Sun size={14} color="#A9BC5C" />}
-              </button>
-
-              {/* Settings Icon Only in Header */}
-              <button 
-                onClick={() => {
-                  if (role === 'admin') {
-                    setActiveTab('settings');
-                  } else {
-                    onOpenAdminAuth();
-                  }
-                }}
-                className="btn-secondary"
-                style={{ 
-                  padding: '0.35rem 0.55rem',
-                  border: activeTab === 'settings' ? '1px solid #A9BC5C' : '1px solid rgba(210, 222, 216, 0.2)',
-                  background: activeTab === 'settings' ? '#A9BC5C' : 'rgba(241, 239, 229, 0.08)',
-                  color: activeTab === 'settings' ? '#0F251E' : '#F1EFE5',
-                  cursor: 'pointer'
-                }}
-                title={role === 'admin' ? "Shop Settings & Backup" : "Shop Settings (Requires Google Authenticator)"}
-              >
-                <Settings size={14} color={activeTab === 'settings' ? '#0F251E' : '#F1EFE5'} />
-              </button>
-            </div>
-
-            {/* 3 Lines Hamburger Main Menu Button (Visible in Desktop & Mobile) */}
+          {/* Left: Main Menu Button + Brand Logo & Shop Name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            {/* 3 Lines Hamburger Main Menu Button (On the Left!) */}
             <button
               onClick={() => setMenuOpen(!menuOpen)}
               className="btn-secondary main-menu-btn"
@@ -301,6 +131,71 @@ export default function Header({
               }}>M</kbd>
             </button>
 
+            {/* Brand Logo & Shop Name */}
+            <div 
+              style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer' }}
+              onClick={() => setActiveTab('dashboard')}
+              title="Go to Dashboard (F1)"
+            >
+              <div style={{
+                width: '28px',
+                height: '28px',
+                background: '#A9BC5C',
+                color: '#0F251E',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontFamily: 'var(--font-heading)',
+                fontSize: '0.95rem',
+                letterSpacing: '-0.04em'
+              }}>
+                A
+              </div>
+              <span style={{ 
+                fontFamily: 'var(--font-heading)', 
+                fontWeight: 800, 
+                fontSize: '1.12rem', 
+                letterSpacing: '-0.03em',
+                color: '#F1EFE5'
+              }}>
+                {shopConfig.name}
+              </span>
+            </div>
+          </div>
+
+          {/* Right: ONLY Global Search! */}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button 
+              onClick={openSearch}
+              className="btn-secondary"
+              title="Global Search (Press ⌘K or F8)"
+              style={{ 
+                padding: '0.38rem 0.75rem', 
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: 'rgba(241, 239, 229, 0.08)',
+                border: '1px solid rgba(210, 222, 216, 0.22)',
+                color: '#F1EFE5',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <Search size={14} color="#A9BC5C" />
+              <span className="hide-on-mobile" style={{ color: 'rgba(241, 239, 229, 0.9)', fontWeight: 600 }}>Search</span>
+              <kbd className="hide-on-mobile" style={{ 
+                background: 'rgba(241, 239, 229, 0.12)', 
+                padding: '0.05rem 0.35rem', 
+                borderRadius: '3px', 
+                fontSize: '0.68rem',
+                fontFamily: 'var(--font-mono)',
+                border: '1px solid rgba(210, 222, 216, 0.2)',
+                color: 'rgba(241, 239, 229, 0.75)'
+              }}>⌘K</kbd>
+            </button>
           </div>
         </div>
       </header>
