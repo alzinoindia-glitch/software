@@ -348,27 +348,35 @@ export default function InventoryManager({
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button 
-            onClick={() => {
-              if (inventory.length > 0) handleOpenTransfer(inventory[0]);
-            }}
-            className="btn-secondary"
-            style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}
-          >
-            <ArrowRightLeft size={15} />
-            <span>Stock Transfer (Rack/Bin)</span>
-          </button>
+        {role === 'admin' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button 
+              onClick={() => {
+                if (inventory.length > 0) handleOpenTransfer(inventory[0]);
+              }}
+              className="btn-secondary"
+              style={{ padding: '0.45rem 0.85rem', fontSize: '0.82rem' }}
+            >
+              <ArrowRightLeft size={15} />
+              <span>Stock Transfer (Rack/Bin)</span>
+            </button>
 
-          <button 
-            onClick={openAddModal}
-            className="btn-primary"
-            style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
-          >
-            <Plus size={15} />
-            <span>New Product</span>
-          </button>
-        </div>
+            <button 
+              onClick={openAddModal}
+              className="btn-primary"
+              style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
+            >
+              <Plus size={15} />
+              <span>New Product</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="mono-tag" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#AC7C20', fontWeight: 800 }}>
+              👁️ Staff Price & Location Lookup (Read-Only)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Unified Minimalist Filter Bar */}
@@ -658,15 +666,17 @@ export default function InventoryManager({
                           </button>
                         )}
 
-                        {/* Stock Transfer (Rack/Bin Move) */}
-                        <button
-                          onClick={() => handleOpenTransfer(item)}
-                          className="btn-outline"
-                          style={{ padding: '0.35rem 0.5rem' }}
-                          title="Transfer Stock to another Rack / Bin"
-                        >
-                          <ArrowRightLeft size={14} />
-                        </button>
+                        {/* Stock Transfer (Rack/Bin Move) - Admin Only */}
+                        {role === 'admin' && (
+                          <button
+                            onClick={() => handleOpenTransfer(item)}
+                            className="btn-outline"
+                            style={{ padding: '0.35rem 0.5rem' }}
+                            title="Transfer Stock to another Rack / Bin"
+                          >
+                            <ArrowRightLeft size={14} />
+                          </button>
+                        )}
 
                         <button
                           onClick={() => onSelectBarcode(item)}
@@ -677,23 +687,28 @@ export default function InventoryManager({
                           <Barcode size={14} color="var(--accent-primary)" />
                         </button>
 
-                        <button
-                          onClick={() => openEditModal(item)}
-                          className="btn-outline"
-                          style={{ padding: '0.35rem 0.5rem' }}
-                          title="Edit Item"
-                        >
-                          <Edit3 size={14} />
-                        </button>
+                        {/* Edit & Delete - Admin Only */}
+                        {role === 'admin' && (
+                          <>
+                            <button
+                              onClick={() => openEditModal(item)}
+                              className="btn-outline"
+                              style={{ padding: '0.35rem 0.5rem' }}
+                              title="Edit Item"
+                            >
+                              <Edit3 size={14} />
+                            </button>
 
-                        <button
-                          onClick={() => handleDelete(item.id, item.name)}
-                          className="btn-outline"
-                          style={{ padding: '0.35rem 0.5rem', color: 'var(--status-red)' }}
-                          title="Delete Item"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                            <button
+                              onClick={() => handleDelete(item.id, item.name)}
+                              className="btn-outline"
+                              style={{ padding: '0.35rem 0.5rem', color: 'var(--status-red)' }}
+                              title="Delete Item"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -17,7 +17,10 @@ import {
   Sun, 
   Moon,
   FileText,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck,
+  Lock,
+  Key
 } from 'lucide-react';
 
 export default function Header({ 
@@ -30,7 +33,10 @@ export default function Header({
   lowStockCount,
   pendingRepairsCount,
   invoicesCount,
-  shopConfig
+  shopConfig,
+  role = 'admin',
+  onLockToCashier = () => {},
+  onOpenAdminAuth = () => {}
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -48,7 +54,7 @@ export default function Header({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [menuOpen]);
 
-  const navItems = [
+  const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hotkey: 'F1' },
     { id: 'pos', label: 'POS Billing', icon: ShoppingCart, hotkey: 'F2' },
     { id: 'inventory', label: 'Stock & IMEIs', icon: Package, count: 5, alert: lowStockCount > 0 },
@@ -61,6 +67,14 @@ export default function Header({
     { id: 'reports', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  const cashierNavItems = [
+    { id: 'pos', label: 'POS Billing Counter', icon: ShoppingCart, hotkey: 'F2' },
+    { id: 'repairs', label: 'Repairs (Intake & Delivery)', icon: Wrench, count: pendingRepairsCount, hotkey: 'F5' },
+    { id: 'inventory', label: 'Stock & Price Lookup', icon: Package, alert: lowStockCount > 0 },
+  ];
+
+  const navItems = role === 'cashier' ? cashierNavItems : allNavItems;
 
   const handleSelectTab = (id) => {
     setActiveTab(id);
@@ -151,6 +165,59 @@ export default function Header({
 
           {/* Right Actions: Minimalist & Clean */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            
+            {/* PORTAL ROLE SWITCHER BUTTON */}
+            {role === 'admin' ? (
+              <button
+                onClick={onLockToCashier}
+                className="btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.35rem 0.65rem',
+                  background: 'rgba(169, 188, 92, 0.16)',
+                  border: '1px solid #A9BC5C',
+                  color: '#F1EFE5',
+                  cursor: 'pointer',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-sm)',
+                  transition: 'var(--transition-fast)'
+                }}
+                title="Active: Store Owner Admin Portal. Click to lock down into Cashier Portal."
+              >
+                <ShieldCheck size={14} color="#A9BC5C" />
+                <span className="hide-on-mobile">👑 Admin</span>
+                <span style={{ fontSize: '0.68rem', color: '#A9BC5C', marginLeft: '0.1rem' }}>🔒 Lock</span>
+              </button>
+            ) : (
+              <button
+                onClick={onOpenAdminAuth}
+                className="btn-secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.35rem 0.65rem',
+                  background: 'rgba(234, 179, 8, 0.22)',
+                  border: '1.5px solid #EAB308',
+                  color: '#FEF08A',
+                  cursor: 'pointer',
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  borderRadius: 'var(--radius-sm)',
+                  animation: 'pulse 2s infinite',
+                  transition: 'var(--transition-fast)'
+                }}
+                title="Active: Limited Cashier Counter Mode. Click to unlock Admin Portal using PIN or Google Authenticator."
+              >
+                <Lock size={14} color="#EAB308" />
+                <span>👤 Cashier</span>
+                <span style={{ fontSize: '0.68rem', color: '#FEF08A', marginLeft: '0.1rem' }}>🔑 Unlock</span>
+              </button>
+            )}
+
             {/* Quick Search */}
             <button 
               onClick={openSearch}
@@ -212,7 +279,13 @@ export default function Header({
 
             {/* Settings Icon Only in Header */}
             <button 
-              onClick={() => setActiveTab('settings')}
+              onClick={() => {
+                if (role === 'admin') {
+                  setActiveTab('settings');
+                } else {
+                  onOpenAdminAuth();
+                }
+              }}
               className="btn-secondary"
               style={{ 
                 padding: '0.35rem 0.55rem',
@@ -221,7 +294,7 @@ export default function Header({
                 color: activeTab === 'settings' ? '#0F251E' : '#F1EFE5',
                 cursor: 'pointer'
               }}
-              title="Shop Settings & Backup"
+              title={role === 'admin' ? "Shop Settings & Backup" : "Shop Settings (Requires Admin PIN)"}
             >
               <Settings size={14} color={activeTab === 'settings' ? '#0F251E' : '#F1EFE5'} />
             </button>
@@ -269,8 +342,8 @@ export default function Header({
                   <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', lineHeight: 1.1, color: '#F1EFE5' }}>
                     {shopConfig.name}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: '#A9BC5C', fontFamily: 'var(--font-mono)' }}>
-                    Retail ERP · Admin Portal · Bodhan
+                  <div style={{ fontSize: '0.7rem', color: role === 'cashier' ? '#FEF08A' : '#A9BC5C', fontFamily: 'var(--font-mono)' }}>
+                    {role === 'cashier' ? '👤 Cashier Counter Mode · Bodhan' : '👑 Retail ERP · Admin Portal · Bodhan'}
                   </div>
                 </div>
               </div>
@@ -295,6 +368,55 @@ export default function Header({
               </button>
             </div>
 
+            {/* Role Switcher Action Inside Drawer */}
+            <div style={{ padding: '0.65rem 0.85rem 0 0.85rem', background: '#0F251E' }}>
+              {role === 'cashier' ? (
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenAdminAuth(); }}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'linear-gradient(135deg, #EAB308, #CA8A04)',
+                    color: '#0F251E',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '0.82rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Key size={15} />
+                  <span>Unlock Admin Portal (PIN / 2FA)</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setMenuOpen(false); onLockToCashier(); }}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.85rem',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(241, 239, 229, 0.08)',
+                    color: '#F1EFE5',
+                    border: '1px solid rgba(210, 222, 216, 0.2)',
+                    fontWeight: 700,
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Lock size={14} color="#A9BC5C" />
+                  <span>Lock into Cashier Mode</span>
+                </button>
+              )}
+            </div>
+
             {/* Menu Items List */}
             <div style={{
               flex: 1,
@@ -314,7 +436,7 @@ export default function Header({
                 padding: '0.35rem 0.6rem',
                 fontWeight: 700,
               }}>
-                Main Modules
+                {role === 'cashier' ? 'Cashier Allowed Modules' : 'Main Modules'}
               </div>
 
               {navItems.map((item) => {
@@ -448,13 +570,15 @@ export default function Header({
           <span>Stock</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('used-phones')}
-          className={`mobile-bottom-item ${activeTab === 'used-phones' ? 'active' : ''}`}
-        >
-          <Smartphone size={18} />
-          <span>Used</span>
-        </button>
+        {role === 'admin' && (
+          <button
+            onClick={() => setActiveTab('used-phones')}
+            className={`mobile-bottom-item ${activeTab === 'used-phones' ? 'active' : ''}`}
+          >
+            <Smartphone size={18} />
+            <span>Used</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('repairs')}
@@ -469,18 +593,29 @@ export default function Header({
           <span>Repairs</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('invoices')}
-          className={`mobile-bottom-item ${activeTab === 'invoices' ? 'active' : ''}`}
-        >
-          <div style={{ position: 'relative', display: 'inline-flex' }}>
-            <FileText size={18} />
-            {invoicesCount > 0 && (
-              <span className="mobile-nav-badge">{invoicesCount}</span>
-            )}
-          </div>
-          <span>Invoices</span>
-        </button>
+        {role === 'admin' ? (
+          <button
+            onClick={() => setActiveTab('invoices')}
+            className={`mobile-bottom-item ${activeTab === 'invoices' ? 'active' : ''}`}
+          >
+            <div style={{ position: 'relative', display: 'inline-flex' }}>
+              <FileText size={18} />
+              {invoicesCount > 0 && (
+                <span className="mobile-nav-badge">{invoicesCount}</span>
+              )}
+            </div>
+            <span>Invoices</span>
+          </button>
+        ) : (
+          <button
+            onClick={onOpenAdminAuth}
+            className="mobile-bottom-item"
+            style={{ color: '#EAB308' }}
+          >
+            <Lock size={18} color="#EAB308" />
+            <span>Admin</span>
+          </button>
+        )}
 
         <button
           onClick={() => setMenuOpen(!menuOpen)}

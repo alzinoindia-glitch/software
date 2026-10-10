@@ -34,7 +34,8 @@ export default function RepairLab({
   setInventory = () => {},
   shopConfig = {}, 
   onPrintRepairSlip = () => {},
-  onPrintInvoice = () => {}
+  onPrintInvoice = () => {},
+  role = 'admin'
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');

@@ -18,7 +18,13 @@ import {
   FolderCheck,
   Cpu,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Lock,
+  Smartphone,
+  Key,
+  Copy,
+  Check,
+  QrCode
 } from 'lucide-react';
 import { 
   defaultShopConfig, 
@@ -36,6 +42,11 @@ import {
   isFileSystemAccessSupported,
   FastCustomerSearchEngine
 } from '../utils/syncAndStorageEngine';
+import {
+  generateBase32Secret,
+  getOtpAuthUri,
+  verifyTotpToken
+} from '../utils/totp';
 
 export default function SettingsBackup({ 
   shopConfig, 
@@ -76,6 +87,14 @@ export default function SettingsBackup({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSpeedMs, setSearchSpeedMs] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
+
+  // 2FA Authenticator Setup state
+  const [totpSecret, setTotpSecret] = useState(() => {
+    return localStorage.getItem('ALZINO_ERP_TOTP_SECRET') || generateBase32Secret(16);
+  });
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [testTotpCode, setTestTotpCode] = useState('');
+  const [testTotpResult, setTestTotpResult] = useState(null);
 
   // Listen to Online/Offline Events
   useEffect(() => {
@@ -408,6 +427,153 @@ export default function SettingsBackup({
                   style={{ display: 'none' }}
                 />
               </label>
+            </div>
+          </div>
+
+          {/* Multi-Portal Security & 2FA Authenticator Setup */}
+          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--accent-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Shield size={18} color="var(--accent-primary)" />
+                <h3 style={{ fontSize: '1.1rem', margin: 0 }}>Multi-Portal Security (Admin vs Cashier)</h3>
+              </div>
+              <span className="mono-tag" style={{
+                background: role === 'admin' ? 'var(--illoca-blue-subtle)' : 'var(--status-amber-bg)',
+                color: role === 'admin' ? 'var(--accent-primary)' : 'var(--status-amber)',
+                fontWeight: 800
+              }}>
+                {role === 'admin' ? '👑 Admin Mode Active' : '👤 Cashier Mode Active'}
+              </span>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
+              When the store owner is away from the counter, lock the terminal into <strong>Cashier Mode</strong>. Staff can only do POS billing, receive repair jobs, and check prices. Sensitive profit margins, supplier payables, and shop settings are protected.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              {role === 'admin' ? (
+                <button
+                  type="button"
+                  onClick={() => setRole('cashier')}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                >
+                  <Lock size={14} color="var(--status-amber)" />
+                  <span>Lock Terminal to Cashier Mode</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRole('admin')}
+                  className="btn-primary"
+                  style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                >
+                  <Key size={14} />
+                  <span>Elevate to Admin Mode</span>
+                </button>
+              )}
+            </div>
+
+            {/* Authenticator Setup Sub-box */}
+            <div style={{
+              background: 'var(--surface-primary)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-color)',
+              padding: '0.85rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.45rem' }}>
+                <Smartphone size={16} color="var(--accent-primary)" />
+                <strong style={{ fontSize: '0.82rem' }}>Google / Microsoft Authenticator (2FA TOTP)</strong>
+              </div>
+              <p style={{ margin: '0 0 0.65rem 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                100% offline two-factor authentication. Works without internet on Google Authenticator or Microsoft Authenticator.
+              </p>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                <div style={{ background: '#FFFFFF', padding: '0.35rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(getOtpAuthUri(totpSecret, `${shopConfig.phone || 'admin'}@alzino`, shopConfig.name || 'ALZINO'))}&margin=1`}
+                    alt="2FA QR Code"
+                    style={{ width: '90px', height: '90px', display: 'block' }}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Setup Secret Key:</div>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 800,
+                    fontSize: '0.88rem',
+                    background: 'var(--surface-card)',
+                    padding: '0.35rem 0.6rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '0.4rem'
+                  }}>
+                    <span>{totpSecret}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(totpSecret);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 2000);
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: 'var(--accent-primary)' }}
+                    >
+                      {copiedKey ? <Check size={14} color="var(--status-green)" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Generate a new Authenticator secret key? You will need to re-scan the QR.')) {
+                        const fresh = generateBase32Secret(16);
+                        setTotpSecret(fresh);
+                        localStorage.setItem('ALZINO_ERP_TOTP_SECRET', fresh);
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.68rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    Regenerate 2FA Secret Key
+                  </button>
+                </div>
+              </div>
+
+              {/* Test Token Input */}
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <input
+                  type="text"
+                  placeholder="Test 6-digit code"
+                  value={testTotpCode}
+                  maxLength={6}
+                  onChange={(e) => setTestTotpCode(e.target.value.replace(/\D/g, ''))}
+                  className="input-field"
+                  style={{ width: '130px', height: '30px', fontSize: '0.8rem', textAlign: 'center', letterSpacing: '0.15em' }}
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const valid = await verifyTotpToken(testTotpCode, totpSecret);
+                    setTestTotpResult(valid);
+                  }}
+                  className="btn-secondary"
+                  style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem', height: '30px' }}
+                >
+                  Verify Test
+                </button>
+                {testTotpResult === true && (
+                  <span style={{ fontSize: '0.74rem', color: 'var(--status-green)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                    <CheckCircle2 size={13} /> Code Matches!
+                  </span>
+                )}
+                {testTotpResult === false && (
+                  <span style={{ fontSize: '0.74rem', color: 'var(--status-red)', fontWeight: 700 }}>
+                    ✕ Invalid Code
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

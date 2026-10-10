@@ -14,6 +14,8 @@ import SettingsBackup from './components/SettingsBackup';
 import IllocaPulloutDrawer from './components/IllocaPulloutDrawer';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import PrintTemplates from './components/PrintTemplates';
+import AdminAuthModal from './components/AdminAuthModal';
+import { Lock, ShieldCheck, Key } from 'lucide-react';
 
 import {
   defaultShopConfig,
@@ -30,10 +32,14 @@ import {
 } from './data/initialData';
 
 export default function App() {
-  // Theme State & Admin Portal Mode
+  // Theme State & Portal Role Mode ('admin' | 'cashier')
   const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
-  const [role, setRole] = useState('admin'); // Permanent Admin Portal
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [role, setRole] = useState(() => getStorageData('ROLE', 'admin')); // 'admin' | 'cashier'
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedRole = getStorageData('ROLE', 'admin');
+    return savedRole === 'cashier' ? 'pos' : 'dashboard';
+  });
 
   // Core Persistent Data States
   const [shopConfig, setShopConfig] = useState(() => getStorageData('SHOP_CONFIG', defaultShopConfig));
@@ -57,6 +63,7 @@ export default function App() {
 
   // Save to LocalStorage whenever state changes
   useEffect(() => { setStorageData('THEME', theme); }, [theme]);
+  useEffect(() => { setStorageData('ROLE', role); }, [role]);
   useEffect(() => { setStorageData('SHOP_CONFIG', shopConfig); }, [shopConfig]);
   useEffect(() => { setStorageData('INVENTORY', inventory); }, [inventory]);
   useEffect(() => { setStorageData('USED_PURCHASES', usedPurchases); }, [usedPurchases]);
@@ -66,6 +73,27 @@ export default function App() {
   useEffect(() => { setStorageData('EXPENSES', expenses); }, [expenses]);
   useEffect(() => { setStorageData('INVOICES', invoices); }, [invoices]);
   useEffect(() => { setStorageData('WARRANTY_CLAIMS', warrantyClaims); }, [warrantyClaims]);
+
+  // Enforce Cashier Access Control: Cashier can ONLY access 'pos', 'repairs', 'inventory'
+  useEffect(() => {
+    if (role === 'cashier' && !['pos', 'repairs', 'inventory'].includes(activeTab)) {
+      setActiveTab('pos');
+    }
+  }, [role, activeTab]);
+
+  // Role Switcher Actions
+  const handleLockToCashier = () => {
+    setRole('cashier');
+    setActiveTab('pos');
+  };
+
+  const handleOpenAdminAuth = () => {
+    setIsAdminAuthModalOpen(true);
+  };
+
+  const handleAdminAuthSuccess = () => {
+    setRole('admin');
+  };
 
   // Apply theme class to <body>
   useEffect(() => {
@@ -83,27 +111,39 @@ export default function App() {
         e.preventDefault();
         setIsSearchOpen(prev => !prev);
       } else if (e.key === 'F1') {
-        e.preventDefault();
-        setActiveTab('dashboard');
+        if (role === 'admin') {
+          e.preventDefault();
+          setActiveTab('dashboard');
+        }
       } else if (e.key === 'F2') {
         e.preventDefault();
         setActiveTab('pos');
       } else if (e.key === 'F4') {
-        e.preventDefault();
-        setActiveTab('used-phones');
+        if (role === 'admin') {
+          e.preventDefault();
+          setActiveTab('used-phones');
+        }
       } else if (e.key === 'F5') {
         e.preventDefault();
         setActiveTab('repairs');
+      } else if (e.key === 'F12') {
+        e.preventDefault();
+        if (role === 'admin') {
+          handleLockToCashier();
+        } else {
+          handleOpenAdminAuth();
+        }
       } else if (e.key === 'Escape') {
         setIsSearchOpen(false);
         setIsPulloutOpen(false);
+        setIsAdminAuthModalOpen(false);
         setPrintData(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [role]);
 
   // Theme Toggle
   const toggleTheme = () => {
@@ -174,11 +214,66 @@ export default function App() {
         pendingRepairsCount={pendingRepairsCount}
         invoicesCount={invoices.length}
         shopConfig={shopConfig}
+        role={role}
+        onLockToCashier={handleLockToCashier}
+        onOpenAdminAuth={handleOpenAdminAuth}
       />
+
+      {/* Cashier Mode Alert Banner */}
+      {role === 'cashier' && (
+        <div className="no-print" style={{
+          background: 'linear-gradient(90deg, #152E24, #0F251E)',
+          borderBottom: '2px solid #EAB308',
+          padding: '0.55rem 1.25rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#F1EFE5',
+          fontSize: '0.8rem',
+          flexWrap: 'wrap',
+          gap: '0.5rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ 
+              background: '#EAB308', 
+              color: '#0F251E', 
+              fontWeight: 800, 
+              padding: '0.15rem 0.55rem', 
+              borderRadius: '999px',
+              fontSize: '0.7rem',
+              letterSpacing: '0.04em'
+            }}>
+              CASHIER PORTAL ACTIVE
+            </span>
+            <span style={{ color: 'rgba(241, 239, 229, 0.9)' }}>
+              Limited counter mode: POS Billing, Device Repairs & Stock Check enabled. Financial analytics and shop settings are secured.
+            </span>
+          </div>
+          <button
+            onClick={handleOpenAdminAuth}
+            className="btn-primary"
+            style={{
+              padding: '0.35rem 0.85rem',
+              fontSize: '0.78rem',
+              background: '#EAB308',
+              color: '#0F251E',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            <Lock size={13} />
+            <span>Switch to Admin Portal (PIN / 2FA)</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Tab Content */}
       <main style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-        {activeTab === 'dashboard' && (
+        {activeTab === 'dashboard' && role === 'admin' && (
           <ExecutiveDashboard
             invoices={invoices}
             inventory={inventory}
@@ -206,7 +301,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'used-phones' && (
+        {activeTab === 'used-phones' && role === 'admin' && (
           <UsedMobileModule
             usedPurchases={usedPurchases}
             setUsedPurchases={setUsedPurchases}
@@ -233,6 +328,7 @@ export default function App() {
             inventory={inventory}
             setInventory={setInventory}
             shopConfig={shopConfig}
+            role={role}
             onPrintRepairSlip={handlePrintRepairSlip}
             onPrintInvoice={handlePrintInvoice}
           />
@@ -248,7 +344,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'invoices' && (
+        {activeTab === 'invoices' && role === 'admin' && (
           <InvoicesHub
             invoices={invoices}
             setInvoices={setInvoices}
@@ -259,7 +355,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'barcodes' && (
+        {activeTab === 'barcodes' && role === 'admin' && (
           <BarcodeGenerator
             inventory={inventory}
             selectedItemForBarcode={selectedItemForBarcode}
@@ -268,7 +364,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'khata' && (
+        {activeTab === 'khata' && role === 'admin' && (
           <CustomerKhata
             customers={customers}
             setCustomers={setCustomers}
@@ -279,7 +375,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'expenses' && (
+        {activeTab === 'expenses' && role === 'admin' && (
           <ExpenseSupplier
             expenses={expenses}
             setExpenses={setExpenses}
@@ -291,7 +387,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'reports' && (
+        {activeTab === 'reports' && role === 'admin' && (
           <AnalyticsReports
             invoices={invoices}
             expenses={expenses}
@@ -306,7 +402,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === 'settings' && role === 'admin' && (
           <SettingsBackup
             shopConfig={shopConfig}
             setShopConfig={setShopConfig}
@@ -363,6 +459,15 @@ export default function App() {
           onClosePrint={() => setPrintData(null)}
         />
       )}
+
+      {/* Admin Authentication Modal (Master PIN or Google / Microsoft Authenticator 2FA) */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => setIsAdminAuthModalOpen(false)}
+        onSuccess={handleAdminAuthSuccess}
+        shopConfig={shopConfig}
+        currentRole={role}
+      />
 
       {/* Minimal Footer */}
       <footer className="no-print" style={{

@@ -671,27 +671,29 @@ export default function PosBilling({
             <span>Active Billing Counter ({cart.length})</span>
           </button>
 
-          <button
-            onClick={() => setActivePosTab('invoices')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '0.8rem',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: activePosTab === 'invoices' ? 700 : 500,
-              background: activePosTab === 'invoices' ? 'var(--accent-primary)' : 'var(--surface-primary)',
-              color: activePosTab === 'invoices' ? '#FFFFFF' : 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              transition: 'var(--transition-smooth)'
-            }}
-          >
-            <History size={14} />
-            <span>Manage & Edit Invoices ({invoices.length})</span>
-          </button>
+          {role === 'admin' && (
+            <button
+              onClick={() => setActivePosTab('invoices')}
+              style={{
+                padding: '0.4rem 0.85rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.8rem',
+                fontFamily: 'var(--font-heading)',
+                fontWeight: activePosTab === 'invoices' ? 700 : 500,
+                background: activePosTab === 'invoices' ? 'var(--accent-primary)' : 'var(--surface-primary)',
+                color: activePosTab === 'invoices' ? '#FFFFFF' : 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'var(--transition-smooth)'
+              }}
+            >
+              <History size={14} />
+              <span>Manage & Edit Invoices ({invoices.length})</span>
+            </button>
+          )}
         </div>
       </div>
 
