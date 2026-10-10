@@ -424,7 +424,7 @@ export default function InventoryManager({
             letterSpacing: '0.04em',
             color: 'var(--text-primary)'
           }}>
-            STOCK HUD
+            STOCK HUB
           </span>
           <span style={{
             fontSize: '0.62rem',

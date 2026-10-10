@@ -523,7 +523,7 @@ export default function ExecutiveDashboard({
                           onClick={() => onOpenProductInventory && onOpenProductInventory(item)}
                           className="btn-primary"
                           style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
-                          title="View Product in Stock HUD"
+                          title="View Product in Stock Hub"
                         >
                           View Stock
                         </button>
