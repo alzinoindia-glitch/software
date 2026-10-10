@@ -69,6 +69,15 @@ export default function App() {
     setActiveTab('pos');
   };
 
+  // Inventory targeted search term (when tapped from Low Stock alert)
+  const [inventorySearchTerm, setInventorySearchTerm] = useState('');
+
+  const handleOpenProductInventory = (product) => {
+    setInventorySearchTerm(product.name || product.id || '');
+    setActiveTab('inventory');
+    setIsPulloutOpen(false);
+  };
+
   // Save to LocalStorage whenever state changes
   useEffect(() => { setStorageData('THEME', theme); }, [theme]);
   useEffect(() => { setStorageData('ROLE', role); }, [role]);
@@ -240,6 +249,7 @@ export default function App() {
             setWarrantyClaims={setWarrantyClaims}
             shopConfig={shopConfig}
             setActiveTab={setActiveTab}
+            onOpenProductInventory={handleOpenProductInventory}
           />
         )}
 
@@ -300,6 +310,8 @@ export default function App() {
             shopConfig={shopConfig}
             onSelectBarcode={handleSelectBarcodeFromInventory}
             onQuickBill={handleQuickBill}
+            initialSearchTerm={inventorySearchTerm}
+            onClearInitialSearchTerm={() => setInventorySearchTerm('')}
           />
         )}
 
@@ -395,6 +407,7 @@ export default function App() {
           setIsPulloutOpen(false);
           setActiveTab('pos');
         }}
+        onOpenProductInventory={handleOpenProductInventory}
       />
 
       {/* Universal Search Modal (Cmd+K / F8) */}

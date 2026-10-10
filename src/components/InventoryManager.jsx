@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Package, 
   Plus, 
@@ -48,17 +48,29 @@ export default function InventoryManager({
   role, 
   onSelectBarcode,
   shopConfig,
-  onQuickBill
+  onQuickBill,
+  initialSearchTerm,
+  onClearInitialSearchTerm
 }) {
   // View mode: 'cards' | 'table'
   const [viewMode, setViewMode] = useState('cards');
 
   // Fast Filters
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [brandFilter, setBrandFilter] = useState('All');
   const [stockFilter, setStockFilter] = useState('all'); // 'all' | 'in-stock' | 'low' | 'out'
   const [sortBy, setSortBy] = useState('default');
+
+  // Synchronize when opened from Low Stock Alert Board or external trigger
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+      setCategoryFilter('All');
+      setBrandFilter('All');
+      setStockFilter('all');
+    }
+  }, [initialSearchTerm]);
   
   // Interactive copy state
   const [copiedId, setCopiedId] = useState(null);
@@ -445,7 +457,10 @@ export default function InventoryManager({
           />
           {searchTerm && (
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => {
+                setSearchTerm('');
+                if (onClearInitialSearchTerm) onClearInitialSearchTerm();
+              }}
               style={{
                 position: 'absolute',
                 right: '8px',

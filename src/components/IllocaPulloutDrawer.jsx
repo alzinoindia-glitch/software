@@ -10,7 +10,8 @@ import {
   CheckCircle2, 
   Search,
   IndianRupee,
-  Layers
+  Layers,
+  ArrowUpRight
 } from 'lucide-react';
 import { getUpiQrUrl, renderBarcodeSvg } from '../utils/barcode';
 
@@ -19,7 +20,8 @@ export default function IllocaPulloutDrawer({
   onClose, 
   inventory, 
   shopConfig, 
-  onSelectProduct 
+  onSelectProduct,
+  onOpenProductInventory
 }) {
   const [activeTool, setActiveTool] = useState('scanner'); // scanner | margin | upi | lowstock | shortcuts
   
@@ -396,28 +398,39 @@ export default function IllocaPulloutDrawer({
                   {lowStockItems.map(item => (
                     <div 
                       key={item.id}
+                      onClick={() => onOpenProductInventory && onOpenProductInventory(item)}
                       style={{
-                        padding: '0.75rem',
+                        padding: '0.75rem 0.85rem',
                         borderRadius: 'var(--radius-sm)',
                         background: 'var(--surface-card)',
-                        border: '1px solid var(--status-amber)',
+                        border: '1.5px solid var(--status-amber)',
                         display: 'flex',
                         justifyContent: 'space-between',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
                       }}
+                      className="hud-card"
+                      title="Tap to view in Stock & Inventory"
                     >
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{item.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                          {item.brand} • Selling: ₹{item.sellPrice}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span>{item.name}</span>
+                            <ArrowUpRight size={13} color="var(--accent-primary)" />
+                          </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            {item.brand} • Selling: ₹{item.sellPrice?.toLocaleString?.() || item.sellPrice}
+                          </div>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <span style={{ 
                           fontFamily: 'var(--font-mono)', 
                           fontWeight: 800, 
                           color: item.stock === 0 ? 'var(--status-red)' : 'var(--status-amber)',
-                          fontSize: '0.95rem'
+                          fontSize: '0.92rem'
                         }}>
                           {item.stock} left
                         </span>

@@ -38,7 +38,8 @@ export default function ExecutiveDashboard({
   setWarrantyClaims = () => {},
   shopConfig = {},
   onNavigateTab = () => {},
-  onPrintInvoice = () => {}
+  onPrintInvoice = () => {},
+  onOpenProductInventory = () => {}
 }) {
   const [agingFilter, setAgingFilter] = useState('all'); // 'all' | '30' | '60' | '90'
   const [showAddClaimModal, setShowAddClaimModal] = useState(false);
@@ -481,8 +482,15 @@ export default function ExecutiveDashboard({
               <tbody>
                 {lowStockItems.map(item => (
                   <tr key={item.id}>
-                    <td>
-                      <div style={{ fontWeight: 800 }}>{item.name}</div>
+                    <td 
+                      onClick={() => onOpenProductInventory && onOpenProductInventory(item)}
+                      style={{ cursor: 'pointer' }}
+                      title="Tap to open respective product in Stock & Inventory"
+                    >
+                      <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-primary)' }}>
+                        <span>{item.name}</span>
+                        <ArrowUpRight size={13} />
+                      </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Brand: {item.brand} • SKU: {item.id}</div>
                     </td>
                     <td>
@@ -510,13 +518,23 @@ export default function ExecutiveDashboard({
                       ₹{Number(item.buyPrice).toLocaleString()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <button
-                        onClick={() => onNavigateTab('expenses')}
-                        className="btn-secondary"
-                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: 'var(--accent-primary)' }}
-                      >
-                        Create PO / Call Supplier
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                        <button
+                          onClick={() => onOpenProductInventory && onOpenProductInventory(item)}
+                          className="btn-primary"
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                          title="View Product in Stock HUD"
+                        >
+                          View Stock
+                        </button>
+                        <button
+                          onClick={() => onNavigateTab('expenses')}
+                          className="btn-secondary"
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: 'var(--accent-primary)' }}
+                        >
+                          Call Supplier
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
