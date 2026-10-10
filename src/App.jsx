@@ -219,58 +219,6 @@ export default function App() {
         onOpenAdminAuth={handleOpenAdminAuth}
       />
 
-      {/* Cashier Mode Alert Banner */}
-      {role === 'cashier' && (
-        <div className="no-print" style={{
-          background: 'linear-gradient(90deg, #152E24, #0F251E)',
-          borderBottom: '2px solid #EAB308',
-          padding: '0.55rem 1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          color: '#F1EFE5',
-          fontSize: '0.8rem',
-          flexWrap: 'wrap',
-          gap: '0.5rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ 
-              background: '#EAB308', 
-              color: '#0F251E', 
-              fontWeight: 800, 
-              padding: '0.15rem 0.55rem', 
-              borderRadius: '999px',
-              fontSize: '0.7rem',
-              letterSpacing: '0.04em'
-            }}>
-              CASHIER PORTAL ACTIVE
-            </span>
-            <span style={{ color: 'rgba(241, 239, 229, 0.9)' }}>
-              Limited counter mode: POS Billing, Device Repairs & Stock Check enabled. Financial analytics and shop settings are secured.
-            </span>
-          </div>
-          <button
-            onClick={handleOpenAdminAuth}
-            className="btn-primary"
-            style={{
-              padding: '0.35rem 0.85rem',
-              fontSize: '0.78rem',
-              background: '#EAB308',
-              color: '#0F251E',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              fontWeight: 800,
-              cursor: 'pointer'
-            }}
-          >
-            <Lock size={13} />
-            <span>Switch to Admin Portal (PIN / 2FA)</span>
-          </button>
-        </div>
-      )}
-
       {/* Main Tab Content */}
       <main style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
         {activeTab === 'dashboard' && role === 'admin' && (

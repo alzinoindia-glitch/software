@@ -210,7 +210,7 @@ export default function Header({
                   animation: 'pulse 2s infinite',
                   transition: 'var(--transition-fast)'
                 }}
-                title="Active: Limited Cashier Counter Mode. Click to unlock Admin Portal using PIN or Google Authenticator."
+                title="Active: Limited Cashier Counter Mode. Click to unlock Admin Portal using Google Authenticator."
               >
                 <Lock size={14} color="#EAB308" />
                 <span>👤 Cashier</span>
@@ -294,7 +294,7 @@ export default function Header({
                 color: activeTab === 'settings' ? '#0F251E' : '#F1EFE5',
                 cursor: 'pointer'
               }}
-              title={role === 'admin' ? "Shop Settings & Backup" : "Shop Settings (Requires Admin PIN)"}
+              title={role === 'admin' ? "Shop Settings & Backup" : "Shop Settings (Requires Google Authenticator)"}
             >
               <Settings size={14} color={activeTab === 'settings' ? '#0F251E' : '#F1EFE5'} />
             </button>
@@ -390,7 +390,7 @@ export default function Header({
                   }}
                 >
                   <Key size={15} />
-                  <span>Unlock Admin Portal (PIN / 2FA)</span>
+                  <span>Unlock Admin Portal (Google Authenticator)</span>
                 </button>
               ) : (
                 <button
