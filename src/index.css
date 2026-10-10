@@ -690,3 +690,90 @@ input, select, textarea {
     gap: 0.5rem !important;
   }
 }
+
+/* Insane HUD Glass & Cyber-Luxury Utilities */
+.hud-card {
+  background: linear-gradient(135deg, rgba(20, 47, 39, 0.85) 0%, rgba(11, 23, 19, 0.95) 100%);
+  border: 1px solid rgba(169, 188, 92, 0.2);
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+body.theme-cream .hud-card {
+  background: linear-gradient(135deg, #FFFFFF 0%, #F8FAF7 100%);
+  border: 1.5px solid #D2DED8;
+  box-shadow: 0 4px 16px rgba(12, 91, 67, 0.06);
+}
+
+.hud-card:hover {
+  transform: translateY(-3px);
+  border-color: #A9BC5C;
+  box-shadow: 0 10px 30px rgba(12, 91, 67, 0.22), 0 0 20px rgba(169, 188, 92, 0.15);
+}
+
+body.theme-cream .hud-card:hover {
+  border-color: #0C5B43;
+  box-shadow: 0 10px 24px rgba(12, 91, 67, 0.12);
+}
+
+.hud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 9999px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: rgba(241, 239, 229, 0.06);
+  color: #F1EFE5;
+}
+
+body.theme-cream .hud-pill {
+  background: #EEF4F0;
+  color: #152620;
+  border-color: #D2DED8;
+}
+
+.hud-pill:hover {
+  background: rgba(169, 188, 92, 0.15);
+  border-color: #A9BC5C;
+  color: #A9BC5C;
+}
+
+body.theme-cream .hud-pill:hover {
+  background: #E1EEE5;
+  border-color: #0C5B43;
+  color: #0C5B43;
+}
+
+.hud-pill.active {
+  background: #A9BC5C !important;
+  color: #0F251E !important;
+  border-color: #A9BC5C !important;
+  box-shadow: 0 0 12px rgba(169, 188, 92, 0.35);
+}
+
+body.theme-cream .hud-pill.active {
+  background: #0C5B43 !important;
+  color: #FFFFFF !important;
+  border-color: #0C5B43 !important;
+  box-shadow: 0 0 10px rgba(12, 91, 67, 0.25);
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.15); }
+}
+
+.hud-pulse {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
