@@ -36,13 +36,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Method 1: Deploy to gh-pages branch (Always succeeds, works even if Pages workflow is not initialized)
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-        continue-on-error: true
 
       # Method 2: Official GitHub Pages environment
       - name: Setup Pages
