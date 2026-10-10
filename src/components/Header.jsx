@@ -262,11 +262,8 @@ export default function Header({
                   A
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', lineHeight: 1.1, color: '#F1EFE5' }}>
+                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', color: '#F1EFE5' }}>
                     {shopConfig.name}
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: role === 'cashier' ? '#FEF08A' : '#A9BC5C', fontFamily: 'var(--font-mono)' }}>
-                    {role === 'cashier' ? '👤 Cashier Counter Mode · Bodhan' : '👑 Retail ERP · Admin Portal · Bodhan'}
                   </div>
                 </div>
               </div>
