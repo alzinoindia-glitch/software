@@ -2,38 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Smartphone, 
-  Lock, 
   X, 
-  CheckCircle2, 
   AlertCircle, 
-  Copy, 
-  Check, 
-  QrCode, 
   RefreshCw 
 } from 'lucide-react';
 import { 
   verifyTotpToken, 
-  generateBase32Secret, 
-  getOtpAuthUri 
+  generateBase32Secret 
 } from '../utils/totp';
 
 export default function AdminAuthModal({
   isOpen,
   onClose,
-  onSuccess,
-  shopConfig
+  onSuccess
 }) {
   const [totpInput, setTotpInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [copiedKey, setCopiedKey] = useState(false);
-  const [showQrSetup, setShowQrSetup] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Time remaining in current 30s TOTP cycle
   const [secondsRemaining, setSecondsRemaining] = useState(30 - (Math.floor(Date.now() / 1000) % 30));
 
   // Persistent TOTP Secret (stored in localStorage or generated once)
-  const [totpSecret, setTotpSecret] = useState(() => {
+  const [totpSecret] = useState(() => {
     const saved = localStorage.getItem('ALZINO_ERP_TOTP_SECRET');
     if (saved && saved.length >= 16) return saved;
     const newSecret = generateBase32Secret(16);
@@ -55,19 +46,11 @@ export default function AdminAuthModal({
     if (isOpen) {
       setTotpInput('');
       setErrorMsg('');
-      setShowQrSetup(false);
       setIsVerifying(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const otpAuthUri = getOtpAuthUri(
-    totpSecret, 
-    `${shopConfig?.phone || 'admin'}@alzino`, 
-    shopConfig?.name || 'ALZINO'
-  );
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpAuthUri)}&margin=1`;
 
   // Real Google Authenticator TOTP verification
   const handleVerifyTotp = async (codeToVerify) => {
@@ -75,7 +58,7 @@ export default function AdminAuthModal({
     setErrorMsg('');
 
     if (code.length !== 6) {
-      setErrorMsg('Please enter the 6-digit code shown in Google Authenticator.');
+      setErrorMsg('Please enter the 6-digit code from Google Authenticator.');
       return;
     }
 
@@ -86,7 +69,7 @@ export default function AdminAuthModal({
         onSuccess();
         onClose();
       } else {
-        setErrorMsg('Invalid Google Authenticator code. Check your phone clock and try the current code.');
+        setErrorMsg('Invalid code. Please check Google Authenticator on the owner\'s phone.');
       }
     } catch (err) {
       console.error('Auth verification error:', err);
@@ -96,28 +79,12 @@ export default function AdminAuthModal({
     }
   };
 
-  const handleCopySecret = () => {
-    navigator.clipboard.writeText(totpSecret);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
-  };
-
-  const handleResetSecret = () => {
-    if (confirm('Regenerate a new Google Authenticator Secret Key? You will need to re-scan the QR code in Google Authenticator.')) {
-      const fresh = generateBase32Secret(16);
-      setTotpSecret(fresh);
-      localStorage.setItem('ALZINO_ERP_TOTP_SECRET', fresh);
-      setErrorMsg('');
-      setTotpInput('');
-    }
-  };
-
   return (
     <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
       <div 
         className="modal-dialog animate-fade-in" 
         style={{ 
-          maxWidth: '440px', 
+          maxWidth: '420px', 
           width: '95%',
           background: 'var(--surface-card, #FEFDFA)',
           borderRadius: 'var(--radius-md)',
@@ -154,7 +121,7 @@ export default function AdminAuthModal({
                 Google Authenticator
               </h3>
               <p style={{ margin: 0, fontSize: '0.74rem', color: 'rgba(241, 239, 229, 0.7)' }}>
-                Enter the 6-digit rolling code to unlock Admin Portal
+                Owner verification required to open Admin Portal
               </p>
             </div>
           </div>
@@ -195,10 +162,10 @@ export default function AdminAuthModal({
           )}
 
           <form onSubmit={(e) => { e.preventDefault(); handleVerifyTotp(); }}>
-            <div style={{ marginBottom: '1.15rem' }}>
+            <div style={{ marginBottom: '1.4rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
                 <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  6-Digit Authenticator Code
+                  Enter 6-Digit Rolling Code
                 </label>
                 <div style={{
                   fontSize: '0.72rem',
@@ -209,7 +176,7 @@ export default function AdminAuthModal({
                   gap: '0.25rem'
                 }}>
                   <RefreshCw size={11} className={secondsRemaining <= 5 ? 'animate-spin' : ''} />
-                  <span>Code refreshes in {secondsRemaining}s</span>
+                  <span>Refreshes in {secondsRemaining}s</span>
                 </div>
               </div>
 
@@ -222,7 +189,7 @@ export default function AdminAuthModal({
                   const val = e.target.value.replace(/\D/g, '').slice(0, 6);
                   setTotpInput(val);
                   setErrorMsg('');
-                  // Automatically verify when all 6 digits are entered
+                  // Automatically verify when all 6 digits are typed
                   if (val.length === 6) {
                     handleVerifyTotp(val);
                   }
@@ -232,8 +199,8 @@ export default function AdminAuthModal({
                 maxLength={6}
                 style={{
                   width: '100%',
-                  padding: '0.85rem',
-                  fontSize: '1.5rem',
+                  padding: '0.9rem',
+                  fontSize: '1.6rem',
                   letterSpacing: '0.4em',
                   fontWeight: 800,
                   textAlign: 'center',
@@ -244,96 +211,10 @@ export default function AdminAuthModal({
                   boxSizing: 'border-box'
                 }}
               />
-            </div>
 
-            {/* QR Code Phone Setup Section */}
-            <div style={{
-              background: 'var(--surface-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '0.75rem',
-              marginBottom: '1.25rem'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <QrCode size={15} color="var(--accent-primary)" />
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Scan QR in Google Authenticator
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowQrSetup(!showQrSetup)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--accent-primary)',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    textDecoration: 'underline'
-                  }}
-                >
-                  {showQrSetup ? 'Hide QR' : 'Show QR Code'}
-                </button>
+              <div style={{ marginTop: '0.55rem', fontSize: '0.74rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                Open <strong>Google Authenticator</strong> on the store owner's phone to view the code.
               </div>
-
-              {showQrSetup && (
-                <div style={{ marginTop: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', textAlign: 'center' }}>
-                  <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    Open <strong>Google Authenticator</strong> on your phone ➔ Tap <strong>+</strong> ➔ <strong>Scan a QR code</strong>:
-                  </p>
-                  
-                  <div style={{ display: 'inline-block', padding: '0.5rem', background: '#FFFFFF', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-                    <img 
-                      src={qrCodeUrl} 
-                      alt="Scan QR in Google Authenticator" 
-                      style={{ width: '150px', height: '150px', display: 'block' }}
-                    />
-                  </div>
-
-                  <div style={{ marginTop: '0.55rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                    <span>Or enter setup key manually: </span>
-                    <strong style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
-                      {totpSecret}
-                    </strong>
-                    <button
-                      type="button"
-                      onClick={handleCopySecret}
-                      style={{
-                        marginLeft: '0.35rem',
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--accent-primary)',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.2rem'
-                      }}
-                    >
-                      {copiedKey ? <Check size={12} color="var(--status-green)" /> : <Copy size={12} />}
-                      <span style={{ fontSize: '0.7rem' }}>{copiedKey ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: '0.45rem' }}>
-                    <button
-                      type="button"
-                      onClick={handleResetSecret}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--status-amber, #AC7C20)',
-                        fontSize: '0.7rem',
-                        cursor: 'pointer',
-                        textDecoration: 'underline'
-                      }}
-                    >
-                      Regenerate new secret key
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div style={{ display: 'flex', gap: '0.65rem' }}>
@@ -361,7 +242,7 @@ export default function AdminAuthModal({
                 }}
               >
                 <ShieldCheck size={16} />
-                <span>{isVerifying ? 'Verifying...' : 'Verify & Unlock Admin'}</span>
+                <span>{isVerifying ? 'Verifying...' : 'Verify & Unlock'}</span>
               </button>
             </div>
           </form>
