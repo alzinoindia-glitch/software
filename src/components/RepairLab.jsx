@@ -128,6 +128,35 @@ export default function RepairLab({
     }
 
     setRepairJobs(prev => [newJob, ...prev]);
+
+    // Save/Update Customer Record in CRM
+    if (newJob.customerMobile) {
+      setCustomers(prev => {
+        const norm = newJob.customerMobile.replace(/\D/g, '');
+        const exists = prev.find(c => c.phone && c.phone.replace(/\D/g, '') === norm);
+        if (exists) {
+          return prev.map(c => c.phone && c.phone.replace(/\D/g, '') === norm ? {
+            ...c,
+            name: c.name && c.name !== 'Customer' ? c.name : (newJob.customerName || c.name),
+            balanceDue: (c.balanceDue || 0) + (balance > 0 ? balance : 0),
+          } : c);
+        } else {
+          return [
+            {
+              id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
+              name: newJob.customerName || 'Customer',
+              phone: newJob.customerMobile,
+              address: 'Bodhan, Telangana',
+              gstin: '',
+              totalSpent: 0,
+              balanceDue: balance > 0 ? balance : 0,
+            },
+            ...prev
+          ];
+        }
+      });
+    }
+
     setShowAddModal(false);
 
     // Reset fields

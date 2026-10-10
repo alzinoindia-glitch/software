@@ -335,7 +335,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'khata' && role === 'admin' && (
+        {(activeTab === 'khata' || activeTab === 'customers') && role === 'admin' && (
           <CustomerKhata
             customers={customers}
             setCustomers={setCustomers}
@@ -343,6 +343,8 @@ export default function App() {
             repairJobs={repairJobs}
             shopConfig={shopConfig}
             onPrintKhataStatement={handlePrintKhataStatement}
+            onPrintInvoice={handlePrintInvoice}
+            onPrintRepairSlip={handlePrintRepairSlip}
           />
         )}
 

@@ -63,7 +63,7 @@ export default function Header({
     { id: 'repairs', label: 'Repairs', icon: Wrench, count: 2, hotkey: 'F5' },
     { id: 'invoices', label: 'Invoices', icon: FileText, count: 2 },
     { id: 'barcodes', label: 'Barcodes', icon: Barcode },
-    { id: 'khata', label: 'Khata', icon: Users },
+    { id: 'khata', label: 'Customers', icon: Users },
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'reports', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
