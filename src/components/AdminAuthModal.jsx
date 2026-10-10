@@ -1,94 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShieldCheck, 
-  Smartphone, 
+  Key, 
   X, 
-  AlertCircle, 
-  RefreshCw 
+  AlertCircle 
 } from 'lucide-react';
-import { 
-  verifyTotpToken, 
-  generateBase32Secret 
-} from '../utils/totp';
 
 export default function AdminAuthModal({
   isOpen,
   onClose,
   onSuccess
 }) {
-  const [totpInput, setTotpInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
+  const inputRef = useRef(null);
 
-  // Time remaining in current 30s TOTP cycle
-  const [secondsRemaining, setSecondsRemaining] = useState(30 - (Math.floor(Date.now() / 1000) % 30));
-
-  // Persistent TOTP Secret (stored in localStorage or generated once)
-  const [totpSecret] = useState(() => {
-    const saved = localStorage.getItem('ALZINO_ERP_TOTP_SECRET');
-    if (saved && saved.length >= 16) return saved;
-    const newSecret = generateBase32Secret(16);
-    localStorage.setItem('ALZINO_ERP_TOTP_SECRET', newSecret);
-    return newSecret;
-  });
-
-  // Keep countdown timer synced
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const remaining = 30 - (Math.floor(Date.now() / 1000) % 30);
-      setSecondsRemaining(remaining);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Reset inputs when opened
+  // Reset & autofocus when modal opens
   useEffect(() => {
     if (isOpen) {
-      setTotpInput('');
+      setPinInput('');
       setErrorMsg('');
-      setIsVerifying(false);
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 100);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Real Google Authenticator TOTP verification
-  const handleVerifyTotp = async (codeToVerify) => {
-    const code = (codeToVerify || totpInput).trim().replace(/\D/g, '');
+  const handleVerifyPin = (codeToVerify) => {
+    const code = (codeToVerify !== undefined ? codeToVerify : pinInput).trim();
     setErrorMsg('');
 
-    if (code.length !== 6) {
-      setErrorMsg('Please enter the 6-digit code from Google Authenticator.');
-      return;
-    }
-
-    setIsVerifying(true);
-    try {
-      const isValid = await verifyTotpToken(code, totpSecret);
-      if (isValid) {
-        onSuccess();
-        onClose();
-      } else {
-        setErrorMsg('Invalid code. Please check Google Authenticator on the owner\'s phone.');
-      }
-    } catch (err) {
-      console.error('Auth verification error:', err);
-      setErrorMsg('Verification error. Please try again.');
-    } finally {
-      setIsVerifying(false);
+    if (code === '4488') {
+      onSuccess();
+      onClose();
+    } else {
+      setErrorMsg('Incorrect PIN. Enter 4488 to open Admin Portal.');
     }
   };
 
   return (
-    <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
+    <div className="modal-backdrop no-print" onClick={onClose} style={{ zIndex: 1200 }}>
       <div 
         className="modal-dialog animate-fade-in" 
+        onClick={(e) => e.stopPropagation()}
         style={{ 
-          maxWidth: '420px', 
-          width: '95%',
+          maxWidth: '380px', 
+          width: '92%',
           background: 'var(--surface-card, #FEFDFA)',
           borderRadius: 'var(--radius-md)',
-          boxShadow: '0 20px 45px rgba(15, 37, 30, 0.28)',
+          boxShadow: '0 20px 45px rgba(15, 37, 30, 0.32)',
           border: '1.5px solid var(--border-color, #C2D2CB)',
           overflow: 'hidden'
         }}
@@ -97,15 +61,15 @@ export default function AdminAuthModal({
         <div style={{
           background: '#0F251E',
           color: '#F1EFE5',
-          padding: '1.25rem 1.4rem',
+          padding: '1.15rem 1.35rem',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <div style={{
-              width: '34px',
-              height: '34px',
+              width: '32px',
+              height: '32px',
               borderRadius: 'var(--radius-sm)',
               background: '#A9BC5C',
               color: '#0F251E',
@@ -114,14 +78,14 @@ export default function AdminAuthModal({
               justifyContent: 'center',
               fontWeight: 800
             }}>
-              <Smartphone size={19} />
+              <Key size={17} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#F1EFE5' }}>
-                Google Authenticator
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#F1EFE5' }}>
+                Admin Portal Passcode
               </h3>
-              <p style={{ margin: 0, fontSize: '0.74rem', color: 'rgba(241, 239, 229, 0.7)' }}>
-                Owner verification required to open Admin Portal
+              <p style={{ margin: 0, fontSize: '0.72rem', color: 'rgba(241, 239, 229, 0.7)' }}>
+                Enter 4488 to unlock store management
               </p>
             </div>
           </div>
@@ -137,71 +101,58 @@ export default function AdminAuthModal({
               cursor: 'pointer'
             }}
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div style={{ padding: '1.4rem' }}>
+        <div style={{ padding: '1.35rem' }}>
           {errorMsg && (
             <div style={{
               background: 'rgba(211, 63, 60, 0.1)',
               border: '1px solid var(--status-red, #D33F3C)',
               borderRadius: 'var(--radius-sm)',
-              padding: '0.65rem 0.85rem',
+              padding: '0.6rem 0.8rem',
               marginBottom: '1rem',
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
               color: 'var(--status-red, #D33F3C)',
-              fontSize: '0.82rem'
+              fontSize: '0.8rem'
             }}>
-              <AlertCircle size={16} />
+              <AlertCircle size={15} />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          <form onSubmit={(e) => { e.preventDefault(); handleVerifyTotp(); }}>
-            <div style={{ marginBottom: '1.4rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Enter 6-Digit Rolling Code
-                </label>
-                <div style={{
-                  fontSize: '0.72rem',
-                  color: secondsRemaining <= 5 ? 'var(--status-red)' : 'var(--accent-primary)',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem'
-                }}>
-                  <RefreshCw size={11} className={secondsRemaining <= 5 ? 'animate-spin' : ''} />
-                  <span>Refreshes in {secondsRemaining}s</span>
-                </div>
-              </div>
+          <form onSubmit={(e) => { e.preventDefault(); handleVerifyPin(); }}>
+            <div style={{ marginBottom: '1.35rem' }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '0.45rem', textAlign: 'center' }}>
+                Enter 4-Digit Admin Code
+              </label>
 
               <input
-                type="text"
+                ref={inputRef}
+                type="password"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                value={totpInput}
+                value={pinInput}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                  setTotpInput(val);
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                  setPinInput(val);
                   setErrorMsg('');
-                  // Automatically verify when all 6 digits are typed
-                  if (val.length === 6) {
-                    handleVerifyTotp(val);
+                  if (val.length === 4) {
+                    handleVerifyPin(val);
                   }
                 }}
                 autoFocus
-                placeholder="000 000"
-                maxLength={6}
+                placeholder="••••"
+                maxLength={4}
                 style={{
                   width: '100%',
-                  padding: '0.9rem',
-                  fontSize: '1.6rem',
-                  letterSpacing: '0.4em',
+                  padding: '0.85rem',
+                  fontSize: '1.8rem',
+                  letterSpacing: '0.5em',
                   fontWeight: 800,
                   textAlign: 'center',
                   borderRadius: 'var(--radius-sm)',
@@ -212,8 +163,37 @@ export default function AdminAuthModal({
                 }}
               />
 
-              <div style={{ marginTop: '0.55rem', fontSize: '0.74rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                Open <strong>Google Authenticator</strong> on the store owner's phone to view the code.
+              {/* Quick Numpad Helper Chips */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem', marginTop: '0.75rem' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(digit => (
+                  <button
+                    key={digit}
+                    type="button"
+                    onClick={() => {
+                      if (pinInput.length < 4) {
+                        const nextVal = pinInput + digit;
+                        setPinInput(nextVal);
+                        setErrorMsg('');
+                        if (nextVal.length === 4) {
+                          handleVerifyPin(nextVal);
+                        }
+                      }
+                    }}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--surface-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {digit}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -222,27 +202,27 @@ export default function AdminAuthModal({
                 type="button"
                 onClick={onClose}
                 className="btn-secondary"
-                style={{ flex: 1, padding: '0.65rem' }}
+                style={{ flex: 1, padding: '0.6rem' }}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={isVerifying || totpInput.length !== 6}
+                disabled={pinInput.length !== 4}
                 className="btn-primary"
                 style={{ 
                   flex: 2, 
-                  padding: '0.65rem', 
+                  padding: '0.6rem', 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
                   gap: '0.45rem',
-                  opacity: (isVerifying || totpInput.length !== 6) ? 0.6 : 1,
-                  cursor: (isVerifying || totpInput.length !== 6) ? 'not-allowed' : 'pointer'
+                  opacity: pinInput.length !== 4 ? 0.6 : 1,
+                  cursor: pinInput.length !== 4 ? 'not-allowed' : 'pointer'
                 }}
               >
                 <ShieldCheck size={16} />
-                <span>{isVerifying ? 'Verifying...' : 'Open Admin Portal'}</span>
+                <span>Open Admin Portal</span>
               </button>
             </div>
           </form>

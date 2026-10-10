@@ -291,55 +291,6 @@ export default function Header({
               </button>
             </div>
 
-            {/* Role Switcher Action Inside Drawer */}
-            <div style={{ padding: '0.65rem 0.85rem 0 0.85rem', background: '#0F251E' }}>
-              {role === 'cashier' ? (
-                <button
-                  onClick={() => { setMenuOpen(false); onOpenAdminAuth(); }}
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'linear-gradient(135deg, #EAB308, #CA8A04)',
-                    color: '#0F251E',
-                    border: 'none',
-                    fontWeight: 800,
-                    fontSize: '0.82rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Key size={15} />
-                  <span>Open Admin Portal</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => { setMenuOpen(false); onLockToCashier(); }}
-                  style={{
-                    width: '100%',
-                    padding: '0.55rem 0.85rem',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'rgba(241, 239, 229, 0.08)',
-                    color: '#F1EFE5',
-                    border: '1px solid rgba(210, 222, 216, 0.2)',
-                    fontWeight: 700,
-                    fontSize: '0.8rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <UserCheck size={14} color="#A9BC5C" />
-                  <span>Open Cashier Mode</span>
-                </button>
-              )}
-            </div>
-
             {/* Menu Items List */}
             <div style={{
               flex: 1,
@@ -524,21 +475,59 @@ export default function Header({
               </button>
             </div>
 
-            {/* Menu Footer */}
+            {/* Menu Footer with Role Switcher Dropdown */}
             <div style={{
               padding: '0.85rem 1rem',
               borderTop: '1px solid rgba(210, 222, 216, 0.15)',
               background: '#0F251E',
-              fontSize: '0.72rem',
-              color: 'rgba(241, 239, 229, 0.8)',
+              color: '#F1EFE5',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.65rem'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                <span style={{ fontWeight: 600, color: '#F1EFE5' }}>ALZINO Retail ERP</span>
-                <span className="mono-tag" style={{ fontSize: '0.65rem', background: 'rgba(169, 188, 92, 0.2)', color: '#A9BC5C', borderColor: 'rgba(169, 188, 92, 0.3)' }}>OFFLINE</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1rem' }}>{role === 'admin' ? '👑' : '👤'}</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.82rem', color: '#F1EFE5' }}>
+                    {role === 'admin' ? 'Admin Portal' : 'Cashier Counter'}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: role === 'admin' ? '#A9BC5C' : '#FEF08A', fontFamily: 'var(--font-mono)' }}>
+                    {role === 'admin' ? 'Store Management' : 'Counter Billing'}
+                  </div>
+                </div>
               </div>
-              <div style={{ color: 'rgba(241, 239, 229, 0.6)' }}>
-                GSTIN: {shopConfig.gstin}
-              </div>
+
+              {/* Dropdown Button to Switch from Cashier to Admin or Admin to Cashier */}
+              <select
+                value={role}
+                onChange={(e) => {
+                  const targetRole = e.target.value;
+                  if (targetRole === 'admin' && role !== 'admin') {
+                    setMenuOpen(false);
+                    onOpenAdminAuth();
+                  } else if (targetRole === 'cashier' && role !== 'cashier') {
+                    setMenuOpen(false);
+                    onLockToCashier();
+                  }
+                }}
+                style={{
+                  background: role === 'admin' ? 'rgba(169, 188, 92, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                  border: role === 'admin' ? '1px solid #A9BC5C' : '1px solid #EAB308',
+                  color: role === 'admin' ? '#A9BC5C' : '#FEF08A',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  padding: '0.38rem 0.65rem',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  fontFamily: 'var(--font-heading)'
+                }}
+                title="Switch Access Level"
+              >
+                <option value="admin" style={{ background: '#0F251E', color: '#F1EFE5' }}>👑 Admin</option>
+                <option value="cashier" style={{ background: '#0F251E', color: '#F1EFE5' }}>👤 Cashier</option>
+              </select>
             </div>
           </div>
         </div>
