@@ -495,6 +495,12 @@ input, select, textarea {
   display: inline;
 }
 
+.header-desktop-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 /* POS & Catalog Responsive Grids */
 .pos-register-grid {
   display: grid;
@@ -633,7 +639,8 @@ input, select, textarea {
   .mobile-bottom-nav {
     display: flex !important;
   }
-  .hide-on-mobile {
+  .hide-on-mobile,
+  .header-desktop-actions {
     display: none !important;
   }
   
