@@ -230,33 +230,35 @@ export default function IllocaPulloutDrawer({
                 </div>
               ) : null}
 
-              {/* Sample test barcodes for the user to try */}
-              <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Try Clicking Quick Sample Barcodes:</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem' }}>
-                  {inventory.slice(0, 3).map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleTestScan(p.barcode || p.imeis[0])}
-                      style={{
-                        padding: '0.4rem 0.6rem',
-                        borderRadius: '4px',
-                        background: 'var(--surface-card)',
-                        border: '1px solid var(--border-color)',
-                        fontSize: '0.78rem',
-                        textAlign: 'left',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>{p.name.substring(0, 28)}...</span>
-                      <span className="font-mono" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
-                        {p.barcode || p.imeis[0]}
-                      </span>
-                    </button>
-                  ))}
+              {/* Quick test barcodes from available stock */}
+              {inventory.length > 0 && (
+                <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Quick Scan from Stock:</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem' }}>
+                    {inventory.slice(0, 3).map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleTestScan(p.barcode || p.imeis[0])}
+                        style={{
+                          padding: '0.4rem 0.6rem',
+                          borderRadius: '4px',
+                          background: 'var(--surface-card)',
+                          border: '1px solid var(--border-color)',
+                          fontSize: '0.78rem',
+                          textAlign: 'left',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <span>{p.name.substring(0, 28)}...</span>
+                        <span className="font-mono" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                          {p.barcode || p.imeis[0]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

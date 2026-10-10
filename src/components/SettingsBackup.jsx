@@ -25,7 +25,8 @@ import {
   Copy,
   Check,
   QrCode,
-  UserCheck
+  UserCheck,
+  Trash2
 } from 'lucide-react';
 import { 
   defaultShopConfig, 
@@ -237,18 +238,27 @@ export default function SettingsBackup({
     }
   };
 
-  // Reset to Demo Seed Data
-  const handleResetData = () => {
-    if (confirm("Reset application to default sample shop data?")) {
-      setShopConfig(defaultShopConfig);
-      setInventory(initialInventory);
-      setUsedPurchases(initialUsedPurchases);
-      setRepairJobs(initialRepairJobs);
-      setCustomers(initialCustomers);
-      setSuppliers(initialSuppliers);
-      setExpenses(initialExpenses);
-      setInvoices(initialInvoices);
-      alert("Reset to initial sample data completed!");
+  // Clear Database / Fresh Clean Slate (Zero Demo Data)
+  const handleClearAllData = () => {
+    if (confirm("Are you sure you want to clear all data? This will remove all items, sales invoices, repair tokens, and customer records to start fresh with a clean database.")) {
+      setInventory([]);
+      setUsedPurchases([]);
+      setRepairJobs([]);
+      setCustomers([]);
+      setSuppliers([]);
+      setExpenses([]);
+      setInvoices([]);
+      try {
+        localStorage.removeItem('ALZINO_ERP_INVENTORY');
+        localStorage.removeItem('ALZINO_ERP_USED_PURCHASES');
+        localStorage.removeItem('ALZINO_ERP_REPAIR_JOBS');
+        localStorage.removeItem('ALZINO_ERP_CUSTOMERS');
+        localStorage.removeItem('ALZINO_ERP_SUPPLIERS');
+        localStorage.removeItem('ALZINO_ERP_EXPENSES');
+        localStorage.removeItem('ALZINO_ERP_INVOICES');
+        localStorage.removeItem('ALZINO_ERP_WARRANTY_CLAIMS');
+      } catch (e) {}
+      alert("All demo and transactional data cleared! Store database is now completely clean.");
     }
   };
 
@@ -578,21 +588,21 @@ export default function SettingsBackup({
             </div>
           </div>
 
-          {/* Reset Demo Data */}
-          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--status-amber)' }}>
+          {/* Clear Store Database */}
+          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--color-danger)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
-              <RefreshCw size={18} color="var(--status-amber)" />
-              <h3 style={{ fontSize: '1.1rem' }}>Demo Seed Data</h3>
+              <Trash2 size={18} color="var(--color-danger)" />
+              <h3 style={{ fontSize: '1.1rem' }}>Clear Store Database</h3>
             </div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
-              Want to see sample items, invoices, repair tokens, and used phone KYC entries? Reset database to factory demo state.
+              Wipes all demo records and transactional data across inventory, billing counter, repair lab, and customer ledgers to start 100% fresh.
             </p>
             <button
-              onClick={handleResetData}
+              onClick={handleClearAllData}
               className="btn-outline"
-              style={{ fontSize: '0.85rem', color: 'var(--status-amber)' }}
+              style={{ fontSize: '0.85rem', color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
             >
-              Reset to Sample Demo Data
+              Clear All Data (Fresh Start)
             </button>
           </div>
 

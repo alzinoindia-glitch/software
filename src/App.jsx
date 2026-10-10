@@ -28,7 +28,8 @@ import {
   initialInvoices,
   initialWarrantyClaims,
   getStorageData,
-  setStorageData
+  setStorageData,
+  purgeDemoRecords
 } from './data/initialData';
 
 export default function App() {
@@ -90,6 +91,18 @@ export default function App() {
   useEffect(() => { setStorageData('EXPENSES', expenses); }, [expenses]);
   useEffect(() => { setStorageData('INVOICES', invoices); }, [invoices]);
   useEffect(() => { setStorageData('WARRANTY_CLAIMS', warrantyClaims); }, [warrantyClaims]);
+
+  // Purge any residual demo data on mount
+  useEffect(() => {
+    setInventory(prev => purgeDemoRecords(prev));
+    setInvoices(prev => purgeDemoRecords(prev));
+    setRepairJobs(prev => purgeDemoRecords(prev));
+    setCustomers(prev => purgeDemoRecords(prev));
+    setUsedPurchases(prev => purgeDemoRecords(prev));
+    setSuppliers(prev => purgeDemoRecords(prev));
+    setExpenses(prev => purgeDemoRecords(prev));
+    setWarrantyClaims(prev => purgeDemoRecords(prev));
+  }, []);
 
   // Enforce Cashier Access Control: Cashier can access 'pos', 'repairs', 'inventory', 'barcodes'
   useEffect(() => {
