@@ -20,7 +20,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Lock,
-  Key
+  Key,
+  UserCheck
 } from 'lucide-react';
 
 export default function Header({ 
@@ -185,11 +186,11 @@ export default function Header({
                   borderRadius: 'var(--radius-sm)',
                   transition: 'var(--transition-fast)'
                 }}
-                title="Active: Store Owner Admin Portal. Click to lock down into Cashier Portal."
+                title="Active: Store Owner Admin Portal. Click to open Cashier Portal."
               >
                 <ShieldCheck size={14} color="#A9BC5C" />
                 <span className="hide-on-mobile">👑 Admin</span>
-                <span style={{ fontSize: '0.68rem', color: '#A9BC5C', marginLeft: '0.1rem' }}>🔒 Lock</span>
+                <span style={{ fontSize: '0.68rem', color: '#A9BC5C', marginLeft: '0.1rem' }}>Open Cashier ➔</span>
               </button>
             ) : (
               <button
@@ -411,8 +412,8 @@ export default function Header({
                     cursor: 'pointer'
                   }}
                 >
-                  <Lock size={14} color="#A9BC5C" />
-                  <span>Lock into Cashier Mode</span>
+                  <UserCheck size={14} color="#A9BC5C" />
+                  <span>Open Cashier Mode</span>
                 </button>
               )}
             </div>

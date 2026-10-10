@@ -24,7 +24,8 @@ import {
   Key,
   Copy,
   Check,
-  QrCode
+  QrCode,
+  UserCheck
 } from 'lucide-react';
 import { 
   defaultShopConfig, 
@@ -447,7 +448,7 @@ export default function SettingsBackup({
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              When the store owner is away from the counter, lock the terminal into <strong>Cashier Mode</strong>. Staff can only do POS billing, receive repair jobs, and check prices. Sensitive profit margins, supplier payables, and shop settings are protected.
+              When the store owner is away from the counter, switch the terminal to <strong>Cashier Mode</strong>. Staff can only do POS billing, receive repair jobs, and check prices. Sensitive profit margins, supplier payables, and shop settings are protected.
             </p>
 
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -458,8 +459,8 @@ export default function SettingsBackup({
                   className="btn-secondary"
                   style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
                 >
-                  <Lock size={14} color="var(--status-amber)" />
-                  <span>Lock Terminal to Cashier Mode</span>
+                  <UserCheck size={14} color="var(--accent-primary)" />
+                  <span>Open Cashier Mode</span>
                 </button>
               ) : (
                 <button
