@@ -91,9 +91,9 @@ export default function App() {
   useEffect(() => { setStorageData('INVOICES', invoices); }, [invoices]);
   useEffect(() => { setStorageData('WARRANTY_CLAIMS', warrantyClaims); }, [warrantyClaims]);
 
-  // Enforce Cashier Access Control: Cashier can ONLY access 'pos', 'repairs', 'inventory'
+  // Enforce Cashier Access Control: Cashier can access 'pos', 'repairs', 'inventory', 'barcodes'
   useEffect(() => {
-    if (role === 'cashier' && !['pos', 'repairs', 'inventory'].includes(activeTab)) {
+    if (role === 'cashier' && !['pos', 'repairs', 'inventory', 'barcodes'].includes(activeTab)) {
       setActiveTab('pos');
     }
   }, [role, activeTab]);
@@ -326,7 +326,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'barcodes' && role === 'admin' && (
+        {activeTab === 'barcodes' && (
           <BarcodeGenerator
             inventory={inventory}
             selectedItemForBarcode={selectedItemForBarcode}

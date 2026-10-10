@@ -755,7 +755,7 @@ export default function PosBilling({
                       fontWeight: 800,
                       fontFamily: 'var(--font-mono)',
                       background: billingType === 'gst' ? 'var(--accent-primary)' : 'transparent',
-                      color: billingType === 'gst' ? '#0F251E' : 'var(--text-secondary)',
+                      color: billingType === 'gst' ? 'var(--accent-contrast)' : 'var(--text-secondary)',
                       cursor: 'pointer'
                     }}
                   >
@@ -772,7 +772,7 @@ export default function PosBilling({
                       fontWeight: 800,
                       fontFamily: 'var(--font-mono)',
                       background: billingType === 'non-gst' ? 'var(--accent-primary)' : 'transparent',
-                      color: billingType === 'non-gst' ? '#0F251E' : 'var(--text-secondary)',
+                      color: billingType === 'non-gst' ? 'var(--accent-contrast)' : 'var(--text-secondary)',
                       cursor: 'pointer'
                     }}
                   >
@@ -850,7 +850,7 @@ export default function PosBilling({
                         top: '6px',
                         right: '6px',
                         background: 'var(--accent-primary)',
-                        color: '#0F251E',
+                        color: 'var(--accent-contrast)',
                         borderRadius: '999px',
                         padding: '0.1rem 0.4rem',
                         fontSize: '0.66rem',
@@ -1263,7 +1263,7 @@ export default function PosBilling({
                 padding: '0.75rem',
                 borderRadius: '8px',
                 background: cart.length === 0 ? 'var(--bg-main)' : 'var(--accent-primary)',
-                color: cart.length === 0 ? 'var(--text-muted)' : '#0F251E',
+                color: cart.length === 0 ? 'var(--text-muted)' : 'var(--accent-contrast)',
                 fontFamily: 'var(--font-heading)',
                 fontSize: '0.95rem',
                 fontWeight: 900,

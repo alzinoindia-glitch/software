@@ -21,9 +21,11 @@ import {
   Headphones,
   Tv,
   Wrench,
+  Printer,
   Sparkles
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
+import { renderBarcodeSvg } from '../utils/barcode';
 
 const standardBrands = [
   'Apple', 
@@ -80,6 +82,7 @@ export default function InventoryManager({
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
+  const [quickBarcodeItem, setQuickBarcodeItem] = useState(null);
 
   // Stock Transfer
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -879,7 +882,7 @@ export default function InventoryManager({
                       padding: '0.45rem 0.75rem',
                       borderRadius: '6px',
                       background: isOut ? 'var(--bg-main)' : 'var(--accent-primary)',
-                      color: isOut ? 'var(--text-muted)' : '#0F251E',
+                      color: isOut ? 'var(--text-muted)' : 'var(--accent-contrast, #FFFFFF)',
                       border: 'none',
                       fontSize: '0.82rem',
                       fontFamily: 'var(--font-heading)',
@@ -887,7 +890,7 @@ export default function InventoryManager({
                       letterSpacing: '0.04em',
                       cursor: isOut ? 'not-allowed' : 'pointer',
                       transition: 'all 0.2s ease',
-                      boxShadow: isOut ? 'none' : '0 2px 8px rgba(169, 188, 92, 0.3)'
+                      boxShadow: isOut ? 'none' : '0 2px 8px rgba(12, 91, 67, 0.25)'
                     }}
                     title={isOut ? 'Out of Stock' : 'Add to POS Counter Cart'}
                   >
@@ -896,25 +899,23 @@ export default function InventoryManager({
                   </button>
 
                   {/* Secondary Icon Dock */}
-                  {(item.category === 'New Mobiles' || item.category === 'Used Mobiles' || item.marketComparison) && (
-                    <button
-                      onClick={() => setCompareProduct(item)}
-                      style={{
-                        padding: '0.45rem',
-                        borderRadius: '6px',
-                        background: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        color: 'var(--accent-primary)',
-                        cursor: 'pointer'
-                      }}
-                      title="Compare Price Online"
-                    >
-                      <Globe size={14} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setCompareProduct(item)}
+                    style={{
+                      padding: '0.45rem',
+                      borderRadius: '6px',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--accent-primary)',
+                      cursor: 'pointer'
+                    }}
+                    title="Live Online Market Price (Amazon & Flipkart)"
+                  >
+                    <Globe size={14} />
+                  </button>
 
                   <button
-                    onClick={() => onSelectBarcode && onSelectBarcode(item)}
+                    onClick={() => setQuickBarcodeItem(item)}
                     style={{
                       padding: '0.45rem',
                       borderRadius: '6px',
@@ -923,7 +924,7 @@ export default function InventoryManager({
                       color: 'var(--text-secondary)',
                       cursor: 'pointer'
                     }}
-                    title="Print Barcode"
+                    title="Print Barcode Tag"
                   >
                     <Barcode size={14} />
                   </button>
@@ -1056,7 +1057,7 @@ export default function InventoryManager({
                           onClick={() => handleSendToPos(item)}
                           disabled={isOut}
                           className="btn-primary"
-                          style={{ padding: '0.28rem 0.65rem', fontSize: '0.74rem', fontWeight: 800 }}
+                          style={{ padding: '0.28rem 0.65rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--accent-contrast, #FFFFFF)' }}
                         >
                           BILL
                         </button>
@@ -1064,8 +1065,17 @@ export default function InventoryManager({
                           onClick={() => setCompareProduct(item)}
                           className="btn-secondary"
                           style={{ padding: '0.28rem 0.45rem' }}
+                          title="Live Online Market Price (Amazon & Flipkart)"
                         >
                           <Globe size={13} />
+                        </button>
+                        <button
+                          onClick={() => setQuickBarcodeItem(item)}
+                          className="btn-secondary"
+                          style={{ padding: '0.28rem 0.45rem' }}
+                          title="Print Barcode Tag"
+                        >
+                          <Barcode size={13} />
                         </button>
                         {role === 'admin' && (
                           <button
@@ -1360,6 +1370,94 @@ export default function InventoryManager({
         }}
         shopConfig={shopConfig}
       />
+
+      {/* QUICK BARCODE STICKER MODAL */}
+      {quickBarcodeItem && (
+        <div 
+          className="modal-backdrop no-print" 
+          onClick={() => setQuickBarcodeItem(null)}
+          style={{ zIndex: 2500 }}
+        >
+          <div 
+            className="modal-dialog animate-fade-in" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '440px', width: '92%', padding: '1.25rem' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Barcode size={18} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Product Barcode Label</h3>
+              </div>
+              <button onClick={() => setQuickBarcodeItem(null)} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Sticker Preview Box (50x25mm styled sticker) */}
+            <div style={{
+              background: '#FFFFFF',
+              color: '#000000',
+              padding: '0.85rem 1rem',
+              borderRadius: '8px',
+              border: '2px dashed #CBD5E1',
+              textAlign: 'center',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
+              marginBottom: '1rem'
+            }}>
+              <div style={{ fontSize: '0.74rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0F251E', marginBottom: '2px' }}>
+                {shopConfig?.name || 'ALZINO MOBILES'}
+              </div>
+              <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#1E293B', marginBottom: '6px', lineHeight: 1.2 }}>
+                {quickBarcodeItem.name}
+              </div>
+
+              {/* Barcode SVG Rendering */}
+              <div 
+                dangerouslySetInnerHTML={{ 
+                  __html: renderBarcodeSvg(quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`, 220, 52, true) 
+                }}
+                style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '6px', padding: '0 0.5rem' }}>
+                <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
+                  MRP: ₹{(quickBarcodeItem.mrp || quickBarcodeItem.sellPrice).toLocaleString()}
+                </span>
+                <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43' }}>
+                  ₹{quickBarcodeItem.sellPrice.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={() => {
+                  if (onSelectBarcode) {
+                    onSelectBarcode(quickBarcodeItem);
+                  }
+                  setQuickBarcodeItem(null);
+                }}
+                className="btn-secondary"
+                style={{ flex: 1, padding: '0.55rem', fontSize: '0.8rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <span>Studio Sheets ➔</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  window.print();
+                }}
+                className="btn-primary"
+                style={{ flex: 1.2, padding: '0.55rem', fontSize: '0.82rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-contrast, #FFFFFF)' }}
+              >
+                <Printer size={15} />
+                <span>Print Sticker</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

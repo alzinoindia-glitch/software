@@ -73,6 +73,7 @@ export default function Header({
     { id: 'pos', label: 'POS Billing Counter', icon: ShoppingCart, hotkey: 'F2' },
     { id: 'repairs', label: 'Repairs (Intake & Delivery)', icon: Wrench, count: pendingRepairsCount, hotkey: 'F5' },
     { id: 'inventory', label: 'Stock & Price Lookup', icon: Package, alert: lowStockCount > 0 },
+    { id: 'barcodes', label: 'Print Barcodes', icon: Barcode },
   ];
 
   const navItems = role === 'cashier' ? cashierNavItems : allNavItems;

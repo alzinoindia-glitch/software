@@ -139,8 +139,16 @@ export default function MarketPriceCompareModal({
   const searchKeywords = encodeURIComponent(`${product.brand} ${product.name} ${prices.ram} ${prices.storage}`);
 
   return (
-    <div className="modal-backdrop no-print" style={{ zIndex: 1100 }}>
-      <div className="modal-dialog" style={{ maxWidth: '960px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }}>
+    <div 
+      className="modal-backdrop no-print" 
+      onClick={onClose} 
+      style={{ zIndex: 2500 }}
+    >
+      <div 
+        className="modal-dialog animate-fade-in" 
+        onClick={(e) => e.stopPropagation()} 
+        style={{ maxWidth: '960px', width: '95%', maxHeight: '92vh', overflowY: 'auto', padding: '1.25rem' }}
+      >
         
         {/* Header */}
         <div style={{
