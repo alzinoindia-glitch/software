@@ -211,11 +211,11 @@ export default function Header({
                   animation: 'pulse 2s infinite',
                   transition: 'var(--transition-fast)'
                 }}
-                title="Active: Limited Cashier Counter Mode. Click to unlock Admin Portal using Google Authenticator."
+                title="Active: Cashier Portal. Click to open Admin Portal."
               >
                 <Lock size={14} color="#EAB308" />
                 <span>👤 Cashier</span>
-                <span style={{ fontSize: '0.68rem', color: '#FEF08A', marginLeft: '0.1rem' }}>🔑 Unlock</span>
+                <span style={{ fontSize: '0.68rem', color: '#FEF08A', marginLeft: '0.1rem' }}>Open Admin ➔</span>
               </button>
             )}
 
@@ -391,7 +391,7 @@ export default function Header({
                   }}
                 >
                   <Key size={15} />
-                  <span>Unlock Admin Portal (Google Authenticator)</span>
+                  <span>Open Admin Portal</span>
                 </button>
               ) : (
                 <button

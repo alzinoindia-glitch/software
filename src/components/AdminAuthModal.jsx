@@ -242,7 +242,7 @@ export default function AdminAuthModal({
                 }}
               >
                 <ShieldCheck size={16} />
-                <span>{isVerifying ? 'Verifying...' : 'Verify & Unlock'}</span>
+                <span>{isVerifying ? 'Verifying...' : 'Open Admin Portal'}</span>
               </button>
             </div>
           </form>
