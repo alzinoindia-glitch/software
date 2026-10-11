@@ -192,10 +192,16 @@ export default function PosBilling({
       const haystack = [
         item.name || '',
         item.brand || '',
+        item.model || '',
+        item.color || '',
+        item.ram || '',
+        item.storage || '',
         item.category || '',
         item.description || '',
         item.barcode || '',
-        ...(item.imeis || [])
+        ...(item.barcodes || []),
+        ...(item.imeis || []),
+        ...((item.units || []).flatMap(u => [u.imei1, u.imei2, u.barcode, u.color].filter(Boolean)))
       ].join(' ').toLowerCase();
 
       return matchesCategory && matchesTax && words.every(word => haystack.includes(word));
@@ -252,6 +258,9 @@ export default function PosBilling({
             availableStock: product.stock,
             allImeis: product.imeis || [],
             selectedImeis: initialImei ? [initialImei] : [],
+            color: product.color || '',
+            ram: product.ram || '',
+            storage: product.storage || '',
             warranty: product.warranty || '1 Year Official Warranty',
           }
         ];
@@ -263,7 +272,13 @@ export default function PosBilling({
     const clean = scannedCode.trim().toLowerCase();
     const exactMatch = inventory.find(item => 
       (item.barcode && item.barcode.trim().toLowerCase() === clean) ||
-      (item.imeis && item.imeis.some(imei => imei.trim().toLowerCase() === clean))
+      (item.barcodes && item.barcodes.some(b => b && b.trim().toLowerCase() === clean)) ||
+      (item.imeis && item.imeis.some(imei => imei && imei.trim().toLowerCase() === clean)) ||
+      (item.units && item.units.some(u => 
+        (u.barcode && u.barcode.trim().toLowerCase() === clean) ||
+        (u.imei1 && u.imei1.trim().toLowerCase() === clean) ||
+        (u.imei2 && u.imei2.trim().toLowerCase() === clean)
+      ))
     );
 
     if (exactMatch) {
@@ -273,7 +288,15 @@ export default function PosBilling({
         setTimeout(() => setScanNotification(''), 3500);
         return;
       }
-      const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
+      let matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
+      if (!matchedImei && exactMatch.units) {
+        const u = exactMatch.units.find(un => 
+          (un.barcode && un.barcode.trim().toLowerCase() === clean) ||
+          (un.imei1 && un.imei1.trim().toLowerCase() === clean) ||
+          (un.imei2 && un.imei2.trim().toLowerCase() === clean)
+        );
+        if (u) matchedImei = u.imei1 || u.imei2;
+      }
       addToCart(exactMatch, matchedImei);
       playDeviceBeep('double');
       setScanNotification(`✓ Auto-Added to Cart: ${exactMatch.name} [Code: ${scannedCode}]`);
@@ -664,10 +687,14 @@ export default function PosBilling({
         const remainingImeis = (invItem.imeis || []).filter(
           im => !cartItem.selectedImeis.includes(im)
         );
+        const remainingUnits = (invItem.units || []).filter(
+          u => !cartItem.selectedImeis.includes(u.imei1) && !cartItem.selectedImeis.includes(u.imei2)
+        );
         return {
           ...invItem,
           stock: Math.max(0, invItem.stock - cartItem.qty),
           imeis: remainingImeis,
+          units: remainingUnits.length > 0 ? remainingUnits : (invItem.units ? [] : undefined)
         };
       }
       return invItem;

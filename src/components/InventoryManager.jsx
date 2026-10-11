@@ -31,6 +31,8 @@ import { ProductImagePicker, ProductImageViewer } from './ProductImages';
 import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
 import { renderBarcodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
+import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
 
 export const MOBILE_BRANDS = [
   'Apple', 
@@ -153,6 +155,8 @@ export default function InventoryManager({
 
   // Modals
   const [showModal, setShowModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [activeImeiViewerItem, setActiveImeiViewerItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
@@ -175,8 +179,12 @@ export default function InventoryManager({
   // Form state
   const [formData, setFormData] = useState({
     category: 'New Mobiles',
-    brand: '',
+    brand: 'Samsung',
     name: '',
+    model: '',
+    ram: '8GB',
+    storage: '256GB',
+    color: 'Onyx Black',
     description: '',
     isGst: true,
     hsn: '851712',
@@ -190,7 +198,9 @@ export default function InventoryManager({
     bin: 'B-01',
     barcode: '',
     imeisText: '',
-    warranty: '1 Year Warranty',
+    imei1: '',
+    imei2: '',
+    warranty: '1 Year Brand Warranty',
     receivedDate: new Date().toISOString().split('T')[0],
   });
 
@@ -287,25 +297,31 @@ export default function InventoryManager({
     setEditingItem(null);
     setIsCustomCategory(false);
     setIsCustomBrand(false);
-    setBarcodeMode('scan');
+    setBarcodeMode('generate');
     setFormData({
-      category: 'Mobile Accessories',
-      brand: 'Universal',
+      category: 'New Mobiles',
+      brand: 'Samsung',
       name: '',
+      model: '',
+      ram: '8GB',
+      storage: '256GB',
+      color: 'Onyx Black',
       description: '',
       isGst: true,
-      hsn: '392690',
+      hsn: '851712',
       gstRate: 18,
       buyPrice: '',
       sellPrice: '',
       mrp: '',
-      stock: 5,
+      stock: 1,
       lowStockThreshold: 2,
       rack: 'R-01',
       bin: 'B-01',
       barcode: `ALZ-${Date.now().toString().slice(-6)}`,
       imeisText: '',
-      warranty: 'Standard Warranty',
+      imei1: '',
+      imei2: '',
+      warranty: '1 Year Brand Warranty',
       receivedDate: new Date().toISOString().split('T')[0],
     });
     setFormImages({ front: null, back: null });
@@ -323,9 +339,13 @@ export default function InventoryManager({
     setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
     setFormData({
-      category: item.category || 'Mobile Accessories',
+      category: item.category || 'New Mobiles',
       brand: item.brand || 'Universal',
       name: item.name,
+      model: item.model || '',
+      ram: item.ram || '',
+      storage: item.storage || '',
+      color: item.color || '',
       description: item.description || '',
       isGst: isItemGst,
       hsn: item.hsn || '851712',
@@ -339,6 +359,8 @@ export default function InventoryManager({
       bin: item.bin || (item.locations?.[0]?.bin) || 'B-01',
       barcode: item.barcode || '',
       imeisText: (item.imeis || []).join('\n'),
+      imei1: item.units?.[0]?.imei1 || item.imeis?.[0] || '',
+      imei2: item.units?.[0]?.imei2 || item.imeis?.[1] || '',
       warranty: item.warranty || '',
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
     });
@@ -420,6 +442,10 @@ export default function InventoryManager({
     setShowTransferModal(false);
   };
 
+  const handleSaveBatchMobiles = (newBatchItems) => {
+    setInventory(prev => [...newBatchItems, ...prev]);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.sellPrice) return;
@@ -446,10 +472,28 @@ export default function InventoryManager({
       .map(s => s.trim())
       .filter(Boolean);
 
+    if (formData.imei1 && !imeisArray.includes(formData.imei1.trim())) {
+      imeisArray.unshift(formData.imei1.trim());
+    }
+    if (formData.imei2 && !imeisArray.includes(formData.imei2.trim())) {
+      imeisArray.push(formData.imei2.trim());
+    }
+
     const calculatedStock = imeisArray.length > 0 ? imeisArray.length : parseInt(formData.stock, 10) || 0;
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
+
+    const unitRecords = (formData.imei1 || formData.imei2) ? [{
+      unitId: editingItem?.units?.[0]?.unitId || `UNIT-${Date.now()}`,
+      imei1: formData.imei1?.trim() || '',
+      imei2: formData.imei2?.trim() || '',
+      barcode: formData.barcode,
+      color: formData.color,
+      rack: rackVal,
+      bin: binVal,
+      status: 'In Stock'
+    }] : (editingItem?.units || []);
 
     if (editingItem) {
       setInventory(prev => prev.map(item => {
@@ -464,6 +508,10 @@ export default function InventoryManager({
             category: formData.category,
             brand: formData.brand,
             name: formData.name,
+            model: formData.model || item.model,
+            ram: formData.ram,
+            storage: formData.storage,
+            color: formData.color,
             description: formData.description.trim(),
             isGst: formData.isGst,
             hsn: formData.hsn,
@@ -478,6 +526,7 @@ export default function InventoryManager({
             locations: updatedLocs,
             barcode: formData.barcode,
             imeis: imeisArray,
+            units: unitRecords,
             warranty: formData.warranty,
             receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
             offer: editingItem.offer,
@@ -493,6 +542,10 @@ export default function InventoryManager({
         category: formData.category,
         brand: formData.brand,
         name: formData.name,
+        model: formData.model,
+        ram: formData.ram,
+        storage: formData.storage,
+        color: formData.color,
         description: formData.description.trim(),
         isGst: formData.isGst,
         hsn: formData.hsn,
@@ -507,6 +560,7 @@ export default function InventoryManager({
         locations: [{ rack: rackVal, bin: binVal, qty: calculatedStock }],
         barcode: formData.barcode || `ALZ-${Date.now().toString().slice(-6)}`,
         imeis: imeisArray,
+        units: unitRecords,
         warranty: formData.warranty,
         receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
@@ -648,9 +702,26 @@ export default function InventoryManager({
                 border: 'none',
                 cursor: 'pointer'
               }}
-              title="List"
+              title="Table View"
             >
               <List size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('models')}
+              style={{
+                padding: '0.28rem 0.5rem',
+                borderRadius: '4px',
+                background: viewMode === 'models' ? 'var(--surface-primary)' : 'transparent',
+                color: viewMode === 'models' ? '#10B981' : 'var(--text-muted)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.2rem'
+              }}
+              title="Model-Wise, Colour-Wise & IMEI Directory"
+            >
+              <Smartphone size={14} />
             </button>
           </div>
 
@@ -666,6 +737,29 @@ export default function InventoryManager({
               >
                 <ArrowRightLeft size={13} />
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(true)}
+                className="btn-primary"
+                style={{
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.76rem',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                }}
+                title="Bulk Mobile Stock Entry with Colour Variants & IMEIs"
+              >
+                <Smartphone size={14} />
+                <span>Bulk Mobiles / IMEIs</span>
+              </button>
+
               <button 
                 onClick={openAddModal}
                 className="btn-primary"
@@ -772,7 +866,14 @@ export default function InventoryManager({
       </div>
 
       {/* MAIN VIEWPORT */}
-      {filteredProducts.length === 0 ? (
+      {viewMode === 'models' ? (
+        <ModelVariantImeiDirectory
+          inventory={inventory}
+          onSelectBarcode={onSelectBarcode}
+          onPrintBarcodeSheet={onPrintBarcodeSheet}
+          onQuickBill={handleSendToPos}
+        />
+      ) : filteredProducts.length === 0 ? (
         /* Empty / Zero Match State */
         <div className="hud-card" style={{
           padding: '3rem 1.5rem',
@@ -932,6 +1033,63 @@ export default function InventoryManager({
                   overflow: 'hidden'
                 }}>
                   {item.name}
+                </div>
+
+                {/* Variant Specs: Colour / RAM / Storage / IMEIs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {item.color && (
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(0,0,0,0.06)',
+                      padding: '0.12rem 0.45rem',
+                      borderRadius: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      color: 'var(--text-primary)'
+                    }}>
+                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: item.color.toLowerCase().includes('black') ? '#111' : '#4F46E5' }} />
+                      <span>{item.color}</span>
+                    </span>
+                  )}
+
+                  {(item.ram || item.storage) && (
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(79, 70, 229, 0.08)',
+                      color: 'var(--accent-primary)',
+                      padding: '0.12rem 0.45rem',
+                      borderRadius: '12px'
+                    }}>
+                      {[item.ram, item.storage].filter(Boolean).join(' / ')}
+                    </span>
+                  )}
+
+                  {((item.imeis && item.imeis.length > 0) || (item.units && item.units.length > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveImeiViewerItem(item)}
+                      style={{
+                        fontSize: '0.66rem',
+                        fontWeight: 800,
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        color: '#10B981',
+                        border: 'none',
+                        padding: '0.12rem 0.45rem',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                      title="Inspect all registered IMEIs for this model"
+                    >
+                      <Smartphone size={10} />
+                      <span>{item.units?.length || item.imeis?.length} IMEIs</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Location Badge + ID Pill */}
@@ -1148,8 +1306,38 @@ export default function InventoryManager({
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '0.65rem 0.85rem' }}>
                       <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{item.name}</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
-                        {item.brand || 'UNIVERSAL'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
+                          {item.brand || 'UNIVERSAL'}
+                        </span>
+                        {item.color && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(0,0,0,0.05)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600 }}>
+                            {item.color}
+                          </span>
+                        )}
+                        {(item.ram || item.storage) && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(79,70,229,0.08)', color: 'var(--accent-primary)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                            {[item.ram, item.storage].filter(Boolean).join('/')}
+                          </span>
+                        )}
+                        {((item.imeis && item.imeis.length > 0) || (item.units && item.units.length > 0)) && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveImeiViewerItem(item)}
+                            style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 800,
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              color: '#10B981',
+                              border: 'none',
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            📱 {item.units?.length || item.imeis?.length} IMEIs
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -1427,8 +1615,109 @@ export default function InventoryManager({
                 })()}
               </div>
 
+              {/* Product Specifications: RAM, Storage & Colour */}
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM</label>
+                <select
+                  value={formData.ram}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ram: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="">Select RAM</option>
+                  {COMMON_RAM_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Storage</label>
+                <select
+                  value={formData.storage}
+                  onChange={(e) => setFormData(prev => ({ ...prev, storage: e.target.value }))}
+                  className="input-field"
+                >
+                  <option value="">Select Storage</option>
+                  {COMMON_STORAGE_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Colour</label>
+                <select
+                  value={POPULAR_COLORS.some(c => c.name === formData.color) ? formData.color : (formData.color ? 'Other' : '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setFormData(prev => ({ ...prev, color: '' }));
+                    } else {
+                      setFormData(prev => ({ ...prev, color: val }));
+                    }
+                  }}
+                  className="input-field"
+                >
+                  <option value="">Select Colour</option>
+                  {POPULAR_COLORS.map(c => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="Other">Other (Custom)</option>
+                </select>
+                {(!POPULAR_COLORS.some(c => c.name === formData.color) || formData.color === '') && (
+                  <input
+                    type="text"
+                    placeholder="Type custom colour..."
+                    value={formData.color}
+                    onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                  />
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Model Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Galaxy S24 5G, iPhone 15"
+                  value={formData.model || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, model: e.target.value }))}
+                  className="input-field"
+                />
+              </div>
+
               <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Name *</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Product Name *</label>
+                  {(formData.brand || formData.model || formData.ram || formData.storage || formData.color) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const brand = formData.brand || '';
+                        const model = formData.model || formData.name.replace(/\(.*?\)/g, '').trim();
+                        const specs = [formData.ram, formData.storage].filter(Boolean).join('/');
+                        const colorPart = formData.color ? ` - ${formData.color}` : '';
+                        const formatted = `${brand} ${model} ${specs ? `(${specs}${colorPart})` : colorPart}`.trim();
+                        setFormData(prev => ({ ...prev, name: formatted, model: model }));
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--accent-primary)',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <Sparkles size={11} />
+                      <span>Auto-Format Name with Specs & Colour</span>
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   placeholder="e.g. Apple iPhone 15 128GB"
@@ -1689,11 +1978,58 @@ export default function InventoryManager({
                 />
               </div>
 
+              {/* IMEI 1 & IMEI 2 with Camera Scanner */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1)</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCameraScanner(true)}
+                    style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+                    title="Camera Scan IMEI 1"
+                  >
+                    <Camera size={13} />
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="15-digit IMEI 1"
+                  value={formData.imei1 || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, imei1: e.target.value }))}
+                  className="input-field"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM)</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCameraScanner(true)}
+                    style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+                    title="Camera Scan IMEI 2"
+                  >
+                    <Camera size={13} />
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="15-digit IMEI 2 (optional)"
+                  value={formData.imei2 || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, imei2: e.target.value }))}
+                  className="input-field"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
+                />
+              </div>
+
               <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>IMEIs (Optional, 1 per line)</label>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
+                  Additional / Batch IMEIs (1 per line)
+                </label>
                 <textarea
                   rows={2}
-                  placeholder="358249..."
+                  placeholder="358249... (paste multiple IMEIs if multiple units)"
                   value={formData.imeisText}
                   onChange={(e) => setFormData({ ...formData, imeisText: e.target.value })}
                   className="input-field"
@@ -1902,6 +2238,144 @@ export default function InventoryManager({
           title="Scan Product Box Barcode"
           description="Point your phone camera or webcam at the barcode on the box"
         />
+      )}
+
+      {/* Bulk Add Mobiles / Variants / IMEI Batch Entry Modal */}
+      {showBulkModal && (
+        <BulkMobileVariantEntryModal
+          isOpen={showBulkModal}
+          onClose={() => setShowBulkModal(false)}
+          onSaveBatch={handleSaveBatchMobiles}
+          onPrintBarcodeSheet={onPrintBarcodeSheet}
+        />
+      )}
+
+      {/* Quick IMEI Inspector Modal */}
+      {activeImeiViewerItem && (
+        <div className="modal-backdrop no-print" style={{ zIndex: 1250, padding: '1rem' }}>
+          <div className="modal-dialog" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Smartphone size={18} color="#10B981" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Registered IMEIs & Units</h3>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    {activeImeiViewerItem.name} ({activeImeiViewerItem.stock} in stock)
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setActiveImeiViewerItem(null)} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '450px' }}>
+              {activeImeiViewerItem.units && activeImeiViewerItem.units.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {activeImeiViewerItem.units.map((u, idx) => (
+                    <div 
+                      key={u.unitId || idx}
+                      style={{
+                        padding: '0.6rem 0.8rem',
+                        background: 'var(--bg-main)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>#{idx + 1}</span>
+                          <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{u.color || activeImeiViewerItem.color || 'Standard'}</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Shelf: {u.rack || activeImeiViewerItem.rack}/{u.bin || activeImeiViewerItem.bin}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.85rem', marginTop: '0.25rem', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                          {u.imei1 && (
+                            <span style={{ color: '#10B981', fontWeight: 700 }}>IMEI 1: {u.imei1}</span>
+                          )}
+                          {u.imei2 && (
+                            <span style={{ color: 'var(--text-muted)' }}>IMEI 2: {u.imei2}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        {onPrintBarcodeSheet && u.barcode && (
+                          <button
+                            type="button"
+                            onClick={() => onPrintBarcodeSheet({
+                              title: activeImeiViewerItem.name,
+                              barcode: u.barcode,
+                              price: activeImeiViewerItem.sellPrice,
+                              mrp: activeImeiViewerItem.mrp || activeImeiViewerItem.sellPrice,
+                              copies: 1,
+                              format: 'single'
+                            })}
+                            className="btn-secondary"
+                            style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                          >
+                            <Printer size={11} />
+                            <span>Sticker</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(u.imei1 || u.barcode, `view-${idx}`)}
+                          className="btn-secondary"
+                          style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
+                        >
+                          {copiedId === `view-${idx}` ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : activeImeiViewerItem.imeis && activeImeiViewerItem.imeis.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  {activeImeiViewerItem.imeis.map((im, idx) => (
+                    <div 
+                      key={idx}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        background: 'var(--bg-main)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.78rem'
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: '#10B981' }}>#{idx + 1} IMEI: {im}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(im, `raw-${idx}`)}
+                        className="btn-secondary"
+                        style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
+                      >
+                        {copiedId === `raw-${idx}` ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  No IMEIs assigned to this item.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: '0.85rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setActiveImeiViewerItem(null)} className="btn-secondary">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
