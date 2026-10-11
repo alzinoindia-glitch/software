@@ -43,7 +43,12 @@ import {
   Package,
   CheckCircle,
   HelpCircle,
-  FileText
+  FileText,
+  Headphones,
+  Watch,
+  LayoutGrid,
+  Cable,
+  RefreshCw
 } from 'lucide-react';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
@@ -866,15 +871,15 @@ export default function CustomerStorefront({
 
   // Quick Category Pills
   const categoriesList = [
-    { id: 'all', label: 'All Products', icon: Layers },
+    { id: 'all', label: 'All Products', icon: LayoutGrid },
     { id: 'smartphones', label: 'Smartphones & 5G', icon: Smartphone },
-    { id: 'audio', label: 'Earbuds & Audio', icon: Zap },
-    { id: 'chargers', label: 'Fast Chargers & Cables', icon: BatteryCharging },
-    { id: 'wearables', label: 'Smartwatches', icon: Clock },
-    { id: 'protection', label: 'Glass & Cases', icon: Shield },
-    { id: 'refurbished', label: 'Certified Refurbished', icon: Award },
+    { id: 'audio', label: 'Earbuds & Audio', icon: Headphones },
+    { id: 'chargers', label: 'Fast Chargers & Cables', icon: Cable },
+    { id: 'wearables', label: 'Smartwatches', icon: Watch },
+    { id: 'protection', label: 'Glass & Cases', icon: ShieldCheck },
+    { id: 'refurbished', label: 'Certified Refurbished', icon: RefreshCw },
     { id: 'appliances', label: '4K TVs & Appliances', icon: Tv },
-    { id: 'clearance', label: 'Clearance Hub', icon: BadgePercent },
+    { id: 'clearance', label: 'Clearance Hub', icon: Flame },
   ];
 
   // Category item counts for badges
@@ -1651,27 +1656,13 @@ export default function CustomerStorefront({
                   }}
                 >
                   <div>
-                    {/* Top Badges (Delivery Time + Discount Pill) */}
-                    <div className="storefront-card-top-badges" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span className="storefront-card-badge" style={{
-                        backgroundColor: '#F3F4F6',
-                        color: '#374151',
-                        fontSize: '0.65rem',
-                        fontWeight: 800,
-                        padding: '0.15rem 0.45rem',
-                        borderRadius: '4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.2rem'
-                      }}>
-                        <Zap size={11} color="#10B981" fill="#10B981" />
-                        <span>{prod.deliveryTime || '15-30 Mins'}</span>
-                      </span>
-
-                      {prod.discountPct > 0 && (
+                    {/* Top Badges (Discount Pill in Red, 15-30 Mins removed) */}
+                    <div className="storefront-card-top-badges" style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '0.45rem', minHeight: '1.25rem' }}>
+                      {prod.discountPct > 0 ? (
                         <span className="storefront-card-badge" style={{
-                          backgroundColor: '#DCFCE7',
-                          color: '#15803D',
+                          backgroundColor: '#FEE2E2',
+                          color: '#DC2626',
+                          border: '1px solid #FECACA',
                           fontSize: '0.65rem',
                           fontWeight: 800,
                           padding: '0.15rem 0.45rem',
@@ -1679,7 +1670,7 @@ export default function CustomerStorefront({
                         }}>
                           {prod.discountPct}% OFF
                         </span>
-                      )}
+                      ) : <span style={{ visibility: 'hidden' }}>&nbsp;</span>}
                     </div>
 
                     {/* Product Photo Showcase */}
@@ -1828,9 +1819,10 @@ export default function CustomerStorefront({
                       {savings > 0 && (
                         <span className="storefront-card-save" style={{
                           fontSize: '0.62rem',
-                          color: '#16A34A',
+                          color: '#DC2626',
                           fontWeight: 800,
-                          backgroundColor: '#DCFCE7',
+                          backgroundColor: '#FEE2E2',
+                          border: '1px solid #FECACA',
                           padding: '0.12rem 0.38rem',
                           borderRadius: '4px'
                         }}>
@@ -2662,16 +2654,13 @@ export default function CustomerStorefront({
               <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0C5B43', backgroundColor: '#E8F5E9', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
                 {selectedProductModal.brand}
               </span>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4B5563', backgroundColor: '#F3F4F6', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                {selectedProductModal.deliveryTime || 'Same-Day Bodhan'}
-              </span>
             </div>
 
             <h3 style={{ fontSize: '1.15rem', fontWeight: 900, color: '#111827', margin: '0 0 0.5rem' }}>
               {selectedProductModal.name}
             </h3>
 
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '1.45rem', fontWeight: 900, color: '#111827' }}>
                 ₹{selectedProductModal.price.toLocaleString()}
               </span>
@@ -2681,8 +2670,13 @@ export default function CustomerStorefront({
                 </span>
               )}
               {selectedProductModal.discountPct > 0 && (
-                <span style={{ backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                <span style={{ backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
                   {selectedProductModal.discountPct}% OFF
+                </span>
+              )}
+              {selectedProductModal.mrp && selectedProductModal.mrp > selectedProductModal.price && (
+                <span style={{ backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                  Save ₹{(selectedProductModal.mrp - selectedProductModal.price).toLocaleString()}
                 </span>
               )}
             </div>
