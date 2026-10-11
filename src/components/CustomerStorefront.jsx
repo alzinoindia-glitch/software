@@ -712,28 +712,53 @@ export default function CustomerStorefront({
 
   const handleWhatsAppCheckout = () => {
     const targetPhone = '919121212292'; // Destination: 9121212292
-    let orderSummary = `*ALZINO STOREFRONT ORDER • BODHAN* 🛍️\n\n`;
-    orderSummary += `👤 Customer: ${customerName || 'Bodhan Customer'}\n`;
-    orderSummary += `📞 Phone: ${customerPhone || 'Not provided'}\n`;
-    orderSummary += `🚚 Mode: ${deliveryType === 'doorstep' ? 'Doorstep Delivery across Bodhan' : 'Showroom Counter Pickup (Station Road)'}\n`;
-    if (customerAddress) orderSummary += `📍 Address: ${customerAddress}\n`;
-    orderSummary += `\n*ITEMS ORDERED:*\n`;
+    let message = `Namaste ALZINO Bodhan! 👋\n\n`;
+    message += `I am enquiring from your store website about the following *${cartCount} item(s)* in my cart:\n\n`;
+    message += `🛍️ *PRODUCTS ENQUIRED:*\n`;
 
     cartItems.forEach((item, index) => {
-      orderSummary += `${index + 1}. *${item.name}* x ${item.qty} = ₹${(item.price * item.qty).toLocaleString('en-IN')}\n`;
-      const specs = [item.ram, item.storage, item.color].filter(Boolean).join(' • ');
-      if (specs) {
-        orderSummary += `   ↳ Variant: ${specs}\n`;
+      const itemTotal = (item.price * item.qty).toLocaleString('en-IN');
+      const itemMrp = item.mrp ? ` (Box MRP: ₹${(item.mrp * item.qty).toLocaleString('en-IN')})` : '';
+      const itemSavings = (item.mrp && item.mrp > item.price) ? (item.mrp - item.price) * item.qty : 0;
+      const savingsText = itemSavings > 0 ? ` [Save ₹${itemSavings.toLocaleString('en-IN')}]` : '';
+
+      message += `\n*${index + 1}. ${item.name}*\n`;
+      message += `   • Quantity: *${item.qty}*\n`;
+      message += `   • Special Price: *₹${itemTotal}*${itemMrp}${savingsText}\n`;
+      
+      const details = [];
+      if (item.brand) details.push(`Brand: ${item.brand}`);
+      if (item.category) details.push(`Category: ${item.category}`);
+      if (item.ram || item.storage) details.push(`Spec: ${[item.ram, item.storage].filter(Boolean).join('/')}`);
+      if (item.color) details.push(`Colour: ${item.color}`);
+      if (details.length > 0) {
+        message += `   • Specs: ${details.join(' • ')}\n`;
+      }
+
+      if (item.warranty) {
+        message += `   • Warranty: ${item.warranty}\n`;
+      }
+      if (item.rack) {
+        message += `   • Shelf: Rack ${item.rack}${item.bin ? `, Bin ${item.bin}` : ''}\n`;
       }
     });
 
-    orderSummary += `\n💵 *TOTAL BILL:* ₹${cartTotal.toLocaleString('en-IN')}`;
+    message += `\n-----------------------------------\n`;
+    message += `📦 *Total Items:* ${cartCount} unit(s)\n`;
+    message += `💰 *Total Enquired Amount:* ₹${cartTotal.toLocaleString('en-IN')}\n`;
     if (cartSavings > 0) {
-      orderSummary += ` (Saved: ₹${cartSavings.toLocaleString('en-IN')})`;
+      message += `🎉 *Total Savings:* ₹${cartSavings.toLocaleString('en-IN')}\n`;
     }
-    orderSummary += `\n\nPlease confirm stock & delivery schedule. Thank you! 🙏`;
+    message += `-----------------------------------\n\n`;
 
-    const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(orderSummary)}`;
+    if (customerName.trim() || customerPhone.trim()) {
+      message += `👤 *Customer Name:* ${customerName.trim() || 'Walk-in Customer'}\n`;
+      if (customerPhone.trim()) message += `📱 *Phone:* ${customerPhone.trim()}\n\n`;
+    }
+
+    message += `Please confirm stock availability and best counter deal for me at your Station Road, Bodhan showroom. Thank you! 🙏`;
+
+    const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };
 
@@ -1922,54 +1947,20 @@ export default function CustomerStorefront({
                     </div>
                   ))}
 
-                  {/* Delivery & Customer Info */}
+                  {/* Optional Customer Contact for WhatsApp Enquiry */}
                   <div style={{
                     backgroundColor: '#F9FAFB',
                     borderRadius: '8px',
-                    padding: '0.85rem',
+                    padding: '0.75rem',
                     border: '1px solid #E5E7EB',
                     marginTop: '0.5rem'
                   }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#111827', marginBottom: '0.5rem' }}>
-                      Delivery / Pickup Details
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#374151', marginBottom: '0.45rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <WhatsAppIcon size={14} color="#25D366" />
+                      <span>Customer Details (Optional)</span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.65rem' }}>
-                      <button
-                        onClick={() => setDeliveryType('doorstep')}
-                        style={{
-                          flex: 1,
-                          padding: '0.4rem',
-                          borderRadius: '6px',
-                          border: `1px solid ${deliveryType === 'doorstep' ? '#0C5B43' : '#D1D5DB'}`,
-                          backgroundColor: deliveryType === 'doorstep' ? '#E8F5E9' : '#FFFFFF',
-                          color: deliveryType === 'doorstep' ? '#0C5B43' : '#4B5563',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        🚚 Doorstep Delivery
-                      </button>
-                      <button
-                        onClick={() => setDeliveryType('pickup')}
-                        style={{
-                          flex: 1,
-                          padding: '0.4rem',
-                          borderRadius: '6px',
-                          border: `1px solid ${deliveryType === 'pickup' ? '#0C5B43' : '#D1D5DB'}`,
-                          backgroundColor: deliveryType === 'pickup' ? '#E8F5E9' : '#FFFFFF',
-                          color: deliveryType === 'pickup' ? '#0C5B43' : '#4B5563',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        🏪 Showroom Pickup
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem' }}>
                       <input 
                         type="text"
                         placeholder="Your Name"
@@ -1986,7 +1977,7 @@ export default function CustomerStorefront({
                       />
                       <input 
                         type="tel"
-                        placeholder="10-Digit Mobile Number"
+                        placeholder="Mobile Number"
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
                         style={{
@@ -1998,22 +1989,6 @@ export default function CustomerStorefront({
                           outline: 'none'
                         }}
                       />
-                      {deliveryType === 'doorstep' && (
-                        <input 
-                          type="text"
-                          placeholder="Delivery Address in Bodhan"
-                          value={customerAddress}
-                          onChange={(e) => setCustomerAddress(e.target.value)}
-                          style={{
-                            padding: '0.45rem 0.65rem',
-                            backgroundColor: '#FFFFFF',
-                            border: '1px solid #D1D5DB',
-                            borderRadius: '6px',
-                            fontSize: '0.78rem',
-                            outline: 'none'
-                          }}
-                        />
-                      )}
                     </div>
                   </div>
 
@@ -2029,7 +2004,7 @@ export default function CustomerStorefront({
                     gap: '0.35rem'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6B7280' }}>
-                      <span>Item Total</span>
+                      <span>Total MRP Value ({cartCount} {cartCount === 1 ? 'item' : 'items'})</span>
                       <span>₹{cartMrpTotal.toLocaleString()}</span>
                     </div>
                     {cartSavings > 0 && (
@@ -2038,10 +2013,6 @@ export default function CustomerStorefront({
                         <span>- ₹{cartSavings.toLocaleString()}</span>
                       </div>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6B7280' }}>
-                      <span>Delivery Fee</span>
-                      <span style={{ color: '#16A34A', fontWeight: 700 }}>FREE (Bodhan)</span>
-                    </div>
                     <div style={{
                       borderTop: '1px solid #E5E7EB',
                       paddingTop: '0.45rem',
@@ -2051,7 +2022,7 @@ export default function CustomerStorefront({
                       fontSize: '0.92rem',
                       color: '#111827'
                     }}>
-                      <span>To Pay</span>
+                      <span>Special Enquired Price</span>
                       <span>₹{cartTotal.toLocaleString()}</span>
                     </div>
                   </div>
@@ -2081,8 +2052,8 @@ export default function CustomerStorefront({
                     boxShadow: '0 4px 14px rgba(37, 211, 102, 0.35)'
                   }}
                 >
-                  <MessageCircle size={18} />
-                  <span>Order on WhatsApp (₹{cartTotal.toLocaleString()})</span>
+                  <WhatsAppIcon size={18} color="#FFFFFF" />
+                  <span>Enquire Cart on WhatsApp ({cartCount} {cartCount === 1 ? 'Item' : 'Items'} • ₹{cartTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -2120,13 +2091,18 @@ export default function CustomerStorefront({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
               <div style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
+                backgroundColor: '#25D366',
                 borderRadius: '6px',
                 padding: '0.25rem 0.5rem',
                 fontSize: '0.78rem',
-                fontWeight: 900
+                fontWeight: 900,
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem'
               }}>
-                {cartCount} {cartCount === 1 ? 'ITEM' : 'ITEMS'}
+                <WhatsAppIcon size={13} color="#FFFFFF" />
+                <span>{cartCount} {cartCount === 1 ? 'ITEM' : 'ITEMS'}</span>
               </div>
               <div style={{ fontSize: '0.95rem', fontWeight: 900 }}>
                 ₹{cartTotal.toLocaleString()}
@@ -2134,7 +2110,7 @@ export default function CustomerStorefront({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 800 }}>
-              <span>View Cart</span>
+              <span>View & Enquire on WhatsApp</span>
               <ArrowRight size={16} />
             </div>
           </div>
