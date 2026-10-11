@@ -44,10 +44,8 @@ export const defaultShopConfig = {
   instagramUrl: "https://instagram.com/alzino.bodhan",
   whatsappNumber: "+91 91212 12292",
   whatsappUrl: "https://wa.me/919121212292",
-  youtube: "@AlzinoTechBodhan",
-  youtubeUrl: "https://youtube.com/@AlzinoTechBodhan",
-  facebook: "Alzino Mobiles Bodhan",
   mapsUrl: "https://share.google/U7aTnVbimv7z4RSW5",
+  reviewUrl: "https://g.page/r/CWxRHXGDCdZ7EBM/review",
   storeTimings: "Monday – Sunday: 9:30 AM to 10:00 PM",
   landmark: "Opposite State Bank of India, 200m from Railway Station",
 };

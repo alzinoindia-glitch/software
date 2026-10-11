@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ProductImageViewer } from './ProductImages';
 import { getAgingDays } from '../utils/stockOffers';
 import { 
@@ -54,18 +54,6 @@ const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   </svg>
 );
 
-const YoutubeIcon = ({ size = 18, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/>
-    <polygon points="10 15 15 12 10 9" fill={color}/>
-  </svg>
-);
-
-const FacebookIcon = ({ size = 18, color = "currentColor" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-  </svg>
-);
 
 const WhatsAppIcon = ({ size = 16, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
@@ -211,6 +199,76 @@ export default function CustomerStorefront({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [deliveryType, setDeliveryType] = useState('doorstep'); // 'doorstep' | 'pickup'
+
+  // Rotating Value Proposition Hero Banners ("cards come, show text, go, and again come")
+  const promoBanners = useMemo(() => [
+    {
+      id: 'price-match',
+      tag: 'Counter Price Match',
+      title: 'Cheaper Than Amazon & Flipkart',
+      desc: 'Show us lower pricing today at the Bodhan counter & we match it live!',
+      icon: '🏷️',
+      gradient: 'linear-gradient(135deg, #0C5B43 0%, #177A5C 100%)',
+      glowColor: 'rgba(12, 91, 67, 0.28)',
+      textColor: '#E1EBE6',
+      badgeBg: 'rgba(255, 255, 255, 0.22)'
+    },
+    {
+      id: 'delivery',
+      tag: 'Free Bodhan Delivery',
+      title: '4K TVs, Inverter ACs & Washers',
+      desc: 'Free doorstep transportation & live unboxing demo across Bodhan.',
+      icon: '📺',
+      gradient: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
+      glowColor: 'rgba(37, 99, 235, 0.28)',
+      textColor: '#DBEAFE',
+      badgeBg: 'rgba(255, 255, 255, 0.22)'
+    },
+    {
+      id: 'repair-lab',
+      tag: 'In-Store Precision Lab',
+      title: '30-Min Screen & Battery Fix',
+      desc: 'Genuine displays & chip restoration done right inside our Bodhan store.',
+      icon: '⚡',
+      gradient: 'linear-gradient(135deg, #78350F 0%, #B45309 100%)',
+      glowColor: 'rgba(180, 83, 9, 0.28)',
+      textColor: '#FEF3C7',
+      badgeBg: 'rgba(255, 255, 255, 0.22)'
+    }
+  ], []);
+
+  const [activeBannerIdx, setActiveBannerIdx] = useState(0);
+  const [bannerAnimPhase, setBannerAnimPhase] = useState('visible'); // 'visible' | 'exiting' | 'entering'
+  const [isBannerHovered, setIsBannerHovered] = useState(false);
+
+  useEffect(() => {
+    if (isBannerHovered) return;
+
+    // Show current card for 3800ms
+    const timer = setTimeout(() => {
+      // 1. Trigger exit animation ("and go")
+      setBannerAnimPhase('exiting');
+
+      const exitTimer = setTimeout(() => {
+        // 2. Advance to next card ("again come")
+        setActiveBannerIdx(prev => (prev + 1) % promoBanners.length);
+        setBannerAnimPhase('entering');
+
+        // 3. Trigger entrance to visible
+        const enterTimer = setTimeout(() => {
+          setBannerAnimPhase('visible');
+        }, 50);
+
+        return () => clearTimeout(enterTimer);
+      }, 380);
+
+      return () => clearTimeout(exitTimer);
+    }, 3800);
+
+    return () => clearTimeout(timer);
+  }, [activeBannerIdx, isBannerHovered, promoBanners.length]);
+
+  const currentBanner = promoBanners[activeBannerIdx] || promoBanners[0];
 
   // Curated showcase of Mobiles, Audio, Accessories & Home Appliances with 100% verified matching images
   const fallbackShowroomCatalog = [
@@ -1029,9 +1087,9 @@ export default function CustomerStorefront({
 
           {/* Right: Quick Action Controls + Cart Button */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
-            {/* Locate Store Button */}
+            {/* Locate Store / Maps Navigation */}
             <a 
-              href="https://share.google/U7aTnVbimv7z4RSW5"
+              href={shopConfig.mapsUrl || "https://share.google/U7aTnVbimv7z4RSW5"}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1052,8 +1110,35 @@ export default function CustomerStorefront({
               }}
               title="Locate ALZINO Flagship Showroom on Google Maps"
             >
-              <MapPin size={15} color="#D97706" />
-              <span>Locate Store</span>
+              <Navigation size={15} color="#D97706" />
+              <span>Maps</span>
+            </a>
+
+            {/* Rate Us on Google */}
+            <a 
+              href={shopConfig.reviewUrl || "https://g.page/r/CWxRHXGDCdZ7EBM/review"}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                backgroundColor: '#FFFBEB',
+                color: '#B45309',
+                border: '1.5px solid #FDE68A',
+                borderRadius: '10px',
+                padding: '0.55rem 0.85rem',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                textDecoration: 'none',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Leave a 5-Star Review for ALZINO Bodhan on Google"
+            >
+              <Star size={15} color="#F59E0B" fill="#F59E0B" />
+              <span>Rate Us</span>
             </a>
 
             <a 
@@ -1108,21 +1193,164 @@ export default function CustomerStorefront({
             </button>
           </div>
         </div>
+      </header>
 
-        {/* Categories Bar (Horizontal Pills Scroll - Blinkit Style) */}
-        <div style={{
-          borderTop: '1px solid #F3F4F6',
-          backgroundColor: '#FFFFFF',
-          padding: '0.4rem 1rem',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap'
-        }}>
+      {/* ========================================================================= */}
+      {/* 2. PROMOTIONAL HERO VALUE PROPOSITIONS (ANIMATED ROTATING SHOWCASE) */}
+      {/* ========================================================================= */}
+      <section style={{ maxWidth: '1280px', margin: '1.25rem auto 0', padding: '0 1rem' }}>
+        <div 
+          onMouseEnter={() => setIsBannerHovered(true)}
+          onMouseLeave={() => setIsBannerHovered(false)}
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: '16px',
+            background: currentBanner.gradient,
+            color: '#FFFFFF',
+            boxShadow: `0 8px 24px ${currentBanner.glowColor}`,
+            minHeight: '120px',
+            transition: 'background 0.4s ease, box-shadow 0.4s ease'
+          }}
+        >
+          {/* Animated Card Content ("cards come, show text, go, and again come") */}
           <div style={{
-            maxWidth: '1280px',
-            margin: '0 auto',
+            padding: '1.35rem 1.6rem',
             display: 'flex',
-            gap: '0.5rem'
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1.25rem',
+            opacity: bannerAnimPhase === 'visible' ? 1 : 0,
+            transform: bannerAnimPhase === 'visible' 
+              ? 'translateY(0) scale(1)' 
+              : (bannerAnimPhase === 'entering' ? 'translateY(24px) scale(0.97)' : 'translateY(-24px) scale(0.97)'),
+            transition: 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.38s ease'
           }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+                <span style={{
+                  backgroundColor: currentBanner.badgeBg,
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '6px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
+                }}>
+                  <span>{currentBanner.icon}</span>
+                  <span>{currentBanner.tag}</span>
+                </span>
+                <span style={{
+                  fontSize: '0.68rem',
+                  color: 'rgba(255,255,255,0.75)',
+                  fontWeight: 700
+                }}>
+                  Live In-Store Promise ({activeBannerIdx + 1}/{promoBanners.length})
+                </span>
+              </div>
+              <h3 style={{ 
+                fontSize: '1.35rem', 
+                fontWeight: 900, 
+                margin: '0 0 0.28rem',
+                lineHeight: 1.2
+              }}>
+                {currentBanner.title}
+              </h3>
+              <p style={{ 
+                margin: 0, 
+                fontSize: '0.84rem', 
+                color: currentBanner.textColor,
+                lineHeight: 1.4,
+                maxWidth: '750px'
+              }}>
+                {currentBanner.desc}
+              </p>
+            </div>
+
+            {/* Giant Icon Visual with subtle bounce/float */}
+            <div style={{ 
+              fontSize: '3.4rem', 
+              lineHeight: 1,
+              filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.18))',
+              transform: bannerAnimPhase === 'visible' ? 'scale(1)' : 'scale(0.8)',
+              transition: 'transform 0.38s ease',
+              flexShrink: 0
+            }}>
+              {currentBanner.icon}
+            </div>
+          </div>
+
+          {/* Progress Countdown Bar showing remaining time */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            height: '3px',
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            width: bannerAnimPhase === 'visible' && !isBannerHovered ? '100%' : '0%',
+            transition: bannerAnimPhase === 'visible' && !isBannerHovered ? 'width 3.8s linear' : 'none'
+          }} />
+        </div>
+
+        {/* Interactive Indicator Pills Below Card */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.6rem',
+          marginTop: '0.75rem',
+          flexWrap: 'wrap'
+        }}>
+          {promoBanners.map((b, idx) => {
+            const isActive = activeBannerIdx === idx;
+            return (
+              <button
+                key={b.id}
+                onClick={() => {
+                  setActiveBannerIdx(idx);
+                  setBannerAnimPhase('visible');
+                }}
+                style={{
+                  backgroundColor: isActive ? '#1A1C1E' : '#FFFFFF',
+                  color: isActive ? '#FFFFFF' : '#4B5563',
+                  border: `1.5px solid ${isActive ? '#1A1C1E' : '#E5E7EB'}`,
+                  borderRadius: '999px',
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.2s ease',
+                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+                }}
+              >
+                <span>{b.icon}</span>
+                <span>{b.tag}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* 3. PRODUCT CATALOG GRID WITH QUICK-COMMERCE CATEGORY PILLS */}
+      {/* ========================================================================= */}
+      <section style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
+        {/* Category Filter Pills (Placed Above Product Listing) */}
+        <div style={{
+          marginBottom: '1.25rem',
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          paddingBottom: '0.35rem',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none'
+        }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
             {categoriesList.map(cat => {
               const isActive = selectedCategory === cat.id;
               const Icon = cat.icon;
@@ -1131,140 +1359,30 @@ export default function CustomerStorefront({
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
                   style={{
-                    backgroundColor: isActive ? '#0C5B43' : '#F9FAFB',
+                    backgroundColor: isActive ? '#0C5B43' : '#FFFFFF',
                     color: isActive ? '#FFFFFF' : '#374151',
-                    border: `1px solid ${isActive ? '#0C5B43' : '#E5E7EB'}`,
-                    padding: '0.45rem 0.95rem',
+                    border: `1.5px solid ${isActive ? '#0C5B43' : '#E5E7EB'}`,
+                    padding: '0.5rem 1rem',
                     borderRadius: '999px',
-                    fontSize: '0.78rem',
+                    fontSize: '0.8rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.4rem',
-                    transition: 'all 0.15s ease'
+                    gap: '0.45rem',
+                    boxShadow: isActive ? '0 2px 8px rgba(12, 91, 67, 0.25)' : '0 1px 3px rgba(0,0,0,0.03)',
+                    transition: 'all 0.15s ease',
+                    flexShrink: 0
                   }}
                 >
-                  <Icon size={14} color={isActive ? '#FFFFFF' : '#0C5B43'} />
+                  <Icon size={15} color={isActive ? '#FFFFFF' : '#0C5B43'} />
                   <span>{cat.label}</span>
                 </button>
               );
             })}
           </div>
         </div>
-      </header>
 
-      {/* ========================================================================= */}
-      {/* 2. PROMOTIONAL QUICK-COMMERCE HERO BANNERS (ZEPTO / INSTAMART STYLE) */}
-      {/* ========================================================================= */}
-      <section style={{ maxWidth: '1280px', margin: '1.25rem auto 0', padding: '0 1rem' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: '0.85rem'
-        }}>
-          {/* Banner 1: Live Counter Price Match */}
-          <div style={{
-            background: 'linear-gradient(135deg, #0C5B43 0%, #177A5C 100%)',
-            color: '#FFFFFF',
-            padding: '1.25rem',
-            borderRadius: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: '0 4px 12px rgba(12, 91, 67, 0.15)'
-          }}>
-            <div>
-              <span style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                fontSize: '0.65rem',
-                fontWeight: 800,
-                padding: '0.15rem 0.45rem',
-                borderRadius: '4px',
-                textTransform: 'uppercase'
-              }}>
-                Counter Price Match
-              </span>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 900, margin: '0.35rem 0 0.2rem' }}>
-                Cheaper Than Amazon &amp; Flipkart
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.76rem', color: '#E1EBE6' }}>
-                Show us lower pricing today at the Bodhan counter &amp; we match it live!
-              </p>
-            </div>
-            <div style={{ fontSize: '2.4rem', opacity: 0.9 }}>🏷️</div>
-          </div>
-
-          {/* Banner 2: Same-day Appliances Delivery & Demo */}
-          <div style={{
-            background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
-            color: '#FFFFFF',
-            padding: '1.25rem',
-            borderRadius: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)'
-          }}>
-            <div>
-              <span style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                fontSize: '0.65rem',
-                fontWeight: 800,
-                padding: '0.15rem 0.45rem',
-                borderRadius: '4px',
-                textTransform: 'uppercase'
-              }}>
-                Free Bodhan Delivery
-              </span>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 900, margin: '0.35rem 0 0.2rem' }}>
-                4K TVs, Inverter ACs &amp; Washers
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.76rem', color: '#DBEAFE' }}>
-                Free doorstep transportation &amp; live unboxing demo across Bodhan.
-              </p>
-            </div>
-            <div style={{ fontSize: '2.4rem', opacity: 0.9 }}>📺</div>
-          </div>
-
-          {/* Banner 3: 30-Minute Lab Repair */}
-          <div style={{
-            background: 'linear-gradient(135deg, #78350F 0%, #B45309 100%)',
-            color: '#FFFFFF',
-            padding: '1.25rem',
-            borderRadius: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: '0 4px 12px rgba(180, 83, 9, 0.15)'
-          }}>
-            <div>
-              <span style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                fontSize: '0.65rem',
-                fontWeight: 800,
-                padding: '0.15rem 0.45rem',
-                borderRadius: '4px',
-                textTransform: 'uppercase'
-              }}>
-                In-Store Precision Lab
-              </span>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 900, margin: '0.35rem 0 0.2rem' }}>
-                30-Min Screen &amp; Battery Fix
-              </h3>
-              <p style={{ margin: 0, fontSize: '0.76rem', color: '#FEF3C7' }}>
-                Genuine displays &amp; chip restoration done right inside our Bodhan store.
-              </p>
-            </div>
-            <div style={{ fontSize: '2.4rem', opacity: 0.9 }}>⚡</div>
-          </div>
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 3. PRODUCT CATALOG GRID WITH BLINKIT / ZEPTO STYLE CARDS */}
-      {/* ========================================================================= */}
-      <section style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
         {/* Section Title & Sort Dropdown */}
         <div style={{
           display: 'flex',
@@ -1928,7 +2046,7 @@ export default function CustomerStorefront({
               </a>
 
               <a
-                href={shopConfig.youtubeUrl || 'https://youtube.com/@AlzinoTechBodhan'}
+                href={shopConfig.mapsUrl || 'https://share.google/U7aTnVbimv7z4RSW5'}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -1936,20 +2054,20 @@ export default function CustomerStorefront({
                   alignItems: 'center',
                   gap: '0.4rem',
                   padding: '0.5rem 0.65rem',
-                  backgroundColor: '#FEF2F2',
-                  color: '#B91C1C',
+                  backgroundColor: '#FEF3C7',
+                  color: '#92400E',
                   borderRadius: '6px',
                   textDecoration: 'none',
                   fontSize: '0.76rem',
                   fontWeight: 700
                 }}
               >
-                <YoutubeIcon size={15} color="#B91C1C" />
-                <span>YouTube</span>
+                <Navigation size={15} color="#D97706" />
+                <span>Maps Navigation</span>
               </a>
 
               <a
-                href={shopConfig.facebookUrl || 'https://facebook.com/alzinomobiles'}
+                href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -1957,16 +2075,16 @@ export default function CustomerStorefront({
                   alignItems: 'center',
                   gap: '0.4rem',
                   padding: '0.5rem 0.65rem',
-                  backgroundColor: '#EFF6FF',
-                  color: '#1D4ED8',
+                  backgroundColor: '#FFFBEB',
+                  color: '#B45309',
                   borderRadius: '6px',
                   textDecoration: 'none',
                   fontSize: '0.76rem',
                   fontWeight: 700
                 }}
               >
-                <FacebookIcon size={15} color="#1D4ED8" />
-                <span>Facebook</span>
+                <Star size={15} color="#F59E0B" fill="#F59E0B" />
+                <span>Rate Us (5★)</span>
               </a>
             </div>
           </div>

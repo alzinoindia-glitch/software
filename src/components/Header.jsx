@@ -22,7 +22,8 @@ import {
   Lock,
   Key,
   UserCheck,
-  MapPin
+  MapPin,
+  Star
 } from 'lucide-react';
 
 export default function Header({ 
@@ -203,7 +204,7 @@ export default function Header({
               <span className="hide-on-mobile">alzino.shop</span>
             </button>
 
-            {/* Locate Store Button */}
+            {/* Locate Store Button (Maps Navigation) */}
             <a
               href="https://share.google/U7aTnVbimv7z4RSW5"
               target="_blank"
@@ -226,6 +227,31 @@ export default function Header({
             >
               <MapPin size={13} color="#FBBF24" />
               <span className="hide-on-mobile">Locate Store</span>
+            </a>
+
+            {/* Rate Us Button */}
+            <a
+              href="https://g.page/r/CWxRHXGDCdZ7EBM/review"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'rgba(234, 179, 8, 0.12)',
+                border: '1px solid rgba(234, 179, 8, 0.35)',
+                color: '#FACC15',
+                padding: '0.38rem 0.65rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                textDecoration: 'none'
+              }}
+              title="Rate ALZINO on Google Reviews"
+            >
+              <Star size={13} color="#FACC15" fill="#FACC15" />
+              <span className="hide-on-mobile">Rate Us</span>
             </a>
 
             {/* Mobile Search Button (before Menu) */}
