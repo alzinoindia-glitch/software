@@ -22,14 +22,17 @@ import {
   Tv,
   Wrench,
   Printer,
-  Sparkles
+  Sparkles,
+  Camera,
+  RefreshCw
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
 import { ProductImagePicker, ProductImageViewer } from './ProductImages';
 import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
 import { renderBarcodeSvg } from '../utils/barcode';
+import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 
-const standardBrands = [
+export const MOBILE_BRANDS = [
   'Apple', 
   'Samsung', 
   'OnePlus', 
@@ -41,10 +44,78 @@ const standardBrands = [
   'Google Pixel', 
   'iQOO',
   'Nothing',
-  'boAt', 
-  'Noise', 
+  'POCO',
+  'Infinix',
+  'Tecno',
   'Universal'
 ];
+
+export const APPLIANCE_BRANDS = [
+  'Samsung',
+  'LG',
+  'Sony',
+  'Whirlpool',
+  'Voltas',
+  'Haier',
+  'Godrej',
+  'Panasonic',
+  'Daikin',
+  'Blue Star',
+  'Lloyd',
+  'Symphony',
+  'Philips',
+  'Bajaj',
+  'Havells',
+  'Crompton',
+  'IFB',
+  'Universal'
+];
+
+export const ACCESSORY_BRANDS = [
+  'Apple',
+  'Samsung',
+  'ALZINO Tech',
+  'boAt', 
+  'Noise', 
+  'OnePlus',
+  'Realme',
+  'Portronics',
+  'Anker',
+  'Ambrane',
+  'pTron',
+  'Boult',
+  'Fire-Boltt',
+  'Universal'
+];
+
+export const SPARE_PARTS_BRANDS = [
+  'Apple',
+  'Samsung',
+  'Vivo',
+  'Oppo',
+  'OnePlus',
+  'Xiaomi',
+  'Realme',
+  'Universal'
+];
+
+export const STANDARD_CATEGORIES = [
+  'Mobile Accessories',
+  'New Mobiles', 
+  'Used Mobiles', 
+  'Home Appliances', 
+  'Spare Parts',
+  'Universal'
+];
+
+export const getBrandsForCategory = (category) => {
+  if (category === 'Home Appliances') return APPLIANCE_BRANDS;
+  if (category === 'Mobile Accessories') return ACCESSORY_BRANDS;
+  if (category === 'New Mobiles' || category === 'Used Mobiles') return MOBILE_BRANDS;
+  if (category === 'Spare Parts') return SPARE_PARTS_BRANDS;
+  return Array.from(new Set(['Universal', 'Samsung', 'Apple', 'LG', 'Sony', 'boAt', 'Noise', 'Voltas']));
+};
+
 
 export default function InventoryManager({ 
   inventory, 
@@ -83,10 +154,13 @@ export default function InventoryManager({
   // Modals
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
   const [quickBarcodeItem, setQuickBarcodeItem] = useState(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [barcodeMode, setBarcodeMode] = useState('scan'); // 'scan' | 'generate'
   // Product photos (front & back) for the add/edit form
   const [formImages, setFormImages] = useState({ front: null, back: null });
 
@@ -126,10 +200,17 @@ export default function InventoryManager({
     'Used Mobiles': Smartphone,
     'Mobile Accessories': Headphones,
     'Home Appliances': Tv,
-    'Spare Parts': Wrench
+    'Spare Parts': Wrench,
+    'Universal': Package
   };
 
-  const categories = ['All', 'New Mobiles', 'Used Mobiles', 'Mobile Accessories', 'Home Appliances', 'Spare Parts'];
+  const categories = useMemo(() => {
+    const set = new Set(['All', ...STANDARD_CATEGORIES]);
+    inventory.forEach(i => {
+      if (i.category) set.add(i.category);
+    });
+    return Array.from(set);
+  }, [inventory]);
 
   const handleCopy = (text, id) => {
     if (!text) return;
@@ -204,7 +285,9 @@ export default function InventoryManager({
 
   const openAddModal = () => {
     setEditingItem(null);
+    setIsCustomCategory(false);
     setIsCustomBrand(false);
+    setBarcodeMode('scan');
     setFormData({
       category: 'Mobile Accessories',
       brand: 'Universal',
@@ -231,11 +314,17 @@ export default function InventoryManager({
 
   const openEditModal = (item) => {
     setEditingItem(item);
-    setIsCustomBrand(Boolean(item.brand && !standardBrands.includes(item.brand)));
+    const isCatCustom = Boolean(item.category && !STANDARD_CATEGORIES.includes(item.category));
+    setIsCustomCategory(isCatCustom);
+    const validBrands = getBrandsForCategory(item.category);
+    const isBrCustom = Boolean(item.brand && !validBrands.includes(item.brand));
+    setIsCustomBrand(isBrCustom);
+    const isGenerated = Boolean(item.barcode && item.barcode.startsWith('ALZ-'));
+    setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
     setFormData({
-      category: item.category,
-      brand: item.brand || 'Apple',
+      category: item.category || 'Mobile Accessories',
+      brand: item.brand || 'Universal',
       name: item.name,
       description: item.description || '',
       isGst: isItemGst,
@@ -1253,52 +1342,89 @@ export default function InventoryManager({
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Category</label>
                 <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="input-field"
-                >
-                  <option value="New Mobiles">New Mobiles</option>
-                  <option value="Used Mobiles">Used Mobiles</option>
-                  <option value="Mobile Accessories">Mobile Accessories</option>
-                  <option value="Home Appliances">Home Appliances</option>
-                  <option value="Spare Parts">Spare Parts</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand</label>
-                <select
-                  value={standardBrands.includes(formData.brand) ? formData.brand : 'Other'}
+                  value={isCustomCategory || (!STANDARD_CATEGORIES.includes(formData.category) && formData.category !== '') ? 'Other' : formData.category}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === 'Other') {
-                      setIsCustomBrand(true);
-                      setFormData({ ...formData, brand: '' });
+                      setIsCustomCategory(true);
+                      setFormData(prev => ({ ...prev, category: '' }));
                     } else {
-                      setIsCustomBrand(false);
-                      setFormData({ ...formData, brand: val });
+                      setIsCustomCategory(false);
+                      const validBrands = getBrandsForCategory(val);
+                      const brandStillValid = validBrands.includes(formData.brand) || isCustomBrand;
+                      setFormData(prev => ({
+                        ...prev,
+                        category: val,
+                        brand: brandStillValid ? prev.brand : (validBrands.includes('Universal') ? 'Universal' : validBrands[0])
+                      }));
                     }
                   }}
                   className="input-field"
                 >
-                  {standardBrands.map(b => (
-                    <option key={b} value={b}>{b}</option>
+                  {STANDARD_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
-                  <option value="Other">Other</option>
+                  <option value="Other">Other (Add Custom)</option>
                 </select>
 
-                {(isCustomBrand || !standardBrands.includes(formData.brand)) && (
+                {(isCustomCategory || (!STANDARD_CATEGORIES.includes(formData.category) && formData.category !== undefined)) && (
                   <input
                     type="text"
-                    placeholder="Brand name"
-                    value={formData.brand}
-                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                    placeholder="Enter custom category..."
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                     required
                     className="input-field animate-fade-in"
                     style={{ marginTop: '0.3rem' }}
                     autoFocus
                   />
                 )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand</label>
+                {(() => {
+                  const currentBrands = getBrandsForCategory(formData.category);
+                  const isBrandInList = currentBrands.includes(formData.brand);
+                  const selectValue = (isCustomBrand || (!isBrandInList && formData.brand !== '')) ? 'Other' : formData.brand;
+
+                  return (
+                    <>
+                      <select
+                        value={selectValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'Other') {
+                            setIsCustomBrand(true);
+                            setFormData(prev => ({ ...prev, brand: '' }));
+                          } else {
+                            setIsCustomBrand(false);
+                            setFormData(prev => ({ ...prev, brand: val }));
+                          }
+                        }}
+                        className="input-field"
+                      >
+                        {currentBrands.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                        <option value="Other">Other (Add Custom)</option>
+                      </select>
+
+                      {(isCustomBrand || (!isBrandInList && formData.brand !== undefined)) && (
+                        <input
+                          type="text"
+                          placeholder="Enter custom brand..."
+                          value={formData.brand}
+                          onChange={(e) => setFormData(prev => ({ ...prev, brand: e.target.value }))}
+                          required
+                          className="input-field animate-fade-in"
+                          style={{ marginTop: '0.3rem' }}
+                          autoFocus={isCustomBrand}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div style={{ gridColumn: 'span 2' }}>
@@ -1385,15 +1511,154 @@ export default function InventoryManager({
                 />
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Barcode</label>
-                <input
-                  type="text"
-                  value={formData.barcode}
-                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                  className="input-field"
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                />
+              {/* Smart Barcode & Label Suite */}
+              <div style={{ gridColumn: 'span 2', background: 'var(--surface-secondary, rgba(255,255,255,0.03))', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)' }}>
+                    <Barcode size={16} color="var(--accent-primary)" />
+                    <span>Barcode & Product Sticker</span>
+                  </label>
+
+                  <div style={{ display: 'flex', gap: '0.3rem', background: 'rgba(0,0,0,0.25)', padding: '3px', borderRadius: '7px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeMode('scan')}
+                      style={{
+                        padding: '0.22rem 0.6rem',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: barcodeMode === 'scan' ? 'var(--accent-primary)' : 'transparent',
+                        color: barcodeMode === 'scan' ? '#000' : 'var(--text-muted)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      📦 Box has Barcode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBarcodeMode('generate');
+                        if (!formData.barcode || !formData.barcode.startsWith('ALZ-')) {
+                          setFormData(prev => ({ ...prev, barcode: `ALZ-${Date.now().toString().slice(-6)}` }));
+                        }
+                      }}
+                      style={{
+                        padding: '0.22rem 0.6rem',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: barcodeMode === 'generate' ? 'var(--accent-primary)' : 'transparent',
+                        color: barcodeMode === 'generate' ? '#000' : 'var(--text-muted)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      🏷️ Generate & Print Label
+                    </button>
+                  </div>
+                </div>
+
+                {barcodeMode === 'scan' ? (
+                  <div>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Scan or type barcode from box (e.g. 890123...)"
+                        value={formData.barcode}
+                        onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                        className="input-field"
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCameraScanner(true)}
+                        className="btn-primary"
+                        style={{ padding: '0.42rem 0.85rem', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--accent-primary)', color: '#000' }}
+                        title="Scan box barcode using phone camera or webcam without barcode reader"
+                      >
+                        <Camera size={14} />
+                        <span>Mobile/Cam Scan</span>
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        📱 Point phone camera at box barcode (no handheld scanner machine needed!)
+                      </span>
+                      {formData.barcode && onPrintBarcodeSheet && (
+                        <button
+                          type="button"
+                          onClick={() => onPrintBarcodeSheet({
+                            title: formData.name || 'Product',
+                            barcode: formData.barcode,
+                            price: formData.sellPrice || 0,
+                            mrp: formData.mrp || formData.sellPrice || 0,
+                            copies: 1,
+                            format: 'single'
+                          })}
+                          className="btn-secondary"
+                          style={{ padding: '0.2rem 0.55rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Printer size={12} />
+                          <span>Print Sticker (50x25mm)</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <input
+                        type="text"
+                        value={formData.barcode}
+                        onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                        className="input-field"
+                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--accent-primary)', fontSize: '0.9rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, barcode: `ALZ-${Date.now().toString().slice(-6)}` }))}
+                        className="btn-secondary"
+                        style={{ padding: '0.42rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        title="Generate a fresh unique barcode"
+                      >
+                        <RefreshCw size={13} />
+                        <span>New Code</span>
+                      </button>
+
+                      {onPrintBarcodeSheet && (
+                        <button
+                          type="button"
+                          onClick={() => onPrintBarcodeSheet({
+                            title: formData.name || 'New Item',
+                            barcode: formData.barcode || `ALZ-${Date.now().toString().slice(-6)}`,
+                            price: formData.sellPrice || 0,
+                            mrp: formData.mrp || formData.sellPrice || 0,
+                            copies: 1,
+                            format: 'single'
+                          })}
+                          className="btn-primary"
+                          style={{ padding: '0.42rem 0.9rem', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#10B981', color: '#FFF' }}
+                        >
+                          <Printer size={14} />
+                          <span>Print Sticker to Paste</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#10B981', fontWeight: 600 }}>
+                        ✓ Unique code attached to product. Print 50x25mm label to paste on packaging!
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Thermal 50x25mm / A4 Sheet
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1623,6 +1888,20 @@ export default function InventoryManager({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mobile / Webcam Barcode Scanner Modal */}
+      {showCameraScanner && (
+        <CameraBarcodeScannerModal
+          isOpen={showCameraScanner}
+          onClose={() => setShowCameraScanner(false)}
+          onScan={(scannedCode) => {
+            setFormData(prev => ({ ...prev, barcode: scannedCode }));
+            setBarcodeMode('scan');
+          }}
+          title="Scan Product Box Barcode"
+          description="Point your phone camera or webcam at the barcode on the box"
+        />
       )}
 
     </div>

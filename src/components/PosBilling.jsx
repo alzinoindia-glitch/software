@@ -33,11 +33,14 @@ import {
   Percent,
   Clock,
   Image as ImageIcon,
-  Barcode
+  Barcode,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
 import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareDevices';
+import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+
 
 export default function PosBilling({ 
   inventory, 
@@ -160,9 +163,17 @@ export default function PosBilling({
 
   // Tax Filter: 'all' | 'gst' | 'non-gst'
   const [posTaxFilter, setPosTaxFilter] = useState('all');
+  const [showPosCameraScanner, setShowPosCameraScanner] = useState(false);
 
   // Categories
-  const categories = ['All', 'New Mobiles', 'Used Mobiles', 'Mobile Accessories', 'Home Appliances'];
+  const categories = useMemo(() => {
+    const baseCats = ['All', 'Mobile Accessories', 'New Mobiles', 'Used Mobiles', 'Home Appliances', 'Universal'];
+    const set = new Set(baseCats);
+    inventory.forEach(i => {
+      if (i.category) set.add(i.category);
+    });
+    return Array.from(set);
+  }, [inventory]);
 
   // Smart Multi-keyword filter inventory (matches name, brand, description, barcode, imeis)
   const filteredProducts = useMemo(() => {
@@ -248,34 +259,38 @@ export default function PosBilling({
     });
   };
 
+  const handleProcessBarcodeScan = (scannedCode) => {
+    const clean = scannedCode.trim().toLowerCase();
+    const exactMatch = inventory.find(item => 
+      (item.barcode && item.barcode.trim().toLowerCase() === clean) ||
+      (item.imeis && item.imeis.some(imei => imei.trim().toLowerCase() === clean))
+    );
+
+    if (exactMatch) {
+      if (exactMatch.stock <= 0) {
+        playDeviceBeep('error');
+        setScanNotification(`⚠️ OUT OF STOCK: "${exactMatch.name}" (${scannedCode})`);
+        setTimeout(() => setScanNotification(''), 3500);
+        return;
+      }
+      const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
+      addToCart(exactMatch, matchedImei);
+      playDeviceBeep('double');
+      setScanNotification(`✓ Auto-Added to Cart: ${exactMatch.name} [Code: ${scannedCode}]`);
+      setTimeout(() => setScanNotification(''), 3500);
+    } else {
+      playDeviceBeep('error');
+      setScanNotification(`⚠️ Scanned Barcode/IMEI not in inventory: "${scannedCode}"`);
+      setTimeout(() => setScanNotification(''), 4000);
+    }
+  };
+
   // Global Hardware Barcode Scanner Listener for POS Billing Counter
   useEffect(() => {
     const scanner = new HardwareBarcodeScannerEngine({
       soundEnabled: shopConfig?.barcodeScannerBeep !== false,
       onScan: (scannedCode) => {
-        const clean = scannedCode.trim().toLowerCase();
-        const exactMatch = inventory.find(item => 
-          (item.barcode && item.barcode.trim().toLowerCase() === clean) ||
-          (item.imeis && item.imeis.some(imei => imei.trim().toLowerCase() === clean))
-        );
-
-        if (exactMatch) {
-          if (exactMatch.stock <= 0) {
-            playDeviceBeep('error');
-            setScanNotification(`⚠️ OUT OF STOCK: "${exactMatch.name}" (${scannedCode})`);
-            setTimeout(() => setScanNotification(''), 3500);
-            return;
-          }
-          const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
-          addToCart(exactMatch, matchedImei);
-          playDeviceBeep('double');
-          setScanNotification(`✓ Auto-Added to Cart: ${exactMatch.name} [Code: ${scannedCode}]`);
-          setTimeout(() => setScanNotification(''), 3500);
-        } else {
-          playDeviceBeep('error');
-          setScanNotification(`⚠️ Scanned Barcode/IMEI not in inventory: "${scannedCode}"`);
-          setTimeout(() => setScanNotification(''), 4000);
-        }
+        handleProcessBarcodeScan(scannedCode);
       }
     });
 
@@ -930,6 +945,30 @@ export default function PosBilling({
                     </button>
                   )}
                 </div>
+
+                {/* Mobile / Webcam Barcode Scanner Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowPosCameraScanner(true)}
+                  className="btn-primary"
+                  style={{
+                    height: '36px',
+                    padding: '0 0.85rem',
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    borderRadius: '8px',
+                    whiteSpace: 'nowrap',
+                    background: 'var(--accent-primary)',
+                    color: '#000',
+                    fontWeight: 700
+                  }}
+                  title="Scan product barcode directly using your mobile phone camera or webcam without barcode reader"
+                >
+                  <Camera size={15} />
+                  <span>Mobile Scan</span>
+                </button>
 
                 {/* Tax Mode Segmented Pills */}
                 <div style={{ display: 'inline-flex', gap: '0.25rem', background: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -2994,6 +3033,19 @@ export default function PosBilling({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mobile / Webcam Barcode Scanner for POS Billing */}
+      {showPosCameraScanner && (
+        <CameraBarcodeScannerModal
+          isOpen={showPosCameraScanner}
+          onClose={() => setShowPosCameraScanner(false)}
+          onScan={(scannedCode) => {
+            handleProcessBarcodeScan(scannedCode);
+          }}
+          title="POS Camera Barcode Scanner"
+          description="Scan product barcode to instantly add to billing cart"
+        />
       )}
 
     </div>

@@ -1081,6 +1081,7 @@ export default function UsedMobileModule({
                 <option value="Google Pixel">Google Pixel</option>
                 <option value="iQOO">iQOO</option>
                 <option value="Nothing">Nothing</option>
+                <option value="Universal">Universal</option>
                 <option value="Other">Other (Custom Brand)</option>
               </select>
 
