@@ -85,10 +85,17 @@ export default function App() {
 
   const [shopConfig, setShopConfig] = useState(() => {
     const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
-    if (!cfg?.adminPin || cfg.adminPin === '4488') {
-      return { ...cfg, adminPin: '4848' };
+    const updated = { ...cfg };
+    if (!updated?.adminPin || updated.adminPin === '4488') {
+      updated.adminPin = '4848';
     }
-    return cfg;
+    // Update store contact & WhatsApp enquiry number to client's 9121212292
+    if (!updated.whatsappNumber || updated.whatsappNumber.includes('98490') || updated.phone?.includes('98490')) {
+      updated.phone = '+91 91212 12292';
+      updated.whatsappNumber = '+91 91212 12292';
+      updated.whatsappUrl = 'https://wa.me/919121212292';
+    }
+    return updated;
   });
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
   const [usedPurchases, setUsedPurchases] = useState(() => getStorageData('USED_PURCHASES', initialUsedPurchases));

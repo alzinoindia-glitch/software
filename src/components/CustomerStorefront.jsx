@@ -711,44 +711,63 @@ export default function CustomerStorefront({
   }, [repairJobs, repairSearch]);
 
   const handleWhatsAppCheckout = () => {
-    const phone = (shopConfig.whatsappNumber || '+91 98490 82741').replace(/[^0-9]/g, '');
-    let orderSummary = `*ALZINO STOREFRONT ORDER* 🛍️\n`;
-    orderSummary += `Customer: ${customerName || 'Bodhan Customer'}\n`;
-    orderSummary += `Phone: ${customerPhone || 'Not provided'}\n`;
-    orderSummary += `Mode: ${deliveryType === 'doorstep' ? 'Doorstep Delivery' : 'Showroom Counter Pickup'}\n`;
-    if (customerAddress) orderSummary += `Address: ${customerAddress}\n`;
+    const targetPhone = '919121212292'; // Destination: 9121212292
+    let orderSummary = `*ALZINO STOREFRONT ORDER • BODHAN* 🛍️\n\n`;
+    orderSummary += `👤 Customer: ${customerName || 'Bodhan Customer'}\n`;
+    orderSummary += `📞 Phone: ${customerPhone || 'Not provided'}\n`;
+    orderSummary += `🚚 Mode: ${deliveryType === 'doorstep' ? 'Doorstep Delivery across Bodhan' : 'Showroom Counter Pickup (Station Road)'}\n`;
+    if (customerAddress) orderSummary += `📍 Address: ${customerAddress}\n`;
     orderSummary += `\n*ITEMS ORDERED:*\n`;
 
     cartItems.forEach((item, index) => {
-      orderSummary += `${index + 1}. ${item.name} x ${item.qty} = ₹${(item.price * item.qty).toLocaleString()} (Rack: ${item.rack || 'R-01'})\n`;
+      orderSummary += `${index + 1}. *${item.name}* x ${item.qty} = ₹${(item.price * item.qty).toLocaleString('en-IN')}\n`;
+      const specs = [item.ram, item.storage, item.color].filter(Boolean).join(' • ');
+      if (specs) {
+        orderSummary += `   ↳ Variant: ${specs}\n`;
+      }
     });
 
-    orderSummary += `\n*TOTAL BILL:* ₹${cartTotal.toLocaleString()}`;
+    orderSummary += `\n💵 *TOTAL BILL:* ₹${cartTotal.toLocaleString('en-IN')}`;
     if (cartSavings > 0) {
-      orderSummary += ` (Saved: ₹${cartSavings.toLocaleString()})`;
+      orderSummary += ` (Saved: ₹${cartSavings.toLocaleString('en-IN')})`;
     }
-    orderSummary += `\n\nPlease confirm availability for instant processing. Thank you!`;
+    orderSummary += `\n\nPlease confirm stock & delivery schedule. Thank you! 🙏`;
 
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(orderSummary)}`;
+    const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(orderSummary)}`;
     window.open(url, '_blank');
   };
 
   const handleSingleWhatsAppInquiry = (product) => {
-    const phone = (shopConfig.whatsappNumber || '+91 98490 82741').replace(/[^0-9]/g, '');
-    const priceFormatted = `₹${(product.price || 0).toLocaleString()}`;
-    const mrpFormatted = product.mrp ? ` (Box MRP: ₹${product.mrp.toLocaleString()})` : '';
-    const discountText = product.discountPct > 0 ? ` [${product.discountPct}% Discount Applied]` : '';
-    const locText = product.rack ? ` [Location: Rack ${product.rack}, Bin ${product.bin}]` : '';
+    // Client inquiry number: 9121212292 -> WhatsApp format: 919121212292
+    const targetPhone = '919121212292';
+    const priceFormatted = `₹${(product.price || 0).toLocaleString('en-IN')}`;
+    const mrpFormatted = product.mrp && product.mrp > product.price ? ` (Box MRP: ₹${product.mrp.toLocaleString('en-IN')})` : '';
+    const savings = (product.mrp && product.mrp > product.price) ? product.mrp - product.price : 0;
+    const discountText = product.discountPct > 0 ? ` [${product.discountPct}% OFF • Save ₹${savings.toLocaleString('en-IN')}]` : '';
     
-    const message = `Hello ALZINO Mobiles & Home Appliances Bodhan! 👋\n\n` +
-      `I want to buy:\n` +
-      `📦 Product: ${product.name}\n` +
-      `💰 Special Price: ${priceFormatted}${mrpFormatted}${discountText}\n` +
-      `⚡ Delivery: ${product.deliveryTime || 'Same-Day'}\n` +
-      `${locText}\n\n` +
-      `Please confirm stock for immediate delivery/pickup at Station Road, Bodhan.`;
+    // Extract variant attributes
+    const variantParts = [];
+    if (product.brand) variantParts.push(`Brand: ${product.brand}`);
+    if (product.category) variantParts.push(`Category: ${product.category}`);
+    if (product.ram || product.storage) variantParts.push(`Spec: ${[product.ram, product.storage].filter(Boolean).join('/')}`);
+    if (product.color) variantParts.push(`Colour: ${product.color}`);
 
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    const variantText = variantParts.length > 0 ? `\n⚙️ *Details:* ${variantParts.join(' • ')}` : '';
+    const warrantyText = `\n🛡️ *Warranty:* ${product.warranty || '1 Year Official Brand Warranty'}`;
+    const stockText = product.stock > 0 ? `\n✅ *Stock Status:* Available right now in Bodhan (${product.stock} units)` : `\n⚡ *Availability:* Same-day arrival at Bodhan store`;
+    const locText = product.rack ? `\n📍 *Shelf Location:* Rack ${product.rack}${product.bin ? `, Bin ${product.bin}` : ''}` : '';
+
+    const message = `Namaste ALZINO Mobiles & Home Appliances Bodhan! 👋\n\n` +
+      `I am enquiring from your store website about this product:\n\n` +
+      `📱 *Product:* ${product.name}` +
+      `${variantText}\n` +
+      `💰 *Special Online Price:* ${priceFormatted}${mrpFormatted}${discountText}` +
+      `${warrantyText}` +
+      `${stockText}` +
+      `${locText}\n\n` +
+      `Please let me know if this is available for instant pickup/delivery at Station Road, Bodhan. Thank you!`;
+
+    const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };
 
@@ -883,7 +902,7 @@ export default function CustomerStorefront({
           {/* Right: Quick Action Controls + Cart Button */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
             <a 
-              href={`tel:${(shopConfig.phone || '9849082741').replace(/[^0-9]/g, '')}`}
+              href={`tel:${(shopConfig.phone || '9121212292').replace(/[^0-9]/g, '')}`}
               className="hide-on-mobile"
               style={{
                 display: 'flex',
@@ -1656,7 +1675,7 @@ export default function CustomerStorefront({
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
               <a
-                href={shopConfig.whatsappUrl || 'https://wa.me/919849082741'}
+                href={shopConfig.whatsappUrl || 'https://wa.me/919121212292'}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
