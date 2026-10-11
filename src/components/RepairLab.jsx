@@ -222,12 +222,14 @@ export default function RepairLab({
   );
 
   const repairWarrantyPresets = [
+    'No Warranty',
     '30 Days Display & Touch Warranty (No physical damage)',
-    '90 Days Motherboard & IC Hardware Warranty',
-    '60 Days Battery Replacement Warranty',
     '15 Days General Testing Warranty',
+    '60 Days Battery Replacement Warranty',
+    '90 Days Motherboard & IC Hardware Warranty',
     '6 Months Comprehensive Service Warranty',
-    'No Warranty (Liquid / Water Damaged Board)'
+    'No Warranty (Liquid / Water Damaged Board)',
+    'Other (Custom Terms)'
   ];
 
   // Consumed Spare Parts state
@@ -1078,23 +1080,33 @@ export default function RepairLab({
                   Repair Warranty Printed on Bill
                 </label>
                 <select
-                  value={repairWarranty}
-                  onChange={(e) => setRepairWarranty(e.target.value)}
+                  value={repairWarrantyPresets.includes(repairWarranty) ? repairWarranty : 'Other (Custom Terms)'}
+                  onChange={(e) => {
+                    if (e.target.value === 'Other (Custom Terms)') {
+                      setRepairWarranty(repairWarrantyPresets.includes(repairWarranty) ? '' : repairWarranty);
+                    } else {
+                      setRepairWarranty(e.target.value);
+                    }
+                  }}
                   className="input-field"
-                  style={{ marginBottom: '0.35rem' }}
+                  style={{ marginBottom: (!repairWarrantyPresets.includes(repairWarranty) || repairWarranty === 'Other (Custom Terms)') ? '0.35rem' : '0' }}
                 >
                   {repairWarrantyPresets.map((w, idx) => (
                     <option key={idx} value={w}>{w}</option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  placeholder="Or customize warranty terms..."
-                  value={repairWarranty}
-                  onChange={(e) => setRepairWarranty(e.target.value)}
-                  className="input-field"
-                  style={{ fontSize: '0.76rem' }}
-                />
+
+                {(!repairWarrantyPresets.includes(repairWarranty) || repairWarranty === 'Other (Custom Terms)' || repairWarranty === '') && (
+                  <input
+                    type="text"
+                    placeholder="Enter custom warranty terms to print on bill..."
+                    value={repairWarranty === 'Other (Custom Terms)' ? '' : repairWarranty}
+                    onChange={(e) => setRepairWarranty(e.target.value)}
+                    className="input-field"
+                    style={{ fontSize: '0.76rem', marginTop: '0.35rem' }}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div>
