@@ -965,16 +965,21 @@ export default function CustomerStorefront({
                     </div>
 
                     {/* Product Photo Showcase */}
-                    <div style={{
-                      height: '150px',
-                      backgroundColor: '#F9FAFB',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      marginBottom: '0.65rem'
-                    }}>
+                    <div 
+                      onClick={() => setSelectedProductModal(prod)}
+                      style={{
+                        height: '150px',
+                        backgroundColor: '#F9FAFB',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        marginBottom: '0.65rem',
+                        cursor: 'pointer'
+                      }}
+                      title="Click to view details & photos"
+                    >
                       {prod.images ? (
                         <ProductImageViewer product={prod} height={150} />
                       ) : prod.image ? (
@@ -997,18 +1002,23 @@ export default function CustomerStorefront({
                     </div>
 
                     {/* Product Title */}
-                    <h3 style={{
-                      fontSize: '0.88rem',
-                      fontWeight: 800,
-                      color: '#111827',
-                      margin: '0 0 0.35rem',
-                      lineHeight: 1.35,
-                      minHeight: '2.4rem',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
-                    }}>
+                    <h3 
+                      onClick={() => setSelectedProductModal(prod)}
+                      style={{
+                        fontSize: '0.88rem',
+                        fontWeight: 800,
+                        color: '#111827',
+                        margin: '0 0 0.35rem',
+                        lineHeight: 1.35,
+                        minHeight: '2.4rem',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        cursor: 'pointer'
+                      }}
+                      title="Click to view details"
+                    >
                       {prod.name}
                     </h3>
 
@@ -1795,6 +1805,174 @@ export default function CustomerStorefront({
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 800 }}>
               <span>View Cart</span>
               <ArrowRight size={16} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8. QUICK-SPECS & PHOTO PREVIEW MODAL */}
+      {/* ========================================================================= */}
+      {selectedProductModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem'
+        }}
+        onClick={() => setSelectedProductModal(null)}
+        >
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '1.5rem',
+            position: 'relative',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedProductModal(null)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                backgroundColor: '#F3F4F6',
+                border: 'none',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={16} />
+            </button>
+
+            {/* Photo */}
+            <div style={{
+              height: '200px',
+              backgroundColor: '#F9FAFB',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              marginBottom: '1rem'
+            }}>
+              {selectedProductModal.images ? (
+                <ProductImageViewer product={selectedProductModal} height={200} />
+              ) : selectedProductModal.image ? (
+                <img src={selectedProductModal.image} alt={selectedProductModal.name} style={{ maxHeight: '190px', maxWidth: '100%', objectFit: 'contain' }} />
+              ) : (
+                <div style={{ textAlign: 'center', color: '#9CA3AF' }}>
+                  {selectedProductModal.type === 'appliance' ? <Tv size={56} /> : <Smartphone size={56} />}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0C5B43', backgroundColor: '#E8F5E9', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                {selectedProductModal.brand}
+              </span>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4B5563', backgroundColor: '#F3F4F6', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                {selectedProductModal.deliveryTime || 'Same-Day Bodhan'}
+              </span>
+            </div>
+
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 900, color: '#111827', margin: '0 0 0.5rem' }}>
+              {selectedProductModal.name}
+            </h3>
+
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '1.45rem', fontWeight: 900, color: '#111827' }}>
+                ₹{selectedProductModal.price.toLocaleString()}
+              </span>
+              {selectedProductModal.mrp && selectedProductModal.mrp > selectedProductModal.price && (
+                <span style={{ fontSize: '0.88rem', color: '#9CA3AF', textDecoration: 'line-through' }}>
+                  ₹{selectedProductModal.mrp.toLocaleString()}
+                </span>
+              )}
+              {selectedProductModal.discountPct > 0 && (
+                <span style={{ backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+                  {selectedProductModal.discountPct}% OFF
+                </span>
+              )}
+            </div>
+
+            <div style={{ backgroundColor: '#F9FAFB', borderRadius: '8px', padding: '0.85rem', border: '1px solid #E5E7EB', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1.25rem' }}>
+              <div><strong>Specifications:</strong> {selectedProductModal.specs}</div>
+              <div><strong>Warranty:</strong> {selectedProductModal.warranty || '1 Year Official Warranty'}</div>
+              {selectedProductModal.rack && (
+                <div style={{ color: '#0C5B43', fontWeight: 700 }}>
+                  <strong>In-Store Shelf Location:</strong> Aisle Rack {selectedProductModal.rack} • Bin {selectedProductModal.bin}
+                </div>
+              )}
+              <div><strong>Stock Status:</strong> {selectedProductModal.stock > 0 ? `In Stock (${selectedProductModal.stock} units in Bodhan)` : 'On Order'}</div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.65rem' }}>
+              <button
+                onClick={() => {
+                  addToCart(selectedProductModal);
+                  setSelectedProductModal(null);
+                  setIsCartOpen(true);
+                }}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#0C5B43',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <ShoppingCart size={16} />
+                <span>Add to Cart</span>
+              </button>
+
+              <button
+                onClick={() => handleSingleWhatsAppInquiry(selectedProductModal)}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#25D366',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <MessageCircle size={16} />
+                <span>Reserve on WhatsApp</span>
+              </button>
             </div>
           </div>
         </div>

@@ -191,6 +191,63 @@ export default function PosBilling({
     });
   }, [inventory, selectedCategory, posTaxFilter, searchTerm]);
 
+  // Add product to cart
+  const addToCart = (product, specificImei = null) => {
+    if (product.stock <= 0) {
+      alert(`"${product.name}" is currently out of stock!`);
+      return;
+    }
+
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id);
+      const hasImeis = product.imeis && product.imeis.length > 0;
+      
+      if (existing) {
+        if (existing.qty >= product.stock) {
+          alert(`Cannot add more than available stock (${product.stock} pcs).`);
+          return prev;
+        }
+        
+        let assignedImei = specificImei;
+        if (hasImeis && !assignedImei) {
+          assignedImei = product.imeis.find(im => !existing.selectedImeis.includes(im)) || '';
+        }
+
+        return prev.map(item => {
+          if (item.id === product.id) {
+            return {
+              ...item,
+              qty: item.qty + 1,
+              selectedImeis: assignedImei ? [...item.selectedImeis, assignedImei] : item.selectedImeis
+            };
+          }
+          return item;
+        });
+      } else {
+        const initialImei = specificImei || (hasImeis ? product.imeis[0] : '');
+        return [
+          ...prev,
+          {
+            id: product.id,
+            name: product.name,
+            brand: product.brand,
+            category: product.category,
+            hsn: product.hsn || '851712',
+            rate: product.sellPrice,
+            mrp: product.mrp,
+            buyPrice: product.buyPrice,
+            gstRate: product.gstRate || 18,
+            qty: 1,
+            availableStock: product.stock,
+            allImeis: product.imeis || [],
+            selectedImeis: initialImei ? [initialImei] : [],
+            warranty: product.warranty || '1 Year Official Warranty',
+          }
+        ];
+      }
+    });
+  };
+
   // Global Hardware Barcode Scanner Listener for POS Billing Counter
   useEffect(() => {
     const scanner = new HardwareBarcodeScannerEngine({
@@ -249,63 +306,6 @@ export default function PosBilling({
     }
   };
 
-  // Add product to cart
-  const addToCart = (product, specificImei = null) => {
-    if (product.stock <= 0) {
-      alert(`"${product.name}" is currently out of stock!`);
-      return;
-    }
-
-    setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
-      const hasImeis = product.imeis && product.imeis.length > 0;
-      
-      if (existing) {
-        if (existing.qty >= product.stock) {
-          alert(`Cannot add more than available stock (${product.stock} pcs).`);
-          return prev;
-        }
-        
-        let assignedImei = specificImei;
-        if (hasImeis && !assignedImei) {
-          assignedImei = product.imeis.find(im => !existing.selectedImeis.includes(im)) || '';
-        }
-
-        return prev.map(item => {
-          if (item.id === product.id) {
-            return {
-              ...item,
-              qty: item.qty + 1,
-              selectedImeis: assignedImei ? [...item.selectedImeis, assignedImei] : item.selectedImeis
-            };
-          }
-          return item;
-        });
-      } else {
-        const initialImei = specificImei || (hasImeis ? product.imeis[0] : '');
-        return [
-          ...prev,
-          {
-            id: product.id,
-            name: product.name,
-            brand: product.brand,
-            category: product.category,
-            hsn: product.hsn || '851712',
-            rate: product.sellPrice,
-            mrp: product.mrp,
-            buyPrice: product.buyPrice,
-            gstRate: product.gstRate || 18,
-            qty: 1,
-            availableStock: product.stock,
-            allImeis: product.imeis || [],
-            selectedImeis: initialImei ? [initialImei] : [],
-            warranty: product.warranty || '1 Year Official Warranty',
-          }
-        ];
-      }
-    });
-  };
-
   // Auto-add product when sent from Stock & Price Lookup
   useEffect(() => {
     if (quickBillProduct) {
@@ -314,7 +314,7 @@ export default function PosBilling({
         clearQuickBillProduct();
       }
     }
-  }, [quickBillProduct]);
+  }, [quickBillProduct, clearQuickBillProduct]);
 
   // Adjust cart quantity
   const updateQty = (id, delta) => {
