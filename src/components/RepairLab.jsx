@@ -61,12 +61,35 @@ export default function RepairLab({
   const [customIssue, setCustomIssue] = useState('');
   const [estimatedCost, setEstimatedCost] = useState('');
   const [advancePaid, setAdvancePaid] = useState('0');
-  const [techniciansList, setTechniciansList] = useState([
-    'Anwar (Master Tech)',
-    'Srinivas (Display & Glass)',
-    'Mohsin (IC & Board)'
-  ]);
-  const [technician, setTechnician] = useState('Anwar (Master Tech)');
+  // Persistent Custom Technicians Manager (Starts completely empty with no pre-assigned technicians)
+  const getStoredTechnicians = () => {
+    try {
+      const raw = localStorage.getItem('ALZINO_CUSTOM_TECHNICIANS');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(t => t && !t.includes('Anwar') && !t.includes('Srinivas') && !t.includes('Mohsin'));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  };
+
+  const saveStoredTechnicians = (list) => {
+    try {
+      localStorage.setItem('ALZINO_CUSTOM_TECHNICIANS', JSON.stringify(list));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const [techniciansList, setTechniciansList] = useState(() => getStoredTechnicians());
+  const [technician, setTechnician] = useState(() => {
+    const list = getStoredTechnicians();
+    return list.length > 0 ? list[0] : '';
+  });
   const [customTechnician, setCustomTechnician] = useState('');
 
   const commonIssues = [
@@ -121,11 +144,16 @@ export default function RepairLab({
       advancePaid: adv,
       balanceDue: balance,
       status: 'Received',
-      technician: technician === 'Other' ? (customTechnician.trim() || 'Other') : technician,
+      technician: technician === 'Other' ? (customTechnician.trim() || 'Other') : (technician || 'Other'),
     };
 
-    if (technician === 'Other' && customTechnician.trim() && !techniciansList.includes(customTechnician.trim())) {
-      setTechniciansList(prev => [...prev, customTechnician.trim()]);
+    if (technician === 'Other' && customTechnician.trim()) {
+      const newTechName = customTechnician.trim();
+      if (!techniciansList.includes(newTechName)) {
+        const updatedList = [...techniciansList, newTechName];
+        setTechniciansList(updatedList);
+        saveStoredTechnicians(updatedList);
+      }
     }
 
     setRepairJobs(prev => [newJob, ...prev]);
@@ -170,7 +198,7 @@ export default function RepairLab({
     setSelectedIssues([]);
     setCustomIssue('');
     setCustomTechnician('');
-    setTechnician('Anwar (Master Tech)');
+    setTechnician(techniciansList.length > 0 ? techniciansList[0] : '');
 
     showToast(`Job ${jobId} registered for ${newJob.customerName}! Claim token generated.`);
 
@@ -1424,10 +1452,14 @@ export default function RepairLab({
                 </label>
                 <select
                   value={technician}
-                  onChange={(e) => setTechnician(e.target.value)}
+                  onChange={(e) => {
+                    setTechnician(e.target.value);
+                    if (e.target.value !== 'Other') setCustomTechnician('');
+                  }}
                   className="input-field"
                   style={{ marginBottom: technician === 'Other' ? '0.35rem' : '0' }}
                 >
+                  <option value="">-- Select Technician --</option>
                   {techniciansList.map(tech => (
                     <option key={tech} value={tech}>{tech}</option>
                   ))}
