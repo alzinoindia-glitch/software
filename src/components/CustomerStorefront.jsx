@@ -1345,35 +1345,19 @@ export default function CustomerStorefront({
               }}
             >
               <div>
-                <span style={{
-                  backgroundColor: b.badgeBg,
-                  fontSize: '0.68rem',
-                  fontWeight: 800,
-                  padding: '0.18rem 0.5rem',
-                  borderRadius: '5px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.03em',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  marginBottom: '0.35rem'
-                }}>
-                  <span>{b.icon}</span>
-                  <span>{b.tag}</span>
-                </span>
                 <h3 style={{
                   fontSize: '1.12rem',
                   fontWeight: 900,
-                  margin: '0 0 0.22rem',
+                  margin: '0 0 0.3rem',
                   lineHeight: 1.25
                 }}>
                   {b.title}
                 </h3>
                 <p style={{
                   margin: 0,
-                  fontSize: '0.78rem',
+                  fontSize: '0.8rem',
                   color: b.textColor,
-                  lineHeight: 1.35
+                  lineHeight: 1.38
                 }}>
                   {b.desc}
                 </p>
@@ -1403,7 +1387,7 @@ export default function CustomerStorefront({
               background: currentBanner.gradient,
               color: '#FFFFFF',
               boxShadow: `0 8px 24px ${currentBanner.glowColor}`,
-              minHeight: '120px',
+              minHeight: '115px',
               transition: 'background 0.4s ease, box-shadow 0.4s ease'
             }}
           >
@@ -1421,43 +1405,19 @@ export default function CustomerStorefront({
               transition: 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.38s ease'
             }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
-                  <span style={{
-                    backgroundColor: currentBanner.badgeBg,
-                    fontSize: '0.7rem',
-                    fontWeight: 800,
-                    padding: '0.2rem 0.6rem',
-                    borderRadius: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem'
-                  }}>
-                    <span>{currentBanner.icon}</span>
-                    <span>{currentBanner.tag}</span>
-                  </span>
-                  <span style={{
-                    fontSize: '0.68rem',
-                    color: 'rgba(255,255,255,0.75)',
-                    fontWeight: 700
-                  }}>
-                    Promise ({activeBannerIdx + 1}/{promoBanners.length})
-                  </span>
-                </div>
                 <h3 style={{ 
                   fontSize: '1.22rem', 
                   fontWeight: 900, 
-                  margin: '0 0 0.25rem',
+                  margin: '0 0 0.3rem',
                   lineHeight: 1.2
                 }}>
                   {currentBanner.title}
                 </h3>
                 <p style={{ 
                   margin: 0, 
-                  fontSize: '0.8rem', 
+                  fontSize: '0.82rem', 
                   color: currentBanner.textColor,
-                  lineHeight: 1.35
+                  lineHeight: 1.38
                 }}>
                   {currentBanner.desc}
                 </p>
@@ -1488,14 +1448,13 @@ export default function CustomerStorefront({
             }} />
           </div>
 
-          {/* Interactive Indicator Pills Below Card */}
+          {/* Minimal Indicator Dots Below Mobile Card */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '0.5rem',
-            marginTop: '0.65rem',
-            flexWrap: 'wrap'
+            gap: '0.45rem',
+            marginTop: '0.65rem'
           }}>
             {promoBanners.map((b, idx) => {
               const isActive = activeBannerIdx === idx;
@@ -1506,25 +1465,18 @@ export default function CustomerStorefront({
                     setActiveBannerIdx(idx);
                     setBannerAnimPhase('visible');
                   }}
+                  aria-label={`Slide ${idx + 1}`}
                   style={{
-                    backgroundColor: isActive ? '#1A1C1E' : '#FFFFFF',
-                    color: isActive ? '#FFFFFF' : '#4B5563',
-                    border: `1.5px solid ${isActive ? '#1A1C1E' : '#E5E7EB'}`,
+                    width: isActive ? '24px' : '8px',
+                    height: '8px',
                     borderRadius: '999px',
-                    padding: '0.3rem 0.75rem',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
+                    backgroundColor: isActive ? '#059669' : '#D1D5DB',
+                    border: 'none',
+                    padding: 0,
                     cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    transition: 'all 0.2s ease',
-                    boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+                    transition: 'all 0.3s ease'
                   }}
-                >
-                  <span>{b.icon}</span>
-                  <span>{b.tag}</span>
-                </button>
+                />
               );
             })}
           </div>
