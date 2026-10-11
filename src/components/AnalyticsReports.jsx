@@ -502,29 +502,25 @@ export default function AnalyticsReports({
             </span>
           </div>
 
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Realized cash, UPI, and card payments from product sales, refurbished phones, and repair counter services.
-          </div>
-
           {/* Inflow Streams Breakdown */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem', fontSize: '0.8rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>• POS Products & Accessories Bills:</span>
+              <span style={{ color: 'var(--text-secondary)' }}>• POS Products:</span>
               <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{posInflow.toLocaleString()}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>• Refurbished / Used Mobiles Resold:</span>
+              <span style={{ color: 'var(--text-secondary)' }}>• Refurbished Mobiles:</span>
               <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{refurbInflow.toLocaleString()}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>• Mobile Repairs & Bench Services:</span>
+              <span style={{ color: 'var(--text-secondary)' }}>• Repair Lab Services:</span>
               <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{repairInflow.toLocaleString()}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: '0.35rem', marginTop: '0.2rem' }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Mode: Cash ₹{cashInflow.toLocaleString()} | UPI ₹{upiInflow.toLocaleString()} | Card ₹{cardInflow.toLocaleString()}</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Cash ₹{cashInflow.toLocaleString()} | UPI ₹{upiInflow.toLocaleString()} | Card ₹{cardInflow.toLocaleString()}</span>
               {totalKhataGiven > 0 && <span style={{ color: 'var(--status-red)', fontSize: '0.74rem', fontWeight: 600 }}>Due: ₹{totalKhataGiven.toLocaleString()}</span>}
             </div>
           </div>
@@ -544,24 +540,20 @@ export default function AnalyticsReports({
             </span>
           </div>
 
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Operating expenses entered by admin plus buy payouts paid to customers for inward second-hand phones.
-          </div>
-
           {/* Outflow Streams Breakdown */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem', fontSize: '0.8rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>• Admin Shop Expenses (Rent, Bills, Staff):</span>
+              <span style={{ color: 'var(--text-secondary)' }}>• Store Expenses:</span>
               <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-red)' }}>₹{totalExpensesAmt.toLocaleString()}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>• Used Phone Buy Payouts to Customers:</span>
+              <span style={{ color: 'var(--text-secondary)' }}>• Used Phone Buyouts:</span>
               <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-red)' }}>₹{usedPhoneBuyPayouts.toLocaleString()}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: '0.35rem', marginTop: '0.2rem' }}>
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>NET CASH BALANCE (Inflow - Outflow):</span>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>NET BALANCE:</span>
               <strong style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: '0.95rem',
@@ -585,26 +577,23 @@ export default function AnalyticsReports({
         {/* Total Catalog MRP */}
         <div className="stat-card" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Total Printed MRP Value
+            Printed MRP Value
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', marginTop: '0.2rem' }}>
             ₹{totalMrpValue.toLocaleString()}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Catalog box retail value
           </div>
         </div>
 
         {/* Realized Selling Price */}
         <div className="stat-card" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Realized Selling Revenue
+            Selling Revenue
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--accent-primary)', marginTop: '0.2rem' }}>
             ₹{totalRevenue.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--status-green)', fontWeight: 600, marginTop: '0.2rem' }}>
-            Avg discount given: {avgDiscountGivenPct}% off MRP
+            Avg discount: {avgDiscountGivenPct}%
           </div>
         </div>
 
@@ -616,21 +605,18 @@ export default function AnalyticsReports({
           <div style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: '#8B5CF6', marginTop: '0.2rem' }}>
             ₹{totalCustomerSavings.toLocaleString()}
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Competitive edge over online
-          </div>
         </div>
 
         {/* Total Realized Gross Profit */}
         <div className="stat-card" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Store Gross Profit (Sales - Cost)
+            Gross Profit
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--status-green)', marginTop: '0.2rem' }}>
             ₹{totalGrossProfit.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--status-green)', fontWeight: 600, marginTop: '0.2rem' }}>
-            {totalRevenue > 0 ? `${Math.round((totalGrossProfit / totalRevenue) * 100)}% Gross Margin` : 'On sales'}
+            {totalRevenue > 0 ? `${Math.round((totalGrossProfit / totalRevenue) * 100)}% Margin` : ''}
           </div>
         </div>
       </div>
@@ -639,13 +625,10 @@ export default function AnalyticsReports({
       {/* 3. CATEGORY LEVEL PROFIT & VOLUME CARDS                                   */}
       {/* ========================================================================= */}
       <div className="illoca-card" style={{ padding: '1.25rem' }}>
-        <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '0.85rem' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
-            Category-Wise Profit & Margin Breakdown
+            Category-Wise Profit & Margin
           </h3>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-            Financial contribution of each product category to total shop revenue and profit.
-          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>

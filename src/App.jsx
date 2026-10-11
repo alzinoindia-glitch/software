@@ -464,6 +464,7 @@ export default function App() {
             setCustomers={setCustomers}
             shopConfig={shopConfig}
             onPrintInvoice={handlePrintInvoice}
+            onNavigateTab={handleSelectTab}
           />
         )}
 
