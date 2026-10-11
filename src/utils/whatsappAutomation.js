@@ -43,8 +43,17 @@ export function generateWhatsAppInvoiceText(invoice, shopConfig = {}) {
   if (invoice.discount > 0) {
     text += `🏷️ *Discount Applied:* ₹${Number(invoice.discount).toLocaleString('en-IN')}\n`;
   }
-  text += `💰 *Grand Total:* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
-  text += `💳 *Paid via:* ${paymentMode} (${paymentStatus})\n`;
+  text += `💰 *Total Bill Amount:* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
+  if (invoice.advancePaid > 0) {
+    text += `💵 *Advance Paid Earlier (Intake):* -₹${Number(invoice.advancePaid).toLocaleString('en-IN')}\n`;
+    if (invoice.khataDue === 0) {
+      text += `✅ *Amount Collected Today:* ₹${Number(invoice.balanceCollectedNow ?? (invoice.grandTotal - invoice.advancePaid)).toLocaleString('en-IN')} (${paymentMode})\n`;
+      text += `✨ *Total Paid (Advance + Today):* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
+      text += `🏁 *Balance Remaining Due:* ₹0 (Paid in Full)\n`;
+    }
+  } else {
+    text += `💳 *Paid via:* ${paymentMode} (${paymentStatus})\n`;
+  }
   
   if (invoice.khataDue > 0) {
     text += `⚠️ *Balance Remaining (Khata):* ₹${Number(invoice.khataDue).toLocaleString('en-IN')}\n`;

@@ -268,13 +268,40 @@ export default function PrintTemplates({
               )}
               
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', borderTop: '1px solid #000', marginTop: '2mm', paddingTop: '1mm' }}>
-                <span>NET TOTAL:</span>
+                <span>{printData.isRepairInvoice ? 'TOTAL SERVICE CHARGE:' : 'NET TOTAL:'}</span>
                 <span>₹{printData.grandTotal.toLocaleString()}</span>
               </div>
+
+              {printData.advancePaid > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '1mm', color: '#333' }}>
+                  <span>LESS ADVANCE (INTAKE):</span>
+                  <span>-₹{Number(printData.advancePaid).toLocaleString()}</span>
+                </div>
+              )}
+
+              {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', fontWeight: 'bold', marginTop: '1mm', borderTop: '1px dotted #000', paddingTop: '0.8mm' }}>
+                  <span>COLLECTED TODAY ({printData.paymentMode}):</span>
+                  <span>₹{Number(printData.balanceCollectedNow ?? (printData.grandTotal - printData.advancePaid)).toLocaleString()}</span>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '1mm' }}>
+                <span>TOTAL AMOUNT PAID:</span>
+                <span>₹{Number(printData.paidAmount ?? (printData.khataDue > 0 ? (printData.advancePaid || 0) : printData.grandTotal)).toLocaleString()}</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginTop: '0.5mm' }}>
                 <span>PAYMENT MODE:</span>
                 <span>{printData.paymentMode}</span>
               </div>
+
+              {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', fontWeight: 'bold', marginTop: '0.5mm', color: '#047857' }}>
+                  <span>BALANCE REMAINING DUE:</span>
+                  <span>₹0 (PAID IN FULL)</span>
+                </div>
+              )}
 
               {/* Thermal EMI Details */}
               {printData.emiDetails && (
@@ -343,15 +370,33 @@ export default function PrintTemplates({
             </div>
 
             {/* UPI QR for counter receipt */}
-            <div style={{ textAlign: 'center', marginTop: '3mm', padding: '2mm 0', borderTop: '1px dashed #000' }}>
-              <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '1mm' }}>SCAN TO PAY VIA ANY UPI APP</div>
-              <img 
-                src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
-                alt="UPI QR"
-                style={{ width: '32mm', height: '32mm', margin: '0 auto', display: 'block', objectFit: 'contain' }}
-              />
-              <div style={{ fontSize: '8px', marginTop: '1mm' }}>{shopConfig.upiId}</div>
-            </div>
+            {(() => {
+              const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
+                ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
+                : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));
+
+              if (qrAmount <= 0) {
+                return (
+                  <div style={{ textAlign: 'center', marginTop: '2.5mm', padding: '1.5mm 0', borderTop: '1px dashed #000', fontSize: '9px', fontWeight: 'bold' }}>
+                    ✓ ALL CHARGES FULLY PAID
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ textAlign: 'center', marginTop: '3mm', padding: '2mm 0', borderTop: '1px dashed #000' }}>
+                  <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '1mm' }}>
+                    SCAN TO PAY ₹{qrAmount.toLocaleString()} VIA ANY UPI APP
+                  </div>
+                  <img 
+                    src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, qrAmount, printData.invoiceNo)} 
+                    alt="UPI QR"
+                    style={{ width: '32mm', height: '32mm', margin: '0 auto', display: 'block', objectFit: 'contain' }}
+                  />
+                  <div style={{ fontSize: '8px', marginTop: '1mm' }}>{shopConfig.upiId}</div>
+                </div>
+              );
+            })()}
 
             {/* Custom Notes */}
             {printData.notes && (
@@ -442,30 +487,75 @@ export default function PrintTemplates({
             {/* Totals */}
             <div style={{ borderTop: '1px dashed #000', paddingTop: '1.5mm', marginBottom: '1.5mm', fontSize: '8.5px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 'bold', borderTop: '1px solid #000', marginTop: '1mm', paddingTop: '1mm' }}>
-                <span>NET TOTAL:</span>
+                <span>{printData.isRepairInvoice ? 'TOTAL CHARGES:' : 'NET TOTAL:'}</span>
                 <span>₹{printData.grandTotal.toLocaleString()}</span>
               </div>
+
+              {printData.advancePaid > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', marginTop: '1px', color: '#333' }}>
+                  <span>ADVANCE (INTAKE):</span>
+                  <span>-₹{Number(printData.advancePaid).toLocaleString()}</span>
+                </div>
+              )}
+
+              {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', fontWeight: 'bold', marginTop: '1px', borderTop: '1px dotted #000', paddingTop: '1px' }}>
+                  <span>COLLECTED TODAY:</span>
+                  <span>₹{Number(printData.balanceCollectedNow ?? (printData.grandTotal - printData.advancePaid)).toLocaleString()}</span>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', marginTop: '1px' }}>
                 <span>MODE:</span>
                 <span>{printData.paymentMode}</span>
               </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', marginTop: '1px' }}>
+                <span>TOTAL PAID:</span>
+                <span>₹{Number(printData.paidAmount ?? (printData.khataDue > 0 ? (printData.advancePaid || 0) : printData.grandTotal)).toLocaleString()}</span>
+              </div>
+
               {printData.khataDue > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontWeight: 'bold', color: '#D00', marginTop: '1px' }}>
-                  <span>DUE:</span>
+                  <span>DUE (KHATA):</span>
                   <span>₹{printData.khataDue.toLocaleString()}</span>
+                </div>
+              )}
+
+              {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', fontWeight: 'bold', color: '#047857', marginTop: '1px' }}>
+                  <span>BALANCE:</span>
+                  <span>₹0 (PAID IN FULL)</span>
                 </div>
               )}
             </div>
 
             {/* QR */}
-            <div style={{ textAlign: 'center', marginTop: '2mm', padding: '1mm 0', borderTop: '1px dashed #000' }}>
-              <img 
-                src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
-                alt="UPI QR"
-                style={{ width: '26mm', height: '26mm', margin: '0 auto', display: 'block' }}
-              />
-              <div style={{ fontSize: '7px', marginTop: '1px' }}>{shopConfig.upiId}</div>
-            </div>
+            {(() => {
+              const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
+                ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
+                : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));
+
+              if (qrAmount <= 0) {
+                return (
+                  <div style={{ textAlign: 'center', marginTop: '1.5mm', padding: '1mm 0', borderTop: '1px dashed #000', fontSize: '8px', fontWeight: 'bold' }}>
+                    ✓ ALL CHARGES FULLY PAID
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ textAlign: 'center', marginTop: '2mm', padding: '1mm 0', borderTop: '1px dashed #000' }}>
+                  <div style={{ fontSize: '7.5px', fontWeight: 'bold', marginBottom: '1px' }}>PAY ₹{qrAmount.toLocaleString()} VIA UPI</div>
+                  <img 
+                    src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, qrAmount, printData.invoiceNo)} 
+                    alt="UPI QR"
+                    style={{ width: '26mm', height: '26mm', margin: '0 auto', display: 'block' }}
+                  />
+                  <div style={{ fontSize: '7px', marginTop: '1px' }}>{shopConfig.upiId}</div>
+                </div>
+              );
+            })()}
 
             {/* Footer */}
             <div style={{ textAlign: 'center', fontSize: '7.5px', marginTop: '2mm', borderTop: '1px dashed #000', paddingTop: '1.5mm' }}>
@@ -719,8 +809,27 @@ export default function PrintTemplates({
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #3B60C5', marginTop: '3mm', paddingTop: '2mm', fontSize: '16px', fontWeight: 800, color: '#3B60C5' }}>
-                      <span>{printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:'}</span>
+                      <span>{printData.isRepairInvoice ? 'TOTAL SERVICE AMOUNT:' : (printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:')}</span>
                       <span>₹{printData.grandTotal.toLocaleString()}</span>
+                    </div>
+
+                    {printData.advancePaid > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2mm', fontSize: '12px', color: '#047857', fontWeight: 600 }}>
+                        <span>Less Advance Paid at Intake:</span>
+                        <span>-₹{Number(printData.advancePaid).toLocaleString()}</span>
+                      </div>
+                    )}
+
+                    {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2mm', fontSize: '13px', fontWeight: 800, color: '#111827', borderTop: '1px solid #E5E7EB', paddingTop: '1.5mm' }}>
+                        <span>Net Collected Today ({printData.paymentMode}):</span>
+                        <span>₹{Number(printData.balanceCollectedNow ?? (printData.grandTotal - printData.advancePaid)).toLocaleString()}</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5mm', fontSize: '11px', color: '#374151' }}>
+                      <span>Total Amount Paid (Advance + Today):</span>
+                      <strong>₹{Number(printData.paidAmount ?? (printData.khataDue > 0 ? (printData.advancePaid || 0) : printData.grandTotal)).toLocaleString()}</strong>
                     </div>
 
                     {/* Payment Mode & Reference info */}
@@ -739,6 +848,12 @@ export default function PrintTemplates({
                         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#DC2626', fontWeight: 700, marginTop: '1px' }}>
                           <span>Khata Balance Due:</span>
                           <span style={{ fontFamily: 'monospace' }}>₹{printData.khataDue.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {printData.advancePaid > 0 && printData.khataDue === 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#047857', fontWeight: 700, marginTop: '1px' }}>
+                          <span>Remaining Balance:</span>
+                          <span>₹0 (PAID IN FULL)</span>
                         </div>
                       )}
                     </div>

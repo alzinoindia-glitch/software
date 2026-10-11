@@ -406,6 +406,9 @@ export default function RepairLab({
       igstTotal: 0,
       discount: discountAmt,
       grandTotal: grandTotalPrice,
+      advancePaid: advance,
+      balanceCollectedNow: repairPaymentMode === 'Khata' ? 0 : netBalanceToCollect,
+      netBalanceToCollect: netBalanceToCollect,
       paidAmount: actualPaid,
       khataDue,
       totalProfit: calculatedProfit,
@@ -1186,7 +1189,22 @@ export default function RepairLab({
                 style={{ padding: '0.55rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}
               >
                 <Printer size={15} />
-                <span>Print Thermal Bill (80mm)</span>
+                <span>
+                  {(() => {
+                    const finalAmount = parseFloat(finalServicePrice) || 0;
+                    const disc = Math.max(0, Number(repairDiscount) || 0);
+                    const afterDisc = Math.max(0, Math.round(finalAmount - disc));
+                    const adv = Number(jobToBill.advancePaid) || 0;
+                    const netToCollect = Math.max(0, afterDisc - adv);
+                    if (repairPaymentMode === 'Khata') {
+                      return `Bill to Khata (Due: ₹${netToCollect.toLocaleString()})`;
+                    }
+                    if (adv > 0) {
+                      return `Print Thermal & Collect ₹${netToCollect.toLocaleString()} (Adv ₹${adv.toLocaleString()} Deducted)`;
+                    }
+                    return `Print Thermal & Collect ₹${netToCollect.toLocaleString()}`;
+                  })()}
+                </span>
               </button>
 
               <button 
@@ -1196,7 +1214,22 @@ export default function RepairLab({
                 style={{ padding: '0.55rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.45rem', background: '#10B981', borderColor: '#10B981' }}
               >
                 <FileText size={15} />
-                <span>Print Official A4 Invoice</span>
+                <span>
+                  {(() => {
+                    const finalAmount = parseFloat(finalServicePrice) || 0;
+                    const disc = Math.max(0, Number(repairDiscount) || 0);
+                    const afterDisc = Math.max(0, Math.round(finalAmount - disc));
+                    const adv = Number(jobToBill.advancePaid) || 0;
+                    const netToCollect = Math.max(0, afterDisc - adv);
+                    if (repairPaymentMode === 'Khata') {
+                      return `A4 Bill to Khata (Due: ₹${netToCollect.toLocaleString()})`;
+                    }
+                    if (adv > 0) {
+                      return `Print A4 & Collect ₹${netToCollect.toLocaleString()} (Adv ₹${adv.toLocaleString()} Deducted)`;
+                    }
+                    return `Print Official A4 Invoice (₹${netToCollect.toLocaleString()})`;
+                  })()}
+                </span>
               </button>
             </div>
           </div>
