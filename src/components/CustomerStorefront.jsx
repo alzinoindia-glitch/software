@@ -1108,9 +1108,9 @@ export default function CustomerStorefront({
 
           {/* Right: Quick Action Controls + Cart Button */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
-            {/* Locate Store / Maps Navigation */}
+            {/* Locate Us (Google Maps) */}
             <a 
-              href={shopConfig.mapsUrl || "https://share.google/U7aTnVbimv7z4RSW5"}
+              href={shopConfig.mapsUrl || "https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185"}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1132,7 +1132,7 @@ export default function CustomerStorefront({
               title="Locate ALZINO Flagship Showroom on Google Maps"
             >
               <Navigation size={15} color="#D97706" />
-              <span>Maps</span>
+              <span>Locate Us</span>
             </a>
 
             {/* Rate Us on Google */}
@@ -2178,7 +2178,7 @@ export default function CustomerStorefront({
               <strong>Hours:</strong> {shopConfig.storeTimings || '9:30 AM – 10:00 PM (All 7 Days)'}
             </div>
             <a
-              href={shopConfig.mapsUrl || 'https://share.google/U7aTnVbimv7z4RSW5'}
+              href={shopConfig.mapsUrl || 'https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185'}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -2195,7 +2195,7 @@ export default function CustomerStorefront({
               }}
             >
               <Navigation size={14} />
-              <span>Get GPS Directions</span>
+              <span>Get GPS Directions (Locate Us)</span>
             </a>
           </div>
 
@@ -2256,7 +2256,7 @@ export default function CustomerStorefront({
               </a>
 
               <a
-                href={shopConfig.mapsUrl || 'https://share.google/U7aTnVbimv7z4RSW5'}
+                href={shopConfig.mapsUrl || 'https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185'}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
@@ -2273,7 +2273,7 @@ export default function CustomerStorefront({
                 }}
               >
                 <Navigation size={15} color="#D97706" />
-                <span>Maps Navigation</span>
+                <span>Locate Us (Maps)</span>
               </a>
 
               <a

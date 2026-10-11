@@ -204,9 +204,9 @@ export default function Header({
               <span className="hide-on-mobile">alzino.shop</span>
             </button>
 
-            {/* Locate Store Button (Maps Navigation) */}
+            {/* Locate Us Button (Google Maps) */}
             <a
-              href="https://share.google/U7aTnVbimv7z4RSW5"
+              href="https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185"
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -223,10 +223,10 @@ export default function Header({
                 gap: '0.35rem',
                 textDecoration: 'none'
               }}
-              title="Locate Store (Station Road, Bodhan - Google Maps)"
+              title="Locate Us (Station Road, Bodhan - Google Maps)"
             >
               <MapPin size={13} color="#FBBF24" />
-              <span className="hide-on-mobile">Locate Store</span>
+              <span className="hide-on-mobile">Locate Us</span>
             </a>
 
             {/* Rate Us Button */}
