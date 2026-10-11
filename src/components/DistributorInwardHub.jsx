@@ -43,20 +43,20 @@ export default function DistributorInwardHub({
   const [distributorBillNo, setDistributorBillNo] = useState(`DIST-${Date.now().toString().slice(-4)}`);
   const [inwardDate, setInwardDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Common Model specs for continuous scanning batch
-  const [brand, setBrand] = useState('Samsung');
-  const [model, setModel] = useState('Galaxy S24 5G');
-  const [ram, setRam] = useState('8GB');
-  const [storage, setStorage] = useState('256GB');
-  const [color, setColor] = useState('Onyx Black');
+  // Common Model specs for continuous scanning batch (kept empty until gun scan or user input)
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [ram, setRam] = useState('');
+  const [storage, setStorage] = useState('');
+  const [color, setColor] = useState('');
   const [category, setCategory] = useState('New Mobiles');
-  const [buyPrice, setBuyPrice] = useState('64000');
-  const [sellPrice, setSellPrice] = useState('74999');
-  const [mrp, setMrp] = useState('79999');
+  const [buyPrice, setBuyPrice] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
+  const [mrp, setMrp] = useState('');
   const [gstRate, setGstRate] = useState(18);
   const [warranty, setWarranty] = useState('1 Year Official Brand Warranty');
-  const [rack, setRack] = useState('R-01');
-  const [bin, setBin] = useState('B-01');
+  const [rack, setRack] = useState('');
+  const [bin, setBin] = useState('');
 
   // Scanning options
   const [dualImeiMode, setDualImeiMode] = useState(true);
@@ -85,49 +85,144 @@ export default function DistributorInwardHub({
     }
   }, [inwardMode, scannedUnits.length, currentImeiBuffer]);
 
+  // Core barcode / IMEI processing engine: automatically populates specs & rates on gun scan
+  const processScannedCode = (rawCode) => {
+    const code = (rawCode || '').trim();
+    if (!code) return;
+
+    playDeviceBeep('scanner');
+
+    // Auto-fill Target Model & Rates if empty or if code matches existing inventory/catalog
+    let activeBrand = brand;
+    let activeModel = model;
+    let activeColor = color;
+
+    if (!brand || !model) {
+      const cleanLower = code.toLowerCase();
+      const matchedInv = inventory.find(i => {
+        if (i.barcode && i.barcode.toLowerCase() === cleanLower) return true;
+        if (i.imei && i.imei.toLowerCase() === cleanLower) return true;
+        if (i.imei1 && i.imei1.toLowerCase() === cleanLower) return true;
+        if (i.imei2 && i.imei2.toLowerCase() === cleanLower) return true;
+        if (Array.isArray(i.imeiList) && i.imeiList.some(im => im.toLowerCase() === cleanLower)) return true;
+        if (Array.isArray(i.imeis) && i.imeis.some(im => im.toLowerCase() === cleanLower)) return true;
+        if (i.serialNumber && i.serialNumber.toLowerCase() === cleanLower) return true;
+        return false;
+      });
+
+      if (matchedInv) {
+        activeBrand = matchedInv.brand || '';
+        activeModel = matchedInv.model || matchedInv.name || '';
+        activeColor = matchedInv.color || '';
+        setBrand(activeBrand);
+        setModel(activeModel);
+        if (matchedInv.ram) setRam(matchedInv.ram);
+        if (matchedInv.storage) setStorage(matchedInv.storage);
+        if (activeColor) setColor(activeColor);
+        if (matchedInv.category) setCategory(matchedInv.category);
+        if (matchedInv.buyPrice) setBuyPrice(String(matchedInv.buyPrice));
+        if (matchedInv.sellPrice) setSellPrice(String(matchedInv.sellPrice));
+        if (matchedInv.mrp || matchedInv.sellPrice) setMrp(String(matchedInv.mrp || matchedInv.sellPrice));
+        if (matchedInv.rack) setRack(matchedInv.rack);
+        if (matchedInv.bin) setBin(matchedInv.bin);
+      } else {
+        const suggestions = getProductSuggestions(code, inventory, 1);
+        if (suggestions.length > 0) {
+          const sug = suggestions[0];
+          activeBrand = sug.brand || '';
+          activeModel = sug.model || sug.name || '';
+          activeColor = sug.color || '';
+          setBrand(activeBrand);
+          setModel(activeModel);
+          if (sug.ram) setRam(sug.ram);
+          if (sug.storage) setStorage(sug.storage);
+          if (activeColor) setColor(activeColor);
+          if (sug.category) setCategory(sug.category);
+          if (sug.suggestedBuy) setBuyPrice(String(sug.suggestedBuy));
+          if (sug.suggestedSell) setSellPrice(String(sug.suggestedSell));
+          if (sug.suggestedSell) setMrp(String(sug.suggestedSell));
+          if (sug.rack) setRack(sug.rack);
+          if (sug.bin) setBin(sug.bin);
+        } else {
+          // Zero manual typing: automatically supply specs template on gun scan
+          const existingMobile = inventory.find(i => i.category === 'New Mobiles' && i.brand && i.model);
+          if (existingMobile) {
+            activeBrand = existingMobile.brand;
+            activeModel = existingMobile.model;
+            activeColor = existingMobile.color || 'Onyx Black';
+            setBrand(activeBrand);
+            setModel(activeModel);
+            setRam(existingMobile.ram || '8GB');
+            setStorage(existingMobile.storage || '256GB');
+            setColor(activeColor);
+            setBuyPrice(existingMobile.buyPrice ? String(existingMobile.buyPrice) : '64000');
+            setSellPrice(existingMobile.sellPrice ? String(existingMobile.sellPrice) : '74999');
+            setMrp(existingMobile.mrp ? String(existingMobile.mrp) : '79999');
+            setRack(existingMobile.rack || 'R-01');
+            setBin(existingMobile.bin || 'B-01');
+          } else {
+            activeBrand = 'Samsung';
+            activeModel = 'Galaxy S24 5G';
+            activeColor = 'Onyx Black';
+            setBrand('Samsung');
+            setModel('Galaxy S24 5G');
+            setRam('8GB');
+            setStorage('256GB');
+            setColor('Onyx Black');
+            setBuyPrice('64000');
+            setSellPrice('74999');
+            setMrp('79999');
+            setRack('R-01');
+            setBin('B-01');
+          }
+        }
+      }
+    }
+
+    const brandTag = (activeBrand || 'PHN').slice(0, 3).toUpperCase();
+    const modelTag = (activeModel || 'UNIT').replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase();
+
+    if (dualImeiMode) {
+      if (!currentImeiBuffer.imei1) {
+        // Captured IMEI 1
+        setCurrentImeiBuffer({ imei1: code, imei2: '' });
+        setScanInputVal('');
+      } else {
+        // Captured IMEI 2 -> Finalize Unit
+        const newUnit = {
+          id: `UNIT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          unitNo: scannedUnits.length + 1,
+          imei1: currentImeiBuffer.imei1,
+          imei2: code,
+          barcode: `ALZ-${brandTag}-${modelTag}-${String(scannedUnits.length + 1).padStart(3, '0')}`,
+          color: activeColor
+        };
+        setScannedUnits(prev => [newUnit, ...prev]);
+        setCurrentImeiBuffer({ imei1: '', imei2: '' });
+        setScanInputVal('');
+        playDeviceBeep('success');
+      }
+    } else {
+      // Single IMEI mode
+      const newUnit = {
+        id: `UNIT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        unitNo: scannedUnits.length + 1,
+        imei1: code,
+        imei2: '',
+        barcode: `ALZ-${brandTag}-${modelTag}-${String(scannedUnits.length + 1).padStart(3, '0')}`,
+        color: activeColor
+      };
+      setScannedUnits(prev => [newUnit, ...prev]);
+      setScanInputVal('');
+      playDeviceBeep('success');
+    }
+  };
+
   // Handle barcode scanner gun input (fires on Enter key)
   const handleScannerKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const code = scanInputVal.trim();
-      if (!code) return;
-
-      playDeviceBeep('scanner');
-
-      if (dualImeiMode) {
-        if (!currentImeiBuffer.imei1) {
-          // Captured IMEI 1
-          setCurrentImeiBuffer({ imei1: code, imei2: '' });
-          setScanInputVal('');
-        } else {
-          // Captured IMEI 2 -> Finalize Unit
-          const newUnit = {
-            id: `UNIT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            unitNo: scannedUnits.length + 1,
-            imei1: currentImeiBuffer.imei1,
-            imei2: code,
-            barcode: `ALZ-${brand.slice(0, 3).toUpperCase()}-${model.replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase()}-${String(scannedUnits.length + 1).padStart(3, '0')}`,
-            color: color
-          };
-          setScannedUnits(prev => [newUnit, ...prev]);
-          setCurrentImeiBuffer({ imei1: '', imei2: '' });
-          setScanInputVal('');
-          playDeviceBeep('success');
-        }
-      } else {
-        // Single IMEI mode
-        const newUnit = {
-          id: `UNIT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          unitNo: scannedUnits.length + 1,
-          imei1: code,
-          imei2: '',
-          barcode: `ALZ-${brand.slice(0, 3).toUpperCase()}-${model.replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase()}-${String(scannedUnits.length + 1).padStart(3, '0')}`,
-          color: color
-        };
-        setScannedUnits(prev => [newUnit, ...prev]);
-        setScanInputVal('');
-        playDeviceBeep('success');
-      }
+      processScannedCode(scanInputVal);
     }
   };
 
@@ -292,57 +387,66 @@ export default function DistributorInwardHub({
           background: 'var(--surface-primary)', 
           overflow: 'hidden',
           boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
-          border: '1.5px solid var(--accent-primary)'
+          border: '1px solid rgba(255, 255, 255, 0.12)'
         }}
       >
-        {/* Header Banner */}
+        {/* Header Banner with Premium Indigo/Slate Styling */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '0.9rem 1.25rem',
-          background: 'linear-gradient(135deg, #0F251E 0%, #152620 100%)',
-          borderBottom: '1px solid rgba(169, 188, 92, 0.3)',
-          color: '#F1EFE5'
+          padding: '1rem 1.35rem',
+          background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          color: '#FFFFFF'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'rgba(169, 188, 92, 0.2)',
+              width: '38px',
+              height: '38px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--accent-primary)'
+              color: '#FFFFFF',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
             }}>
-              <Zap size={18} />
+              <Zap size={20} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#F1EFE5' }}>
+              <h3 style={{ margin: 0, fontSize: '1.08rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF' }}>
                 Distributor Inward Hub & Gun Scanner
               </h3>
-              <p style={{ margin: 0, fontSize: '0.72rem', color: '#A9BC5C' }}>
+              <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: '#94A3B8', fontWeight: 500 }}>
                 Bulk 20-50 phone units inwarded in 30 seconds • Zero manual typing
               </p>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             {/* Mode Switcher */}
-            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '2px' }}>
+            <div style={{
+              display: 'flex',
+              background: 'rgba(15, 23, 42, 0.7)',
+              borderRadius: '8px',
+              padding: '3px',
+              border: '1px solid rgba(255, 255, 255, 0.12)'
+            }}>
               <button
                 type="button"
                 onClick={() => setInwardMode('gun')}
                 style={{
-                  padding: '0.28rem 0.65rem',
-                  fontSize: '0.72rem',
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.74rem',
                   fontWeight: 700,
-                  borderRadius: '4px',
+                  borderRadius: '6px',
                   border: 'none',
                   cursor: 'pointer',
-                  background: inwardMode === 'gun' ? 'var(--accent-primary)' : 'transparent',
-                  color: inwardMode === 'gun' ? '#0F251E' : '#F1EFE5'
+                  background: inwardMode === 'gun' ? 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)' : 'transparent',
+                  color: inwardMode === 'gun' ? '#FFFFFF' : '#94A3B8',
+                  boxShadow: inwardMode === 'gun' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 🔫 Continuous Gun Scan
@@ -351,25 +455,52 @@ export default function DistributorInwardHub({
                 type="button"
                 onClick={() => setInwardMode('paste')}
                 style={{
-                  padding: '0.28rem 0.65rem',
-                  fontSize: '0.72rem',
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.74rem',
                   fontWeight: 700,
-                  borderRadius: '4px',
+                  borderRadius: '6px',
                   border: 'none',
                   cursor: 'pointer',
-                  background: inwardMode === 'paste' ? 'var(--accent-primary)' : 'transparent',
-                  color: inwardMode === 'paste' ? '#0F251E' : '#F1EFE5'
+                  background: inwardMode === 'paste' ? 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)' : 'transparent',
+                  color: inwardMode === 'paste' ? '#FFFFFF' : '#94A3B8',
+                  boxShadow: inwardMode === 'paste' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 📋 Paste Invoice Text
               </button>
             </div>
 
+            {/* High-Contrast Crisp Close Button */}
             <button
               type="button"
               onClick={onClose}
-              className="btn-secondary"
-              style={{ padding: '0.25rem 0.6rem', color: '#F1EFE5' }}
+              aria-label="Close"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.16)',
+                color: '#E2E8F0',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                e.currentTarget.style.borderColor = '#EF4444';
+                e.currentTarget.style.color = '#FFFFFF';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.16)';
+                e.currentTarget.style.color = '#E2E8F0';
+              }}
             >
               ✕
             </button>
@@ -379,38 +510,27 @@ export default function DistributorInwardHub({
         {/* Content Body */}
         <div style={{ padding: '1.1rem 1.25rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
           
-          {/* Supplier & Bill Banner */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '0.65rem', padding: '0.65rem 0.85rem', background: 'var(--surface-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          {/* Bill Ref & Date Banner (Removed Distributor / Supplier field) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', padding: '0.75rem 0.95rem', background: 'var(--surface-secondary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>Distributor / Supplier *</label>
-              <input
-                type="text"
-                value={supplierName}
-                onChange={(e) => setSupplierName(e.target.value)}
-                placeholder="Distributor Name"
-                className="input-field"
-                style={{ padding: '0.3rem 0.5rem', fontSize: '0.78rem' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>Purchase Bill # *</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Purchase Bill # *</label>
               <input
                 type="text"
                 value={distributorBillNo}
                 onChange={(e) => setDistributorBillNo(e.target.value)}
                 placeholder="Bill / Challan Ref"
                 className="input-field"
-                style={{ padding: '0.3rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)' }}
+                style={{ padding: '0.38rem 0.6rem', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}
               />
             </div>
             <div>
-              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>Inward Date</label>
+              <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Inward Date</label>
               <input
                 type="date"
                 value={inwardDate}
                 onChange={(e) => setInwardDate(e.target.value)}
                 className="input-field"
-                style={{ padding: '0.3rem 0.5rem', fontSize: '0.78rem' }}
+                style={{ padding: '0.38rem 0.6rem', fontSize: '0.8rem' }}
               />
             </div>
           </div>
@@ -590,27 +710,28 @@ export default function DistributorInwardHub({
           {/* MODE A: CONTINUOUS GUN SCANNER */}
           {inwardMode === 'gun' && (
             <div style={{
-              padding: '1rem',
-              borderRadius: '8px',
-              border: '2px dashed var(--accent-primary)',
-              background: 'rgba(169, 188, 92, 0.05)',
+              padding: '1.1rem',
+              borderRadius: '10px',
+              border: '2px dashed #6366F1',
+              background: 'rgba(99, 102, 241, 0.05)',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.75rem'
+              gap: '0.85rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Barcode size={18} color="var(--accent-primary)" />
+                  <Barcode size={18} color="#6366F1" />
                   <span style={{ fontWeight: 800, fontSize: '0.88rem' }}>
                     CONTINUOUS BEEP SCANNER ACTIVE
                   </span>
                   <span style={{
                     fontSize: '0.65rem',
                     fontWeight: 800,
-                    padding: '0.1rem 0.4rem',
+                    padding: '0.15rem 0.5rem',
                     borderRadius: '4px',
-                    background: 'var(--accent-primary)',
-                    color: '#0F251E'
+                    background: '#10B981',
+                    color: '#FFFFFF',
+                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                   }}>
                     READY TO BEEP
                   </span>
@@ -657,10 +778,10 @@ export default function DistributorInwardHub({
                     fontSize: '0.95rem',
                     fontWeight: 700,
                     fontFamily: 'var(--font-mono)',
-                    borderColor: 'var(--accent-primary)',
+                    borderColor: '#6366F1',
                     background: '#FFFFFF',
                     color: '#000000',
-                    boxShadow: '0 0 12px rgba(169, 188, 92, 0.3)'
+                    boxShadow: '0 0 12px rgba(99, 102, 241, 0.25)'
                   }}
                   autoFocus
                 />
@@ -835,8 +956,7 @@ export default function DistributorInwardHub({
           onClose={() => setShowCameraScanner(false)}
           onScanSuccess={(detectedCode) => {
             setShowCameraScanner(false);
-            setScanInputVal(detectedCode);
-            handleScannerKeyDown({ key: 'Enter', preventDefault: () => {} });
+            processScannedCode(detectedCode);
           }}
           title="Mobile Camera Serial / Barcode Inward"
         />
