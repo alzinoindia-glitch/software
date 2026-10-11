@@ -25,6 +25,7 @@ import {
   Globe
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
+import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
 
 export default function UsedMobileModule({ 
   usedPurchases = [], 
@@ -64,6 +65,9 @@ export default function UsedMobileModule({
 
   const [brand, setBrand] = useState('Apple');
   const [customBrand, setCustomBrand] = useState('');
+  const availableBrands = useMemo(() => {
+    return getAvailableBrandsForCategory('Used Mobiles', inventory);
+  }, [inventory]);
   const [model, setModel] = useState('');
   const [color, setColor] = useState('');
   const [imei1, setImei1] = useState('');
@@ -203,6 +207,9 @@ export default function UsedMobileModule({
     const voucherNo = `ALZ-VOUCH-${String(usedPurchases.length + 1).padStart(3, '0')}`;
     const today = new Date().toISOString().split('T')[0];
     const effectiveBrand = brand === 'Other' ? (customBrand.trim() || 'Other') : brand;
+    if (effectiveBrand && effectiveBrand !== 'Other') {
+      saveCustomBrand(effectiveBrand, 'Used Mobiles');
+    }
     const cleanBuy = parseFloat(buyPrice);
     const calculatedSell = targetSellPrice ? parseFloat(targetSellPrice) : Math.round(cleanBuy * 1.18);
 
@@ -1070,18 +1077,12 @@ export default function UsedMobileModule({
                 className="input-field"
                 style={{ marginBottom: brand === 'Other' ? '0.4rem' : '0' }}
               >
-                <option value="Apple">Apple</option>
-                <option value="Samsung">Samsung</option>
-                <option value="OnePlus">OnePlus</option>
-                <option value="Vivo">Vivo</option>
-                <option value="Oppo">Oppo</option>
-                <option value="Realme">Realme</option>
-                <option value="Xiaomi / Redmi">Xiaomi / Redmi</option>
-                <option value="Motorola">Motorola</option>
-                <option value="Google Pixel">Google Pixel</option>
-                <option value="iQOO">iQOO</option>
-                <option value="Nothing">Nothing</option>
-                <option value="Universal">Universal</option>
+                {availableBrands.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+                {brand && !availableBrands.includes(brand) && brand !== 'Other' && (
+                  <option key={brand} value={brand}>{brand}</option>
+                )}
                 <option value="Other">Other (Custom Brand)</option>
               </select>
 
@@ -1091,6 +1092,11 @@ export default function UsedMobileModule({
                   placeholder="Enter custom brand name..."
                   value={customBrand}
                   onChange={(e) => setCustomBrand(e.target.value)}
+                  onBlur={(e) => {
+                    if (e.target.value.trim()) {
+                      saveCustomBrand(e.target.value.trim(), 'Used Mobiles');
+                    }
+                  }}
                   required
                   className="input-field animate-fade-in"
                   style={{ borderColor: 'var(--accent-primary)', fontSize: '0.85rem' }}

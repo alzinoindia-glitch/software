@@ -33,90 +33,24 @@ import { renderBarcodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
 import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
+import {
+  BASE_CATEGORIES,
+  BASE_MOBILE_BRANDS,
+  BASE_APPLIANCE_BRANDS,
+  BASE_ACCESSORY_BRANDS,
+  BASE_SPARE_PARTS_BRANDS,
+  getAvailableCategories,
+  getAvailableBrandsForCategory,
+  saveCustomCategory,
+  saveCustomBrand
+} from '../utils/customTaxonomy';
 
-export const MOBILE_BRANDS = [
-  'Apple', 
-  'Samsung', 
-  'OnePlus', 
-  'Vivo', 
-  'Oppo', 
-  'Realme', 
-  'Xiaomi', 
-  'Motorola', 
-  'Google Pixel', 
-  'iQOO',
-  'Nothing',
-  'POCO',
-  'Infinix',
-  'Tecno',
-  'Universal'
-];
-
-export const APPLIANCE_BRANDS = [
-  'Samsung',
-  'LG',
-  'Sony',
-  'Whirlpool',
-  'Voltas',
-  'Haier',
-  'Godrej',
-  'Panasonic',
-  'Daikin',
-  'Blue Star',
-  'Lloyd',
-  'Symphony',
-  'Philips',
-  'Bajaj',
-  'Havells',
-  'Crompton',
-  'IFB',
-  'Universal'
-];
-
-export const ACCESSORY_BRANDS = [
-  'Apple',
-  'Samsung',
-  'ALZINO Tech',
-  'boAt', 
-  'Noise', 
-  'OnePlus',
-  'Realme',
-  'Portronics',
-  'Anker',
-  'Ambrane',
-  'pTron',
-  'Boult',
-  'Fire-Boltt',
-  'Universal'
-];
-
-export const SPARE_PARTS_BRANDS = [
-  'Apple',
-  'Samsung',
-  'Vivo',
-  'Oppo',
-  'OnePlus',
-  'Xiaomi',
-  'Realme',
-  'Universal'
-];
-
-export const STANDARD_CATEGORIES = [
-  'Mobile Accessories',
-  'New Mobiles', 
-  'Used Mobiles', 
-  'Home Appliances', 
-  'Spare Parts',
-  'Universal'
-];
-
-export const getBrandsForCategory = (category) => {
-  if (category === 'Home Appliances') return APPLIANCE_BRANDS;
-  if (category === 'Mobile Accessories') return ACCESSORY_BRANDS;
-  if (category === 'New Mobiles' || category === 'Used Mobiles') return MOBILE_BRANDS;
-  if (category === 'Spare Parts') return SPARE_PARTS_BRANDS;
-  return Array.from(new Set(['Universal', 'Samsung', 'Apple', 'LG', 'Sony', 'boAt', 'Noise', 'Voltas']));
-};
+export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
+export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
+export const ACCESSORY_BRANDS = BASE_ACCESSORY_BRANDS;
+export const SPARE_PARTS_BRANDS = BASE_SPARE_PARTS_BRANDS;
+export const STANDARD_CATEGORIES = BASE_CATEGORIES;
+export const getBrandsForCategory = (category, inv = []) => getAvailableBrandsForCategory(category, inv);
 
 
 export default function InventoryManager({ 
@@ -214,13 +148,21 @@ export default function InventoryManager({
     'Universal': Package
   };
 
+  const [taxonomyVer, setTaxonomyVer] = useState(0);
+
+  useEffect(() => {
+    const handleTaxonomyUpdated = () => setTaxonomyVer(v => v + 1);
+    window.addEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
+    return () => window.removeEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
+  }, []);
+
+  const availableCategories = useMemo(() => {
+    return getAvailableCategories(inventory);
+  }, [inventory, taxonomyVer]);
+
   const categories = useMemo(() => {
-    const set = new Set(['All', ...STANDARD_CATEGORIES]);
-    inventory.forEach(i => {
-      if (i.category) set.add(i.category);
-    });
-    return Array.from(set);
-  }, [inventory]);
+    return ['All', ...availableCategories];
+  }, [availableCategories]);
 
   const handleCopy = (text, id) => {
     if (!text) return;
@@ -247,8 +189,12 @@ export default function InventoryManager({
     inventory.forEach(item => {
       if (item.brand) brandsSet.add(item.brand);
     });
+    if (categoryFilter !== 'All') {
+      const catBrands = getAvailableBrandsForCategory(categoryFilter, inventory);
+      catBrands.forEach(b => brandsSet.add(b));
+    }
     return Array.from(brandsSet);
-  }, [inventory]);
+  }, [inventory, categoryFilter, taxonomyVer]);
 
   // Fast Filter
   const filteredProducts = useMemo(() => {
@@ -298,9 +244,12 @@ export default function InventoryManager({
     setIsCustomCategory(false);
     setIsCustomBrand(false);
     setBarcodeMode('generate');
+    const defaultCat = availableCategories.includes('New Mobiles') ? 'New Mobiles' : (availableCategories[0] || 'New Mobiles');
+    const validBrands = getAvailableBrandsForCategory(defaultCat, inventory);
+    const defaultBrand = validBrands.includes('Samsung') ? 'Samsung' : (validBrands[0] || 'Universal');
     setFormData({
-      category: 'New Mobiles',
-      brand: 'Samsung',
+      category: defaultCat,
+      brand: defaultBrand,
       name: '',
       model: '',
       ram: '8GB',
@@ -330,9 +279,9 @@ export default function InventoryManager({
 
   const openEditModal = (item) => {
     setEditingItem(item);
-    const isCatCustom = Boolean(item.category && !STANDARD_CATEGORIES.includes(item.category));
+    const isCatCustom = Boolean(item.category && !availableCategories.includes(item.category));
     setIsCustomCategory(isCatCustom);
-    const validBrands = getBrandsForCategory(item.category);
+    const validBrands = getAvailableBrandsForCategory(item.category, inventory);
     const isBrCustom = Boolean(item.brand && !validBrands.includes(item.brand));
     setIsCustomBrand(isBrCustom);
     const isGenerated = Boolean(item.barcode && item.barcode.startsWith('ALZ-'));
@@ -443,7 +392,12 @@ export default function InventoryManager({
   };
 
   const handleSaveBatchMobiles = (newBatchItems) => {
+    newBatchItems.forEach(item => {
+      if (item.category) saveCustomCategory(item.category);
+      if (item.brand) saveCustomBrand(item.brand, item.category);
+    });
     setInventory(prev => [...newBatchItems, ...prev]);
+    setTaxonomyVer(v => v + 1);
   };
 
   const handleSave = async (e) => {
@@ -569,6 +523,15 @@ export default function InventoryManager({
       };
       setInventory(prev => [newItem, ...prev]);
     }
+
+    // Persist custom category & custom brand so they permanently appear in options next time
+    if (formData.category && formData.category.trim()) {
+      saveCustomCategory(formData.category.trim());
+    }
+    if (formData.brand && formData.brand.trim()) {
+      saveCustomBrand(formData.brand.trim(), formData.category ? formData.category.trim() : 'General');
+    }
+    setTaxonomyVer(v => v + 1);
 
     setShowModal(false);
   };
@@ -1530,7 +1493,7 @@ export default function InventoryManager({
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Category</label>
                 <select
-                  value={isCustomCategory || (!STANDARD_CATEGORIES.includes(formData.category) && formData.category !== '') ? 'Other' : formData.category}
+                  value={isCustomCategory ? 'Other' : formData.category}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === 'Other') {
@@ -1538,7 +1501,7 @@ export default function InventoryManager({
                       setFormData(prev => ({ ...prev, category: '' }));
                     } else {
                       setIsCustomCategory(false);
-                      const validBrands = getBrandsForCategory(val);
+                      const validBrands = getAvailableBrandsForCategory(val, inventory);
                       const brandStillValid = validBrands.includes(formData.brand) || isCustomBrand;
                       setFormData(prev => ({
                         ...prev,
@@ -1549,18 +1512,24 @@ export default function InventoryManager({
                   }}
                   className="input-field"
                 >
-                  {STANDARD_CATEGORIES.map(cat => (
+                  {availableCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                   <option value="Other">Other (Add Custom)</option>
                 </select>
 
-                {(isCustomCategory || (!STANDARD_CATEGORIES.includes(formData.category) && formData.category !== undefined)) && (
+                {isCustomCategory && (
                   <input
                     type="text"
                     placeholder="Enter custom category..."
                     value={formData.category}
                     onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onBlur={(e) => {
+                      if (e.target.value.trim()) {
+                        saveCustomCategory(e.target.value.trim());
+                        setTaxonomyVer(v => v + 1);
+                      }
+                    }}
                     required
                     className="input-field animate-fade-in"
                     style={{ marginTop: '0.3rem' }}
@@ -1572,9 +1541,9 @@ export default function InventoryManager({
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand</label>
                 {(() => {
-                  const currentBrands = getBrandsForCategory(formData.category);
+                  const currentBrands = getAvailableBrandsForCategory(formData.category, inventory);
                   const isBrandInList = currentBrands.includes(formData.brand);
-                  const selectValue = (isCustomBrand || (!isBrandInList && formData.brand !== '')) ? 'Other' : formData.brand;
+                  const selectValue = isCustomBrand ? 'Other' : (isBrandInList ? formData.brand : (formData.brand ? formData.brand : 'Other'));
 
                   return (
                     <>
@@ -1595,15 +1564,24 @@ export default function InventoryManager({
                         {currentBrands.map(b => (
                           <option key={b} value={b}>{b}</option>
                         ))}
+                        {formData.brand && !currentBrands.includes(formData.brand) && !isCustomBrand && (
+                          <option key={formData.brand} value={formData.brand}>{formData.brand}</option>
+                        )}
                         <option value="Other">Other (Add Custom)</option>
                       </select>
 
-                      {(isCustomBrand || (!isBrandInList && formData.brand !== undefined)) && (
+                      {isCustomBrand && (
                         <input
                           type="text"
                           placeholder="Enter custom brand..."
                           value={formData.brand}
                           onChange={(e) => setFormData(prev => ({ ...prev, brand: e.target.value }))}
+                          onBlur={(e) => {
+                            if (e.target.value.trim()) {
+                              saveCustomBrand(e.target.value.trim(), formData.category);
+                              setTaxonomyVer(v => v + 1);
+                            }
+                          }}
                           required
                           className="input-field animate-fade-in"
                           style={{ marginTop: '0.3rem' }}

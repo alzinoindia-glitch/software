@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
+import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
@@ -66,6 +67,11 @@ export default function BulkMobileVariantEntryModal({
     warranty: '1 Year Brand Warranty',
     receivedDate: new Date().toISOString().split('T')[0],
   });
+
+  const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const availableBrands = useMemo(() => {
+    return getAvailableBrandsForCategory('New Mobiles');
+  }, []);
 
   // Colour Variants list: [{ id, color, hex, qty }]
   const [colourVariants, setColourVariants] = useState([
@@ -261,6 +267,7 @@ export default function BulkMobileVariantEntryModal({
     }
 
     const brandName = modelDetails.brand.trim() || 'Universal';
+    saveCustomBrand(brandName, 'New Mobiles');
     const modelName = modelDetails.model.trim();
     const buyPrice = parseFloat(modelDetails.buyPrice) || 0;
     const sellPrice = parseFloat(modelDetails.sellPrice) || 0;
@@ -420,6 +427,7 @@ export default function BulkMobileVariantEntryModal({
         const errors = [];
         const parsedRows = json.map((row, idx) => {
           const brand = row.Brand || row.brand || 'Universal';
+          saveCustomBrand(String(brand).trim(), 'New Mobiles');
           const model = row.Model || row.model || '';
           const sellPrice = parseFloat(row.SellingPrice || row.SellPrice || row.price || 0);
 
@@ -716,14 +724,45 @@ export default function BulkMobileVariantEntryModal({
                   <div>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand *</label>
                     <select
-                      value={modelDetails.brand}
-                      onChange={(e) => setModelDetails({ ...modelDetails, brand: e.target.value })}
+                      value={isCustomBrand ? 'Other' : (availableBrands.includes(modelDetails.brand) ? modelDetails.brand : (modelDetails.brand || 'Other'))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'Other') {
+                          setIsCustomBrand(true);
+                          setModelDetails({ ...modelDetails, brand: '' });
+                        } else {
+                          setIsCustomBrand(false);
+                          setModelDetails({ ...modelDetails, brand: val });
+                        }
+                      }}
                       className="input-field"
                     >
-                      {MOBILE_BRANDS.map(b => (
+                      {availableBrands.map(b => (
                         <option key={b} value={b}>{b}</option>
                       ))}
+                      {modelDetails.brand && !availableBrands.includes(modelDetails.brand) && !isCustomBrand && (
+                        <option key={modelDetails.brand} value={modelDetails.brand}>{modelDetails.brand}</option>
+                      )}
+                      <option value="Other">Other (Add Custom)</option>
                     </select>
+
+                    {isCustomBrand && (
+                      <input
+                        type="text"
+                        placeholder="Enter custom brand..."
+                        value={modelDetails.brand}
+                        onChange={(e) => setModelDetails({ ...modelDetails, brand: e.target.value })}
+                        onBlur={(e) => {
+                          if (e.target.value.trim()) {
+                            saveCustomBrand(e.target.value.trim(), 'New Mobiles');
+                          }
+                        }}
+                        required
+                        className="input-field animate-fade-in"
+                        style={{ marginTop: '0.3rem' }}
+                        autoFocus
+                      />
+                    )}
                   </div>
 
                   {/* Model Name */}
