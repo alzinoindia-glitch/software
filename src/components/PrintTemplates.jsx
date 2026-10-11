@@ -163,6 +163,19 @@ export default function PrintTemplates({
             
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '3mm', marginBottom: '3mm' }}>
+              <img
+                src={shopConfig.logo || "/alzino-logo.png"}
+                alt="ALZINO"
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  margin: '0 auto 2mm auto',
+                  filter: 'grayscale(100%) contrast(140%)'
+                }}
+              />
               <div style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '1px' }}>{shopConfig.name}</div>
               <div style={{ fontSize: '10px' }}>{shopConfig.tagline}</div>
               <div style={{ fontSize: '10px' }}>{shopConfig.address}</div>
@@ -365,6 +378,19 @@ export default function PrintTemplates({
             
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
+              <img
+                src={shopConfig.logo || "/alzino-logo.png"}
+                alt="ALZINO"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  margin: '0 auto 1.5mm auto',
+                  filter: 'grayscale(100%) contrast(140%)'
+                }}
+              />
               <div style={{ fontSize: '15px', fontWeight: 'bold' }}>{shopConfig.name}</div>
               <div style={{ fontSize: '8.5px' }}>{shopConfig.tagline}</div>
               <div style={{ fontSize: '8px' }}>{shopConfig.address}</div>
@@ -471,20 +497,35 @@ export default function PrintTemplates({
               >
                 {/* Tax Invoice Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '6mm', marginBottom: '6mm' }}>
-                  <div>
-                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em' }}>
-                      {shopConfig.name}
-                    </div>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#444' }}>{shopConfig.tagline}</div>
-                    <div style={{ fontSize: '11px', color: '#555', marginTop: '2px', maxWidth: '380px' }}>{shopConfig.address}</div>
-                    <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
-                      <strong>Phone:</strong> {shopConfig.phone} | <strong>Email:</strong> {shopConfig.email}
-                    </div>
-                    {!printData.isNonGst && (
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#111', marginTop: '3px' }}>
-                        GSTIN: {shopConfig.gstin} | State: Telangana (Code: {shopConfig.stateCode})
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <img
+                      src={shopConfig.logo || "/alzino-logo.png"}
+                      alt="ALZINO"
+                      style={{
+                        width: '68px',
+                        height: '68px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: '2px solid #3B60C5',
+                        boxShadow: '0 2px 8px rgba(59,96,197,0.15)',
+                        flexShrink: 0
+                      }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+                        {shopConfig.name}
                       </div>
-                    )}
+                      <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', marginTop: '2px' }}>{shopConfig.tagline}</div>
+                      <div style={{ fontSize: '11px', color: '#555', marginTop: '2px', maxWidth: '380px' }}>{shopConfig.address}</div>
+                      <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
+                        <strong>Phone:</strong> {shopConfig.phone} | <strong>Email:</strong> {shopConfig.email}
+                      </div>
+                      {!printData.isNonGst && (
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#111', marginTop: '3px' }}>
+                          GSTIN: {shopConfig.gstin} | State: Telangana (Code: {shopConfig.stateCode})
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
@@ -744,15 +785,29 @@ export default function PrintTemplates({
             
             {/* Clean Store Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '4mm', marginBottom: '5mm' }}>
-              <div>
-                <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-                  {shopConfig.name}
-                </div>
-                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
-                  {shopConfig.address}
-                </div>
-                <div style={{ fontSize: '11px', color: '#555' }}>
-                  Phone: {shopConfig.phone} | GSTIN: {shopConfig.gstin}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <img
+                  src={shopConfig.logo || "/alzino-logo.png"}
+                  alt="ALZINO"
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '1.5px solid #3B60C5',
+                    flexShrink: 0
+                  }}
+                />
+                <div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                    {shopConfig.name}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
+                    {shopConfig.address}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#555' }}>
+                    Phone: {shopConfig.phone} | GSTIN: {shopConfig.gstin}
+                  </div>
                 </div>
               </div>
 
@@ -873,6 +928,19 @@ export default function PrintTemplates({
           <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3 }}>
             
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
+              <img
+                src={shopConfig.logo || "/alzino-logo.png"}
+                alt="ALZINO"
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  margin: '0 auto 1.5mm auto',
+                  filter: 'grayscale(100%) contrast(140%)'
+                }}
+              />
               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{shopConfig.name} REPAIR LAB</div>
               <div style={{ fontSize: '10px' }}>Bodhan, Telangana • Ph: {shopConfig.phone}</div>
               <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '2mm' }}>JOB TOKEN: {printData.jobId}</div>
@@ -985,18 +1053,32 @@ export default function PrintTemplates({
             
             {/* Header / Shop Banner */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #0F251E', paddingBottom: '10px', marginBottom: '14px' }}>
-              <div>
-                <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 900, color: '#0F251E', letterSpacing: '-0.5px' }}>
-                  {shopConfig.name || 'ALZINO'}
-                </h1>
-                <div style={{ fontSize: '11px', color: '#63756E', fontWeight: 600, marginTop: '2px' }}>
-                  {shopConfig.tagline || 'Mobile Sales • Service • Accessories'}
-                </div>
-                <div style={{ fontSize: '11px', color: '#152620', marginTop: '2px' }}>
-                  {shopConfig.address || 'Station Road, Bodhan, Nizamabad Dist, Telangana - 503185'}
-                </div>
-                <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                  <strong>Phone:</strong> {shopConfig.phone || '+91 98490 00000'} | <strong>GSTIN:</strong> {shopConfig.gstin || '36ABCDE1234F1Z5'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <img
+                  src={shopConfig.logo || "/alzino-logo.png"}
+                  alt="ALZINO"
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '2px solid #0F251E',
+                    flexShrink: 0
+                  }}
+                />
+                <div>
+                  <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 900, color: '#0F251E', letterSpacing: '-0.5px' }}>
+                    {shopConfig.name || 'ALZINO'}
+                  </h1>
+                  <div style={{ fontSize: '11px', color: '#63756E', fontWeight: 600, marginTop: '2px' }}>
+                    {shopConfig.tagline || 'Mobile Sales • Service • Accessories'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#152620', marginTop: '2px' }}>
+                    {shopConfig.address || 'Station Road, Bodhan, Nizamabad Dist, Telangana - 503185'}
+                  </div>
+                  <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                    <strong>Phone:</strong> {shopConfig.phone || '+91 98490 00000'} | <strong>GSTIN:</strong> {shopConfig.gstin || '36ABCDE1234F1Z5'}
+                  </div>
                 </div>
               </div>
 

@@ -104,22 +104,19 @@ export default function Header({
             onClick={() => setActiveTab('dashboard')}
             title="Go to Dashboard (F1)"
           >
-            <div style={{
-              width: '28px',
-              height: '28px',
-              background: '#A9BC5C',
-              color: '#0F251E',
-              borderRadius: 'var(--radius-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontFamily: 'var(--font-heading)',
-              fontSize: '0.95rem',
-              letterSpacing: '-0.04em'
-            }}>
-              A
-            </div>
+            <img
+              src="/alzino-logo.png"
+              alt="ALZINO"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '1.5px solid rgba(255,255,255,0.25)',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                flexShrink: 0
+              }}
+            />
             <span style={{ 
               fontFamily: 'var(--font-heading)', 
               fontWeight: 800, 

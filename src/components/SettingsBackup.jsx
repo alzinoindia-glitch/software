@@ -564,10 +564,28 @@ export default function SettingsBackup({
         
         {/* Left: Shop Details Form */}
         <form onSubmit={handleSaveProfile} className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Building size={18} color="var(--accent-primary)" />
-            <span>ALZINO Shop Profile & Invoice Header</span>
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <img
+              src={formData.logo || "/alzino-logo.png"}
+              alt="Store Logo"
+              style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '2px solid var(--accent-primary)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                flexShrink: 0
+              }}
+            />
+            <div>
+              <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <Building size={18} color="var(--accent-primary)" />
+                <span>ALZINO Shop Profile & Invoice Header</span>
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-muted)' }}>Official badge logo active across browser tab, POS headers, and customer invoices</p>
+            </div>
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
             <div>

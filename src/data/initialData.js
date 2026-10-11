@@ -2,6 +2,7 @@
 
 export const defaultShopConfig = {
   name: "ALZINO",
+  logo: "/alzino-logo.png",
   tagline: "Smart Mobiles • Used Devices • Electronics • Repairing Lab",
   address: "Station Road, Near Old Bus Stand, Bodhan, Telangana - 503185",
   phone: "+91 98490 82741",
