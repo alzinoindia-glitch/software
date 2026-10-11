@@ -23,6 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
 import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
+import { getProductSuggestions } from '../utils/productSuggestions';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
@@ -72,6 +73,30 @@ export default function BulkMobileVariantEntryModal({
   const availableBrands = useMemo(() => {
     return getAvailableBrandsForCategory('New Mobiles');
   }, []);
+
+  // Fast Model Auto-Suggestions
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [modelSuggestionIndex, setModelSuggestionIndex] = useState(-1);
+
+  const modelSuggestions = useMemo(() => {
+    if (!modelDetails.model || modelDetails.model.trim().length < 2) return [];
+    return getProductSuggestions(modelDetails.model, [], 6);
+  }, [modelDetails.model]);
+
+  const handleSelectModelSuggestion = (sug) => {
+    setModelDetails(prev => ({
+      ...prev,
+      brand: sug.brand || prev.brand,
+      model: sug.model || sug.name,
+      ram: sug.ram || prev.ram,
+      storage: sug.storage || prev.storage,
+      buyPrice: prev.buyPrice ? prev.buyPrice : (sug.suggestedBuy ? String(sug.suggestedBuy) : ''),
+      sellPrice: prev.sellPrice ? prev.sellPrice : (sug.suggestedSell ? String(sug.suggestedSell) : ''),
+      mrp: prev.mrp ? prev.mrp : (sug.suggestedSell ? String(sug.suggestedSell) : '')
+    }));
+    setShowModelSuggestions(false);
+    setModelSuggestionIndex(-1);
+  };
 
   // Colour Variants list: [{ id, color, hex, qty }]
   const [colourVariants, setColourVariants] = useState([
@@ -766,16 +791,108 @@ export default function BulkMobileVariantEntryModal({
                   </div>
 
                   {/* Model Name */}
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Model Name *</label>
+                  <div style={{ gridColumn: 'span 2', position: 'relative' }}>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
+                      Model Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(type half name for instant suggestions)</span>
+                    </label>
                     <input
                       type="text"
-                      placeholder="e.g. Galaxy S24 5G, iPhone 15, Nord CE4"
+                      placeholder="e.g. apple 18 pro, Galaxy S24, Nord CE4"
                       value={modelDetails.model}
-                      onChange={(e) => setModelDetails({ ...modelDetails, model: e.target.value })}
+                      onChange={(e) => {
+                        setModelDetails({ ...modelDetails, model: e.target.value });
+                        setShowModelSuggestions(true);
+                      }}
+                      onFocus={() => setShowModelSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowModelSuggestions(false), 250)}
+                      onKeyDown={(e) => {
+                        if (!showModelSuggestions || modelSuggestions.length === 0) return;
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setModelSuggestionIndex(prev => (prev + 1) % modelSuggestions.length);
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setModelSuggestionIndex(prev => (prev <= 0 ? modelSuggestions.length - 1 : prev - 1));
+                        } else if (e.key === 'Enter' && modelSuggestionIndex >= 0) {
+                          e.preventDefault();
+                          handleSelectModelSuggestion(modelSuggestions[modelSuggestionIndex]);
+                        } else if (e.key === 'Escape') {
+                          setShowModelSuggestions(false);
+                        }
+                      }}
                       className="input-field"
                       style={{ fontWeight: 700 }}
+                      autoComplete="off"
                     />
+
+                    {/* Floating Model Suggestions */}
+                    {showModelSuggestions && modelSuggestions.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          zIndex: 1300,
+                          background: 'var(--surface-primary)',
+                          border: '1.5px solid var(--accent-primary)',
+                          borderRadius: '8px',
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                          marginTop: '4px',
+                          maxHeight: '230px',
+                          overflowY: 'auto'
+                        }}
+                      >
+                        <div style={{
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.62rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          color: 'var(--accent-primary)',
+                          background: 'var(--surface-secondary)',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          justifyContent: 'space-between'
+                        }}>
+                          <span>⚡ Fast Model Pick (Click or Enter ↵)</span>
+                          <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>Auto-fills brand, specs & price</span>
+                        </div>
+                        {modelSuggestions.map((sug, idx) => (
+                          <div
+                            key={idx}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSelectModelSuggestion(sug);
+                            }}
+                            onMouseEnter={() => setModelSuggestionIndex(idx)}
+                            style={{
+                              padding: '0.5rem 0.65rem',
+                              cursor: 'pointer',
+                              background: idx === modelSuggestionIndex ? 'var(--surface-hover)' : 'transparent',
+                              borderBottom: '1px solid var(--border-color)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                {sug.model || sug.name}
+                              </div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', gap: '0.3rem', alignItems: 'center', marginTop: '0.1rem' }}>
+                                <span style={{ fontWeight: 800, color: 'var(--accent-primary)' }}>{sug.brand}</span>
+                                {sug.ram && sug.storage ? <span>• {sug.ram}/{sug.storage}</span> : null}
+                              </div>
+                            </div>
+                            {sug.suggestedSell > 0 && (
+                              <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* RAM */}

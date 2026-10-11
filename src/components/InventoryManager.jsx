@@ -44,6 +44,7 @@ import {
   saveCustomCategory,
   saveCustomBrand
 } from '../utils/customTaxonomy';
+import { getProductSuggestions } from '../utils/productSuggestions';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -163,6 +164,53 @@ export default function InventoryManager({
   const categories = useMemo(() => {
     return ['All', ...availableCategories];
   }, [availableCategories]);
+
+  // Product Auto-Suggestions for rapid data entry
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [nameSuggestionIndex, setNameSuggestionIndex] = useState(-1);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [modelSuggestionIndex, setModelSuggestionIndex] = useState(-1);
+
+  const productNameSuggestions = useMemo(() => {
+    if (!formData.name || formData.name.trim().length < 2) return [];
+    return getProductSuggestions(formData.name, inventory, 8);
+  }, [formData.name, inventory]);
+
+  const modelSuggestions = useMemo(() => {
+    if (!formData.model || formData.model.trim().length < 2) return [];
+    return getProductSuggestions(formData.model, inventory, 8);
+  }, [formData.model, inventory]);
+
+  const handleSelectSuggestion = (suggestion) => {
+    setFormData(prev => {
+      const validBrands = getAvailableBrandsForCategory(suggestion.category || prev.category, inventory);
+      const targetBrand = suggestion.brand && validBrands.includes(suggestion.brand)
+        ? suggestion.brand
+        : (suggestion.brand || prev.brand);
+
+      return {
+        ...prev,
+        name: suggestion.name,
+        brand: targetBrand,
+        category: suggestion.category || prev.category,
+        model: suggestion.model || prev.model,
+        ram: suggestion.ram || prev.ram,
+        storage: suggestion.storage || prev.storage,
+        color: suggestion.color || prev.color,
+        hsn: suggestion.hsn || prev.hsn,
+        gstRate: suggestion.gstRate !== undefined ? suggestion.gstRate : prev.gstRate,
+        buyPrice: prev.buyPrice ? prev.buyPrice : (suggestion.suggestedBuy ? String(suggestion.suggestedBuy) : ''),
+        sellPrice: prev.sellPrice ? prev.sellPrice : (suggestion.suggestedSell ? String(suggestion.suggestedSell) : ''),
+        mrp: prev.mrp ? prev.mrp : (suggestion.suggestedSell ? String(suggestion.suggestedSell) : '')
+      };
+    });
+    setIsCustomCategory(false);
+    setIsCustomBrand(false);
+    setShowNameSuggestions(false);
+    setShowModelSuggestions(false);
+    setNameSuggestionIndex(-1);
+    setModelSuggestionIndex(-1);
+  };
 
   const handleCopy = (text, id) => {
     if (!text) return;
@@ -1654,20 +1702,113 @@ export default function InventoryManager({
                 )}
               </div>
 
-              <div>
+              <div style={{ position: 'relative' }}>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Model Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Galaxy S24 5G, iPhone 15"
+                  placeholder="e.g. Galaxy S24 5G, iPhone 18 Pro"
                   value={formData.model || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, model: e.target.value }))}
+                  onChange={(e) => {
+                    setFormData(prev => ({ ...prev, model: e.target.value }));
+                    setShowModelSuggestions(true);
+                  }}
+                  onFocus={() => setShowModelSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowModelSuggestions(false), 250)}
+                  onKeyDown={(e) => {
+                    if (!showModelSuggestions || modelSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setModelSuggestionIndex(prev => (prev + 1) % modelSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setModelSuggestionIndex(prev => (prev <= 0 ? modelSuggestions.length - 1 : prev - 1));
+                    } else if (e.key === 'Enter' && modelSuggestionIndex >= 0) {
+                      e.preventDefault();
+                      handleSelectSuggestion(modelSuggestions[modelSuggestionIndex]);
+                    } else if (e.key === 'Escape') {
+                      setShowModelSuggestions(false);
+                    }
+                  }}
                   className="input-field"
+                  autoComplete="off"
                 />
+
+                {showModelSuggestions && modelSuggestions.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 1250,
+                      background: 'var(--surface-primary)',
+                      border: '1.5px solid var(--accent-primary)',
+                      borderRadius: '8px',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                      marginTop: '4px',
+                      maxHeight: '240px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{
+                      padding: '0.3rem 0.55rem',
+                      fontSize: '0.62rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--accent-primary)',
+                      background: 'var(--surface-secondary)',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>Quick Model Auto-Fill</span>
+                      <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>Enter ↵ to pick</span>
+                    </div>
+                    {modelSuggestions.map((sug, idx) => (
+                      <div
+                        key={idx}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSelectSuggestion(sug);
+                        }}
+                        onMouseEnter={() => setModelSuggestionIndex(idx)}
+                        style={{
+                          padding: '0.45rem 0.6rem',
+                          cursor: 'pointer',
+                          background: idx === modelSuggestionIndex ? 'var(--surface-hover)' : 'transparent',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.4rem'
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {sug.model || sug.name}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {sug.brand} • {sug.category}
+                          </div>
+                        </div>
+                        {sug.suggestedSell > 0 && (
+                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                            ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div style={{ gridColumn: 'span 2' }}>
+              <div style={{ gridColumn: 'span 2', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Product Name *</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                    Product Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(type half name for instant suggestions)</span>
+                  </label>
                   {(formData.brand || formData.model || formData.ram || formData.storage || formData.color) && (
                     <button
                       type="button"
@@ -1698,12 +1839,132 @@ export default function InventoryManager({
                 </div>
                 <input
                   type="text"
-                  placeholder="e.g. Apple iPhone 15 128GB"
+                  placeholder="e.g. apple 18 pro, Galaxy S24, Nord CE4"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, name: e.target.value });
+                    setShowNameSuggestions(true);
+                  }}
+                  onFocus={() => setShowNameSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 250)}
+                  onKeyDown={(e) => {
+                    if (!showNameSuggestions || productNameSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setNameSuggestionIndex(prev => (prev + 1) % productNameSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setNameSuggestionIndex(prev => (prev <= 0 ? productNameSuggestions.length - 1 : prev - 1));
+                    } else if (e.key === 'Enter' && nameSuggestionIndex >= 0) {
+                      e.preventDefault();
+                      handleSelectSuggestion(productNameSuggestions[nameSuggestionIndex]);
+                    } else if (e.key === 'Escape') {
+                      setShowNameSuggestions(false);
+                    }
+                  }}
                   required
                   className="input-field"
+                  autoComplete="off"
                 />
+
+                {/* Auto Suggestions Floating Dropdown */}
+                {showNameSuggestions && productNameSuggestions.length > 0 && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 1300,
+                      background: 'var(--surface-primary)',
+                      border: '1.5px solid var(--accent-primary)',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                      marginTop: '4px',
+                      maxHeight: '270px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{
+                      padding: '0.35rem 0.65rem',
+                      fontSize: '0.64rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: 'var(--accent-primary)',
+                      background: 'var(--surface-secondary)',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>⚡ Fast Suggestions (Click or Enter to Auto-Fill)</span>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>↑↓ Arrows to navigate</span>
+                    </div>
+                    {productNameSuggestions.map((sug, idx) => {
+                      const isSelected = idx === nameSuggestionIndex;
+                      return (
+                        <div
+                          key={idx}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectSuggestion(sug);
+                          }}
+                          onMouseEnter={() => setNameSuggestionIndex(idx)}
+                          style={{
+                            padding: '0.55rem 0.75rem',
+                            cursor: 'pointer',
+                            background: isSelected ? 'var(--surface-hover)' : 'transparent',
+                            borderBottom: '1px solid var(--border-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.6rem',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontWeight: 700,
+                              fontSize: '0.84rem',
+                              color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}>
+                              {sug.name}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem', alignItems: 'center' }}>
+                              <span style={{
+                                fontSize: '0.64rem',
+                                fontWeight: 800,
+                                padding: '0.08rem 0.38rem',
+                                borderRadius: '4px',
+                                background: 'rgba(169, 188, 92, 0.18)',
+                                color: 'var(--accent-primary)'
+                              }}>
+                                {sug.brand}
+                              </span>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                {sug.category} {sug.ram && sug.storage ? `• ${sug.ram}/${sug.storage}` : ''} {sug.color ? `• ${sug.color}` : ''}
+                              </span>
+                            </div>
+                          </div>
+                          {sug.suggestedSell > 0 && (
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                              </div>
+                              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                                {sug.source === 'inventory' ? 'Stock ₹' : 'Est. ₹'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>
