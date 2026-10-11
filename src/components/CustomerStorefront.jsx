@@ -1199,141 +1199,238 @@ export default function CustomerStorefront({
       {/* 2. PROMOTIONAL HERO VALUE PROPOSITIONS (ANIMATED ROTATING SHOWCASE) */}
       {/* ========================================================================= */}
       <section style={{ maxWidth: '1280px', margin: '1.25rem auto 0', padding: '0 1rem' }}>
-        <div 
-          onMouseEnter={() => setIsBannerHovered(true)}
-          onMouseLeave={() => setIsBannerHovered(false)}
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            borderRadius: '16px',
-            background: currentBanner.gradient,
-            color: '#FFFFFF',
-            boxShadow: `0 8px 24px ${currentBanner.glowColor}`,
-            minHeight: '120px',
-            transition: 'background 0.4s ease, box-shadow 0.4s ease'
-          }}
-        >
-          {/* Animated Card Content ("cards come, show text, go, and again come") */}
-          <div style={{
-            padding: '1.35rem 1.6rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1.25rem',
-            opacity: bannerAnimPhase === 'visible' ? 1 : 0,
-            transform: bannerAnimPhase === 'visible' 
-              ? 'translateY(0) scale(1)' 
-              : (bannerAnimPhase === 'entering' ? 'translateY(24px) scale(0.97)' : 'translateY(-24px) scale(0.97)'),
-            transition: 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.38s ease'
-          }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
+        <style>{`
+          .storefront-desktop-promo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.85rem;
+          }
+          .storefront-mobile-promo-slider {
+            display: none;
+          }
+          @media (max-width: 900px) {
+            .storefront-desktop-promo-grid {
+              display: none !important;
+            }
+            .storefront-mobile-promo-slider {
+              display: block !important;
+            }
+          }
+        `}</style>
+
+        {/* Desktop View: All 3 Cards Displayed Simultaneously Side-by-Side */}
+        <div className="storefront-desktop-promo-grid">
+          {promoBanners.map((b) => (
+            <div
+              key={b.id}
+              style={{
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: '14px',
+                background: b.gradient,
+                color: '#FFFFFF',
+                boxShadow: `0 6px 18px ${b.glowColor}`,
+                padding: '1.2rem 1.35rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.85rem',
+                transition: 'transform 0.22s ease, box-shadow 0.22s ease',
+                cursor: 'default'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = `0 10px 24px ${b.glowColor}`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = `0 6px 18px ${b.glowColor}`;
+              }}
+            >
+              <div>
                 <span style={{
-                  backgroundColor: currentBanner.badgeBg,
-                  fontSize: '0.7rem',
+                  backgroundColor: b.badgeBg,
+                  fontSize: '0.68rem',
                   fontWeight: 800,
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '6px',
+                  padding: '0.18rem 0.5rem',
+                  borderRadius: '5px',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
+                  letterSpacing: '0.03em',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.35rem'
+                  gap: '0.3rem',
+                  marginBottom: '0.35rem'
                 }}>
-                  <span>{currentBanner.icon}</span>
-                  <span>{currentBanner.tag}</span>
+                  <span>{b.icon}</span>
+                  <span>{b.tag}</span>
                 </span>
-                <span style={{
-                  fontSize: '0.68rem',
-                  color: 'rgba(255,255,255,0.75)',
-                  fontWeight: 700
+                <h3 style={{
+                  fontSize: '1.12rem',
+                  fontWeight: 900,
+                  margin: '0 0 0.22rem',
+                  lineHeight: 1.25
                 }}>
-                  Live In-Store Promise ({activeBannerIdx + 1}/{promoBanners.length})
-                </span>
+                  {b.title}
+                </h3>
+                <p style={{
+                  margin: 0,
+                  fontSize: '0.78rem',
+                  color: b.textColor,
+                  lineHeight: 1.35
+                }}>
+                  {b.desc}
+                </p>
               </div>
-              <h3 style={{ 
-                fontSize: '1.35rem', 
-                fontWeight: 900, 
-                margin: '0 0 0.28rem',
-                lineHeight: 1.2
+              <div style={{
+                fontSize: '2.6rem',
+                lineHeight: 1,
+                opacity: 0.95,
+                filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))',
+                flexShrink: 0
               }}>
-                {currentBanner.title}
-              </h3>
-              <p style={{ 
-                margin: 0, 
-                fontSize: '0.84rem', 
-                color: currentBanner.textColor,
-                lineHeight: 1.4,
-                maxWidth: '750px'
-              }}>
-                {currentBanner.desc}
-              </p>
+                {b.icon}
+              </div>
             </div>
-
-            {/* Giant Icon Visual with subtle bounce/float */}
-            <div style={{ 
-              fontSize: '3.4rem', 
-              lineHeight: 1,
-              filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.18))',
-              transform: bannerAnimPhase === 'visible' ? 'scale(1)' : 'scale(0.8)',
-              transition: 'transform 0.38s ease',
-              flexShrink: 0
-            }}>
-              {currentBanner.icon}
-            </div>
-          </div>
-
-          {/* Progress Countdown Bar showing remaining time */}
-          <div style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            height: '3px',
-            backgroundColor: 'rgba(255,255,255,0.85)',
-            width: bannerAnimPhase === 'visible' && !isBannerHovered ? '100%' : '0%',
-            transition: bannerAnimPhase === 'visible' && !isBannerHovered ? 'width 3.8s linear' : 'none'
-          }} />
+          ))}
         </div>
 
-        {/* Interactive Indicator Pills Below Card */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.6rem',
-          marginTop: '0.75rem',
-          flexWrap: 'wrap'
-        }}>
-          {promoBanners.map((b, idx) => {
-            const isActive = activeBannerIdx === idx;
-            return (
-              <button
-                key={b.id}
-                onClick={() => {
-                  setActiveBannerIdx(idx);
-                  setBannerAnimPhase('visible');
-                }}
-                style={{
-                  backgroundColor: isActive ? '#1A1C1E' : '#FFFFFF',
-                  color: isActive ? '#FFFFFF' : '#4B5563',
-                  border: `1.5px solid ${isActive ? '#1A1C1E' : '#E5E7EB'}`,
-                  borderRadius: '999px',
-                  padding: '0.35rem 0.85rem',
-                  fontSize: '0.76rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  transition: 'all 0.2s ease',
-                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
-                }}
-              >
-                <span>{b.icon}</span>
-                <span>{b.tag}</span>
-              </button>
-            );
-          })}
+        {/* Mobile View: Rotating Showcase Slider */}
+        <div className="storefront-mobile-promo-slider">
+          <div 
+            onMouseEnter={() => setIsBannerHovered(true)}
+            onMouseLeave={() => setIsBannerHovered(false)}
+            style={{
+              position: 'relative',
+              overflow: 'hidden',
+              borderRadius: '16px',
+              background: currentBanner.gradient,
+              color: '#FFFFFF',
+              boxShadow: `0 8px 24px ${currentBanner.glowColor}`,
+              minHeight: '120px',
+              transition: 'background 0.4s ease, box-shadow 0.4s ease'
+            }}
+          >
+            {/* Animated Card Content */}
+            <div style={{
+              padding: '1.25rem 1.4rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              opacity: bannerAnimPhase === 'visible' ? 1 : 0,
+              transform: bannerAnimPhase === 'visible' 
+                ? 'translateY(0) scale(1)' 
+                : (bannerAnimPhase === 'entering' ? 'translateY(24px) scale(0.97)' : 'translateY(-24px) scale(0.97)'),
+              transition: 'transform 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.38s ease'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+                  <span style={{
+                    backgroundColor: currentBanner.badgeBg,
+                    fontSize: '0.7rem',
+                    fontWeight: 800,
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem'
+                  }}>
+                    <span>{currentBanner.icon}</span>
+                    <span>{currentBanner.tag}</span>
+                  </span>
+                  <span style={{
+                    fontSize: '0.68rem',
+                    color: 'rgba(255,255,255,0.75)',
+                    fontWeight: 700
+                  }}>
+                    Promise ({activeBannerIdx + 1}/{promoBanners.length})
+                  </span>
+                </div>
+                <h3 style={{ 
+                  fontSize: '1.22rem', 
+                  fontWeight: 900, 
+                  margin: '0 0 0.25rem',
+                  lineHeight: 1.2
+                }}>
+                  {currentBanner.title}
+                </h3>
+                <p style={{ 
+                  margin: 0, 
+                  fontSize: '0.8rem', 
+                  color: currentBanner.textColor,
+                  lineHeight: 1.35
+                }}>
+                  {currentBanner.desc}
+                </p>
+              </div>
+
+              {/* Giant Icon Visual */}
+              <div style={{ 
+                fontSize: '3rem', 
+                lineHeight: 1,
+                filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.18))',
+                transform: bannerAnimPhase === 'visible' ? 'scale(1)' : 'scale(0.8)',
+                transition: 'transform 0.38s ease',
+                flexShrink: 0
+              }}>
+                {currentBanner.icon}
+              </div>
+            </div>
+
+            {/* Progress Countdown Bar */}
+            <div style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              height: '3px',
+              backgroundColor: 'rgba(255,255,255,0.85)',
+              width: bannerAnimPhase === 'visible' && !isBannerHovered ? '100%' : '0%',
+              transition: bannerAnimPhase === 'visible' && !isBannerHovered ? 'width 3.8s linear' : 'none'
+            }} />
+          </div>
+
+          {/* Interactive Indicator Pills Below Card */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            marginTop: '0.65rem',
+            flexWrap: 'wrap'
+          }}>
+            {promoBanners.map((b, idx) => {
+              const isActive = activeBannerIdx === idx;
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => {
+                    setActiveBannerIdx(idx);
+                    setBannerAnimPhase('visible');
+                  }}
+                  style={{
+                    backgroundColor: isActive ? '#1A1C1E' : '#FFFFFF',
+                    color: isActive ? '#FFFFFF' : '#4B5563',
+                    border: `1.5px solid ${isActive ? '#1A1C1E' : '#E5E7EB'}`,
+                    borderRadius: '999px',
+                    padding: '0.3rem 0.75rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+                  }}
+                >
+                  <span>{b.icon}</span>
+                  <span>{b.tag}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
