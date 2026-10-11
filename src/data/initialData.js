@@ -47,8 +47,7 @@ export const defaultShopConfig = {
   youtube: "@AlzinoTechBodhan",
   youtubeUrl: "https://youtube.com/@AlzinoTechBodhan",
   facebook: "Alzino Mobiles Bodhan",
-  facebookUrl: "https://facebook.com/alzinomobiles",
-  mapsUrl: "https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185",
+  mapsUrl: "https://share.google/U7aTnVbimv7z4RSW5",
   storeTimings: "Monday – Sunday: 9:30 AM to 10:00 PM",
   landmark: "Opposite State Bank of India, 200m from Railway Station",
 };

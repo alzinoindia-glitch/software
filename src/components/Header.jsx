@@ -21,7 +21,8 @@ import {
   ShieldCheck,
   Lock,
   Key,
-  UserCheck
+  UserCheck,
+  MapPin
 } from 'lucide-react';
 
 export default function Header({ 
@@ -201,6 +202,31 @@ export default function Header({
               <span style={{ fontSize: '0.85rem' }}>🌐</span>
               <span className="hide-on-mobile">alzino.shop</span>
             </button>
+
+            {/* Locate Store Button */}
+            <a
+              href="https://share.google/U7aTnVbimv7z4RSW5"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                color: '#FBBF24',
+                padding: '0.38rem 0.65rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                textDecoration: 'none'
+              }}
+              title="Locate Store (Station Road, Bodhan - Google Maps)"
+            >
+              <MapPin size={13} color="#FBBF24" />
+              <span className="hide-on-mobile">Locate Store</span>
+            </a>
 
             {/* Mobile Search Button (before Menu) */}
             <button 
