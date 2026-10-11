@@ -22,6 +22,7 @@ import {
   Box,
   X
 } from 'lucide-react';
+import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
 
 export default function RepairLab({ 
   repairJobs = [], 
@@ -451,6 +452,7 @@ export default function RepairLab({
   };
 
   const updateStatus = (jobId, newStatus) => {
+    const targetJob = repairJobs.find(j => j.jobId === jobId);
     setRepairJobs(prev => prev.map(job => {
       if (job.jobId === jobId) {
         let newBalance = job.balanceDue;
@@ -462,6 +464,15 @@ export default function RepairLab({
       }
       return job;
     }));
+
+    if (newStatus === 'Ready for Delivery' && targetJob?.customerMobile) {
+      setTimeout(() => {
+        const sendWA = confirm(`🚀 ${targetJob.deviceModel} is READY!\n\nSend instant "Ready for Pickup" WhatsApp message to ${targetJob.customerName} (${targetJob.customerMobile})?`);
+        if (sendWA) {
+          openWhatsAppRepairUpdate({ ...targetJob, status: 'Ready for Delivery' }, shopConfig, 'completed');
+        }
+      }, 150);
+    }
   };
 
   const filteredJobs = useMemo(() => {
@@ -764,18 +775,28 @@ export default function RepairLab({
                   </button>
 
                   {job.customerMobile && (
-                    <a
-                      href={`https://wa.me/91${job.customerMobile}?text=${encodeURIComponent(
-                        `Namaste ${job.customerName}, your mobile ${job.deviceModel} (Job ID: ${job.jobId}) status is: ${job.status}. Remaining Balance: Rs.${job.balanceDue}. ALZINO Bodhan.`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const type = (job.status === 'Ready for Delivery' || job.status === 'Delivered') ? 'completed' : 'received';
+                        openWhatsAppRepairUpdate(job, shopConfig, type);
+                      }}
                       className="btn-outline"
-                      style={{ padding: '0.4rem 0.55rem', color: '#10B981', display: 'flex', alignItems: 'center' }}
-                      title="Send WhatsApp Status to Customer"
+                      style={{
+                        padding: '0.4rem 0.6rem',
+                        color: '#10B981',
+                        borderColor: 'rgba(16,185,129,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 700
+                      }}
+                      title="1-Click Branded WhatsApp Update to Customer"
                     >
                       <Share2 size={13} />
-                    </a>
+                      <span>WA</span>
+                    </button>
                   )}
                 </div>
               </div>

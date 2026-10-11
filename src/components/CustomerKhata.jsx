@@ -33,6 +33,7 @@ import {
   List
 } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
+import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
 
 export default function CustomerKhata({ 
   customers = [], 
@@ -1007,6 +1008,20 @@ export default function CustomerKhata({
                               <QrCode size={12} />
                             </button>
 
+                            {/* 1-Click WhatsApp Reminder */}
+                            {cust.phone && (
+                              <button
+                                type="button"
+                                onClick={() => openWhatsAppKhataReminder(cust, shopConfig)}
+                                className="btn-secondary"
+                                style={{ padding: '0.28rem 0.5rem', fontSize: '0.74rem', color: '#10B981', borderColor: 'rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                                title="1-Click WhatsApp Payment Reminder with UPI ID"
+                              >
+                                <Share2 size={12} />
+                                <span>Remind</span>
+                              </button>
+                            )}
+
                             {/* Collect Payment */}
                             <button
                               onClick={() => {
@@ -1224,6 +1239,19 @@ export default function CustomerKhata({
                         <QrCode size={13} />
                       </button>
 
+                      {cust.phone && (
+                        <button
+                          type="button"
+                          onClick={() => openWhatsAppKhataReminder(cust, shopConfig)}
+                          className="btn-secondary"
+                          style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem', color: '#10B981', borderColor: 'rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                          title="1-Click WhatsApp Payment Reminder with UPI ID"
+                        >
+                          <Share2 size={12} />
+                          <span>Remind</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           setSelectedCustomerForPayment(cust);
@@ -1330,6 +1358,28 @@ export default function CustomerKhata({
                   <Printer size={13} />
                   <span>Print Ledger</span>
                 </button>
+
+                {statementCustomer.balanceDue > 0 && statementCustomer.phone && (
+                  <button
+                    type="button"
+                    onClick={() => openWhatsAppKhataReminder(statementCustomer, shopConfig)}
+                    className="btn-primary"
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.76rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      background: '#10B981',
+                      borderColor: '#10B981',
+                      color: '#FFFFFF'
+                    }}
+                    title="Send instant WhatsApp payment reminder with UPI ID"
+                  >
+                    <Share2 size={13} />
+                    <span>WhatsApp Reminder</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setStatementCustomer(null)}

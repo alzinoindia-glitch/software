@@ -40,6 +40,7 @@ import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
 import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareDevices';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 
 
 export default function PosBilling({ 
@@ -549,6 +550,168 @@ export default function PosBilling({
   useEffect(() => {
     setPaidAmount(grandTotal);
   }, [grandTotal]);
+
+  // Express 5-Second Checkout (Zero Popups • 1-Hit Print • Optional Auto-WhatsApp)
+  const handleExpressCheckout = (mode = 'Cash', sendWhatsApp = false) => {
+    if (cart.length === 0) {
+      playDeviceBeep('error');
+      alert("Cart is empty! Scan a barcode or add an item first.");
+      return;
+    }
+
+    const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
+    const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
+    const today = new Date().toISOString().split('T')[0];
+
+    const cgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);
+    const sgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);
+    const igstTotal = isNonGst ? 0 : (isInterstate ? totalGst : 0);
+
+    const newInvoice = {
+      invoiceNo,
+      date: today,
+      isNonGst,
+      invoiceType: isNonGst ? 'Non-GST Cash Memo / Estimate' : 'GST Tax Invoice',
+      customerName: customerName.trim() || 'Counter Customer',
+      customerPhone: customerPhone.trim(),
+      customerAddress: customerAddress.trim() || 'Bodhan, Telangana',
+      customerGstin: isNonGst ? '' : customerGstin.trim(),
+      paymentMode: mode,
+      paymentStatus: 'PAID',
+      paymentConfirmedAt: new Date().toISOString(),
+      paymentRef: mode === 'Cash' ? 'EXPRESS_CASH' : 'EXPRESS_UPI_CONFIRMED',
+      emiDetails: null,
+      splitDetails: null,
+      cashTendered: grandTotal,
+      changeReturned: 0,
+      notes: invoiceNotes.trim(),
+      items: cart.map(item => ({
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        hsn: item.hsn,
+        qty: item.qty,
+        imeis: item.selectedImeis,
+        rate: item.rate,
+        buyPrice: item.buyPrice,
+        gstRate: isNonGst ? 0 : item.gstRate,
+        taxable: isNonGst ? (item.rate * item.qty) : (item.rate * item.qty) / (1 + (item.gstRate / 100)),
+        total: item.rate * item.qty,
+        profit: (item.rate - item.buyPrice) * item.qty,
+        warranty: item.warranty || '',
+        rack: item.rack || 'R-01',
+        bin: item.bin || 'B-01'
+      })),
+      taxableAmount: totalTaxable,
+      cgstTotal,
+      sgstTotal,
+      igstTotal,
+      discount: Number(discount),
+      grandTotal,
+      paidAmount: grandTotal,
+      khataDue: 0,
+      totalProfit,
+      isInterstate,
+    };
+
+    // Deduct stock and remove sold IMEIs
+    setInventory(prev => prev.map(invItem => {
+      const cartItem = cart.find(c => c.id === invItem.id);
+      if (cartItem) {
+        const remainingImeis = (invItem.imeis || []).filter(
+          im => !cartItem.selectedImeis.includes(im)
+        );
+        const remainingUnits = (invItem.units || []).filter(
+          u => !cartItem.selectedImeis.includes(u.imei1) && !cartItem.selectedImeis.includes(u.imei2)
+        );
+        return {
+          ...invItem,
+          stock: Math.max(0, invItem.stock - cartItem.qty),
+          imeis: remainingImeis,
+          units: remainingUnits.length > 0 ? remainingUnits : (invItem.units ? [] : undefined)
+        };
+      }
+      return invItem;
+    }));
+
+    // Update Customer CRM
+    if (customerPhone.trim()) {
+      setCustomers(prev => {
+        const exists = prev.find(c => c.phone === customerPhone.trim());
+        if (exists) {
+          return prev.map(c => c.phone === customerPhone.trim() ? {
+            ...c,
+            totalSpent: c.totalSpent + grandTotal,
+          } : c);
+        } else {
+          return [
+            ...prev,
+            {
+              id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
+              name: customerName.trim() || 'Counter Customer',
+              phone: customerPhone.trim(),
+              address: customerAddress.trim() || 'Bodhan',
+              gstin: customerGstin.trim(),
+              totalSpent: grandTotal,
+              balanceDue: 0,
+            }
+          ];
+        }
+      });
+    }
+
+    setInvoices(prev => [newInvoice, ...prev]);
+
+    try {
+      playDeviceBeep('cash');
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+    } catch (e) {}
+
+    // Auto-Print invoice immediately
+    const printMode = shopConfig?.defaultPrinter === 'normal-a4' ? 'a4' : (shopConfig?.defaultPrinter === 'thermal-58mm' ? 'thermal-58' : 'thermal');
+    if (onPrintInvoice) {
+      onPrintInvoice(newInvoice, printMode);
+    }
+
+    // Auto-WhatsApp invoice
+    if (sendWhatsApp || (customerPhone && customerPhone.length >= 10)) {
+      openWhatsAppInvoice(newInvoice, shopConfig);
+    }
+
+    // Reset Cart & Counter Customer in 1 stroke
+    setCart([]);
+    setCustomerName('Counter Customer');
+    setCustomerPhone('');
+    setInvoiceNotes('');
+    setDiscount(0);
+
+    // Focus back on search input for next customer
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  };
+
+  // Keyboard Hotkey Automation for Counter Cashiers
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // F-Keys for instant operations
+      if (['F2', 'F3', 'F4', 'F8'].includes(e.key)) {
+        e.preventDefault();
+        if (e.key === 'F2') {
+          handleExpressCheckout('Cash', false);
+        } else if (e.key === 'F3') {
+          handleExpressCheckout('UPI', false);
+        } else if (e.key === 'F4') {
+          handleExpressCheckout('UPI', true);
+        } else if (e.key === 'F8') {
+          setBillingType(prev => prev === 'gst' ? 'non-gst' : 'gst');
+          playDeviceBeep('scanner');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cart, grandTotal, customerName, customerPhone, customerAddress, isNonGst, shopConfig, invoices.length]);
 
   // Step 1: Open Payment Verification Modal (NO invoice or stock deduction yet)
   const handleInitiatePayment = () => {
@@ -1504,33 +1667,122 @@ export default function PosBilling({
               </div>
             </div>
 
-            {/* Giant Primary Charge CTA Button */}
+            {/* Express 5-Second Checkout Toolbar (Zero Popups • 1-Hit Thermal Print) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.1fr 1.2fr', gap: '0.45rem', marginTop: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => handleExpressCheckout('Cash', false)}
+                disabled={cart.length === 0}
+                style={{
+                  padding: '0.6rem 0.35rem',
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: cart.length === 0 ? 0.5 : 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.15rem',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                }}
+                title="Instant Cash checkout + Thermal Print in 1 second [Shortcut: F2]"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Zap size={14} />
+                  <span>[F2] CASH</span>
+                </div>
+                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>1-Sec Print</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExpressCheckout('UPI', false)}
+                disabled={cart.length === 0}
+                style={{
+                  padding: '0.6rem 0.35rem',
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #3B60C5, #254399)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: cart.length === 0 ? 0.5 : 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.15rem',
+                  boxShadow: '0 2px 8px rgba(59, 96, 197, 0.3)'
+                }}
+                title="Instant UPI checkout + Thermal Print in 1 second [Shortcut: F3]"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <QrCode size={14} />
+                  <span>[F3] UPI</span>
+                </div>
+                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Scan & Print</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExpressCheckout('UPI', true)}
+                disabled={cart.length === 0}
+                style={{
+                  padding: '0.6rem 0.35rem',
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #059669, #047857)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: cart.length === 0 ? 0.5 : 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.15rem',
+                  boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
+                }}
+                title="Instant sale + Auto WhatsApp bill + Print [Shortcut: F4]"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <span>💬</span>
+                  <span>[F4] WA+PRINT</span>
+                </div>
+                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>WhatsApp & Print</span>
+              </button>
+            </div>
+
+            {/* Detailed Multi-Payment / EMI / Split Button */}
             <button
               onClick={handleInitiatePayment}
               disabled={cart.length === 0}
               style={{
-                marginTop: '0.65rem',
+                marginTop: '0.45rem',
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '0.45rem',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                background: cart.length === 0 ? 'var(--bg-main)' : 'var(--accent-primary)',
-                color: cart.length === 0 ? 'var(--text-muted)' : 'var(--accent-contrast)',
+                padding: '0.55rem',
+                borderRadius: '6px',
+                background: cart.length === 0 ? 'var(--bg-main)' : 'var(--surface-secondary)',
+                color: cart.length === 0 ? 'var(--text-muted)' : 'var(--text-primary)',
                 fontFamily: 'var(--font-heading)',
-                fontSize: '0.95rem',
-                fontWeight: 900,
-                letterSpacing: '0.04em',
-                border: 'none',
+                fontSize: '0.82rem',
+                fontWeight: 800,
+                border: '1px solid var(--border-color)',
                 cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
-                boxShadow: cart.length === 0 ? 'none' : '0 4px 16px rgba(169, 188, 92, 0.35)',
                 transition: 'all 0.2s ease'
               }}
+              title="Open full split payment, EMI, or custom Khata modal"
             >
-              <CheckCircle2 size={18} />
-              <span>CHARGE ₹{grandTotal.toLocaleString()}</span>
+              <CheckCircle2 size={15} />
+              <span>Custom / Split / EMI Modal (₹{grandTotal.toLocaleString()})</span>
             </button>
           </div>
         </div>
@@ -3035,19 +3287,16 @@ export default function PosBilling({
                 <span>✏️ Edit Customer / Price / Warranty on this Bill</span>
               </button>
 
-              {completedInvoice.customerPhone && (
-                <a
-                  href={`https://wa.me/91${completedInvoice.customerPhone}?text=${encodeURIComponent(
-                    `Namaste ${completedInvoice.customerName}, Thank you for shopping at ALZINO Bodhan! Your Invoice #${completedInvoice.invoiceNo} for Rs.${completedInvoice.grandTotal} is confirmed. Visit again!`
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
+              {completedInvoice && (
+                <button
+                  type="button"
+                  onClick={() => openWhatsAppInvoice(completedInvoice, shopConfig)}
                   className="btn-secondary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '0.6rem', color: '#10B981' }}
+                  style={{ width: '100%', justifyContent: 'center', padding: '0.6rem', color: '#10B981', fontWeight: 700 }}
                 >
                   <Share2 size={16} />
-                  <span>Send WhatsApp Confirmation</span>
-                </a>
+                  <span>Send Itemized WhatsApp Invoice with Warranty</span>
+                </button>
               )}
 
               <button
