@@ -34,7 +34,8 @@ import {
   Clock,
   Image as ImageIcon,
   Barcode,
-  Camera
+  Camera,
+  Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
