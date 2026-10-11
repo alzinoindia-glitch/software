@@ -557,18 +557,20 @@ export default function App() {
     </div>
     )}
 
-      {/* Signature Illoca Feature Demo Pullout Drawer */}
-      <IllocaPulloutDrawer
-        isOpen={isPulloutOpen}
-        onClose={() => setIsPulloutOpen(false)}
-        inventory={inventory}
-        shopConfig={shopConfig}
-        onSelectProduct={(p) => {
-          setIsPulloutOpen(false);
-          handleSelectTab('pos');
-        }}
-        onOpenProductInventory={handleOpenProductInventory}
-      />
+      {/* Signature Illoca Feature Demo Pullout Drawer (Admin/Cashier only) */}
+      {portal !== 'customer' && (
+        <IllocaPulloutDrawer
+          isOpen={isPulloutOpen}
+          onClose={() => setIsPulloutOpen(false)}
+          inventory={inventory}
+          shopConfig={shopConfig}
+          onSelectProduct={(p) => {
+            setIsPulloutOpen(false);
+            handleSelectTab('pos');
+          }}
+          onOpenProductInventory={handleOpenProductInventory}
+        />
+      )}
 
       {/* Universal Search Modal (Cmd+K / F8) */}
       <UniversalSearchModal

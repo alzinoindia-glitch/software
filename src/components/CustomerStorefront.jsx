@@ -67,6 +67,77 @@ const FacebookIcon = ({ size = 18, color = "currentColor" }) => (
   </svg>
 );
 
+const WhatsAppIcon = ({ size = 16, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.888 9.885m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+);
+
+export function getRealProductImage(product) {
+  if (product?.image && typeof product.image === 'string' && product.image.startsWith('http')) {
+    return product.image;
+  }
+  const name = (product?.name || '').toLowerCase();
+  const brand = (product?.brand || '').toLowerCase();
+  const cat = (product?.category || '').toLowerCase();
+
+  // Smart TVs
+  if (name.includes('tv') || name.includes('television') || name.includes('bravia') || name.includes('oled') || name.includes('crystal 4k')) {
+    return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80';
+  }
+  // AC / Air Conditioners
+  if (name.includes(' ac') || name.includes('air conditioner') || name.includes('split ac') || name.includes('voltas') || name.includes('daikin')) {
+    return 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80';
+  }
+  // Washing Machines
+  if (name.includes('washing machine') || name.includes('washer') || name.includes('dryer')) {
+    return 'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=800&auto=format&fit=crop&q=80';
+  }
+  // Air Coolers
+  if (name.includes('cooler') || name.includes('symphony')) {
+    return 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80';
+  }
+  // Wireless Earbuds / TWS / Audio
+  if (name.includes('airdopes') || name.includes('earbuds') || name.includes('headphone') || name.includes('boat') || name.includes('airpods') || name.includes('buds')) {
+    return 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80';
+  }
+  // Smartwatches
+  if (name.includes('watch') || name.includes('colorfit') || name.includes('noise') || name.includes('smartwatch')) {
+    return 'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80';
+  }
+  // Chargers / Adapters / Power Banks
+  if (name.includes('charger') || name.includes('adapter') || name.includes('supervooc') || name.includes('power bank') || name.includes('powerbank') || name.includes('gan')) {
+    return 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80';
+  }
+  // Samsung Flagships (S24 / S23 / Ultra)
+  if (name.includes('galaxy') || name.includes('s24') || name.includes('s23') || name.includes('s22') || (brand.includes('samsung') && !cat.includes('appliance'))) {
+    return 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=800&auto=format&fit=crop&q=80';
+  }
+  // Apple iPhones
+  if (name.includes('iphone') || brand.includes('apple')) {
+    return 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&auto=format&fit=crop&q=80';
+  }
+  // OnePlus
+  if (name.includes('oneplus') || brand.includes('oneplus')) {
+    return 'https://images.unsplash.com/photo-1565849904461-04a58ad377e0?w=800&auto=format&fit=crop&q=80';
+  }
+  // Vivo / Realme / Xiaomi
+  if (brand.includes('vivo') || brand.includes('realme') || brand.includes('xiaomi') || brand.includes('redmi') || brand.includes('oppo') || brand.includes('iqoo')) {
+    return 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80';
+  }
+  // Refurbished / Used Mobiles
+  if (product?.type === 'refurbished' || cat.includes('used')) {
+    return 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&auto=format&fit=crop&q=80';
+  }
+  // Home Appliances fallback
+  if (cat.includes('appliance') || product?.type === 'appliance') {
+    return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80';
+  }
+  // Default Smartphone image
+  return 'https://images.unsplash.com/photo-1580910051074-3eb694886505?w=800&auto=format&fit=crop&q=80';
+}
+
+
 export default function CustomerStorefront({
   shopConfig = {},
   inventory = [],
@@ -92,25 +163,6 @@ export default function CustomerStorefront({
   // Curated showcase of Mobiles & Home Appliances when inventory is fresh
   const fallbackShowroomCatalog = [
     {
-      id: 'SHOW-APP-01',
-      name: 'Samsung 55" Crystal 4K iSmart Ultra HD Smart LED TV',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Samsung',
-      price: 43990,
-      mrp: 64900,
-      stock: 3,
-      condition: 'In-Store Deal',
-      discountPct: 32,
-      warranty: '2 Years Comprehensive Samsung Warranty',
-      specs: 'Crystal Processor 4K • HDR 10+ • Q-Symphony Audio • SolarCell Remote',
-      rack: 'AP-01',
-      bin: 'B-01',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    },
-    {
       id: 'SHOW-MOB-01',
       name: 'Samsung Galaxy S24 Ultra 5G (256GB - Titanium Gray)',
       category: 'New Mobiles',
@@ -122,31 +174,12 @@ export default function CustomerStorefront({
       condition: 'Low Stock Deal',
       discountPct: 12,
       warranty: '1 Year Samsung India Official Warranty',
-      specs: 'Snapdragon 8 Gen 3 • Galaxy AI • 200MP Quad Camera • S-Pen',
+      specs: 'Snapdragon 8 Gen 3 • Galaxy AI • 200MP Quad Camera • S-Pen Included',
       rack: 'R-04',
       bin: 'B-12',
       deliveryTime: '15-30 Mins',
       image: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=800&auto=format&fit=crop&q=80',
       type: 'new'
-    },
-    {
-      id: 'SHOW-APP-02',
-      name: 'Voltas 1.5 Ton 5-Star Adjustable Inverter Split AC',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Voltas',
-      price: 36990,
-      mrp: 75990,
-      stock: 2,
-      condition: 'Old Stock Clearance',
-      discountPct: 51,
-      warranty: '10 Years Inverter Compressor Warranty',
-      specs: '100% Copper Condenser • 4-in-1 Cooling • Superdry Mode • Anti-Dust Filter',
-      rack: 'AP-02',
-      bin: 'B-02',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
     },
     {
       id: 'SHOW-MOB-02',
@@ -159,8 +192,8 @@ export default function CustomerStorefront({
       stock: 3,
       condition: 'Brand New Sealed',
       discountPct: 11,
-      warranty: '1 Year Apple Official Warranty',
-      specs: 'A17 Pro Chip • Super Retina XDR • 48MP Pro System • Ceramic Shield',
+      warranty: '1 Year Apple Official India Warranty',
+      specs: 'A17 Pro Chip • Super Retina XDR • 48MP Pro System • Aerospace Titanium',
       rack: 'R-01',
       bin: 'B-01',
       deliveryTime: '15-30 Mins',
@@ -168,8 +201,122 @@ export default function CustomerStorefront({
       type: 'new'
     },
     {
+      id: 'SHOW-MOB-03',
+      name: 'OnePlus 12R 5G (16GB RAM / 256GB - Cool Blue)',
+      category: 'New Mobiles',
+      department: 'mobiles',
+      brand: 'OnePlus',
+      price: 42999,
+      mrp: 45999,
+      stock: 6,
+      condition: 'Featured Flagship',
+      discountPct: 7,
+      warranty: '1 Year Official OnePlus Warranty',
+      specs: 'Snapdragon 8 Gen 2 • 1.5K 120Hz ProXDR • 100W SUPERVOOC • 5500mAh Battery',
+      rack: 'R-02',
+      bin: 'B-05',
+      deliveryTime: '15-30 Mins',
+      image: 'https://images.unsplash.com/photo-1565849904461-04a58ad377e0?w=800&auto=format&fit=crop&q=80',
+      type: 'new'
+    },
+    {
+      id: 'SHOW-MOB-04',
+      name: 'Vivo V30 Pro 5G (512GB - Andaman Blue)',
+      category: 'New Mobiles',
+      department: 'mobiles',
+      brand: 'Vivo',
+      price: 41999,
+      mrp: 46999,
+      stock: 5,
+      condition: 'ZEISS Portrait Master',
+      discountPct: 11,
+      warranty: '1 Year Vivo India Warranty',
+      specs: 'ZEISS Professional Optics • 50MP Eye-AF Front • 80W FlashCharge • Slim Design',
+      rack: 'R-03',
+      bin: 'B-02',
+      deliveryTime: '15-30 Mins',
+      image: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80',
+      type: 'new'
+    },
+    {
+      id: 'SHOW-MOB-05',
+      name: 'Realme 12 Pro+ 5G (256GB - Submarine Blue)',
+      category: 'New Mobiles',
+      department: 'mobiles',
+      brand: 'Realme',
+      price: 29999,
+      mrp: 34999,
+      stock: 7,
+      condition: 'Periscope Camera Deal',
+      discountPct: 14,
+      warranty: '1 Year Realme Official Warranty',
+      specs: '64MP Periscope Portrait Camera • Snapdragon 7s Gen 2 • 120Hz Curved OLED',
+      rack: 'R-03',
+      bin: 'B-07',
+      deliveryTime: '15-30 Mins',
+      image: 'https://images.unsplash.com/photo-1580910051074-3eb694886505?w=800&auto=format&fit=crop&q=80',
+      type: 'new'
+    },
+    {
+      id: 'SHOW-APP-01',
+      name: 'Sony Bravia 55" 4K Ultra HD Smart Google TV (KD-55X74L)',
+      category: 'Home Appliances',
+      department: 'appliances',
+      brand: 'Sony',
+      price: 57990,
+      mrp: 89900,
+      stock: 3,
+      condition: 'Cinema 4K Deal',
+      discountPct: 35,
+      warranty: '3 Years Comprehensive Sony India Warranty',
+      specs: 'X1 4K HDR Processor • Live Color • Dolby Audio • Google TV with Voice Remote',
+      rack: 'AP-01',
+      bin: 'B-01',
+      deliveryTime: 'Same-Day Bodhan',
+      image: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80',
+      type: 'appliance'
+    },
+    {
+      id: 'SHOW-APP-02',
+      name: 'Samsung 43" Crystal 4K Vivid Pro Smart LED TV',
+      category: 'Home Appliances',
+      department: 'appliances',
+      brand: 'Samsung',
+      price: 28990,
+      mrp: 42900,
+      stock: 4,
+      condition: 'In-Store Deal',
+      discountPct: 32,
+      warranty: '2 Years Comprehensive Samsung Warranty',
+      specs: 'Crystal Processor 4K • PurColor • Motion Xcelerator • 20W Q-Symphony Audio',
+      rack: 'AP-01',
+      bin: 'B-03',
+      deliveryTime: 'Same-Day Bodhan',
+      image: 'https://images.unsplash.com/photo-1509281373149-e957c6296406?w=800&auto=format&fit=crop&q=80',
+      type: 'appliance'
+    },
+    {
       id: 'SHOW-APP-03',
-      name: 'LG 8.0 Kg 5-Star Smart Inverter Front Load Washing Machine',
+      name: 'Voltas 1.5 Ton 5-Star Adjustable Inverter Split AC',
+      category: 'Home Appliances',
+      department: 'appliances',
+      brand: 'Voltas',
+      price: 36990,
+      mrp: 75990,
+      stock: 3,
+      condition: 'Old Stock Clearance',
+      discountPct: 51,
+      warranty: '10 Years Inverter Compressor Warranty',
+      specs: '100% Copper Condenser • 4-in-1 Cooling • Superdry Mode • Anti-Dust Filter',
+      rack: 'AP-02',
+      bin: 'B-02',
+      deliveryTime: 'Same-Day Bodhan',
+      image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80',
+      type: 'appliance'
+    },
+    {
+      id: 'SHOW-APP-04',
+      name: 'LG 8.0 Kg 5-Star AI Direct Drive Front Load Washing Machine',
       category: 'Home Appliances',
       department: 'appliances',
       brand: 'LG',
@@ -179,7 +326,7 @@ export default function CustomerStorefront({
       condition: 'In-Store Deal',
       discountPct: 32,
       warranty: '10 Years Direct Drive Motor Warranty',
-      specs: 'AI DD Steam Wash • 6 Motion Tech • Stainless Steel Tub • TurboWash',
+      specs: 'AI DD Steam Wash • 6 Motion Tech • Stainless Steel Tub • TurboWash Quick Cycle',
       rack: 'AP-03',
       bin: 'B-03',
       deliveryTime: 'Same-Day Bodhan',
@@ -187,26 +334,7 @@ export default function CustomerStorefront({
       type: 'appliance'
     },
     {
-      id: 'SHOW-MOB-03',
-      name: 'Apple iPhone 13 (128GB - Midnight Black)',
-      category: 'Used Mobiles',
-      department: 'mobiles',
-      brand: 'Apple',
-      price: 36999,
-      mrp: 59900,
-      stock: 2,
-      condition: 'Certified Grade A+',
-      discountPct: 38,
-      warranty: '6 Months ALZINO Comprehensive Hardware Warranty',
-      specs: 'A15 Bionic • Ceramic Shield • Dual 12MP Camera • Tested 24-Point QC Check',
-      rack: 'R-02',
-      bin: 'B-04',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&auto=format&fit=crop&q=80',
-      type: 'refurbished'
-    },
-    {
-      id: 'SHOW-APP-04',
+      id: 'SHOW-APP-05',
       name: 'Symphony Diet 3D 55i Personal Tower Air Cooler (55 Litres)',
       category: 'Home Appliances',
       department: 'appliances',
@@ -214,7 +342,7 @@ export default function CustomerStorefront({
       price: 9499,
       mrp: 13999,
       stock: 5,
-      condition: 'Old Stock Clearance',
+      condition: 'Summer Special',
       discountPct: 32,
       warranty: '1 Year Manufacturer Warranty',
       specs: '3D Cooling Honeycomb Pads • i-Pure Air Tech • Low Power Consumption • Remote',
@@ -225,23 +353,137 @@ export default function CustomerStorefront({
       type: 'appliance'
     },
     {
-      id: 'SHOW-ACC-01',
-      name: 'ALZINO 65W GaN Ultra-Fast Multi-Port Charger (Dual Type-C + USB)',
-      category: 'Mobile Accessories',
+      id: 'SHOW-REF-01',
+      name: 'Apple iPhone 14 (128GB - Midnight Blue)',
+      category: 'Used Mobiles',
       department: 'mobiles',
-      brand: 'ALZINO Tech',
-      price: 1499,
-      mrp: 2999,
+      brand: 'Apple',
+      price: 44999,
+      mrp: 69900,
+      stock: 2,
+      condition: 'Certified Grade A+',
+      discountPct: 36,
+      warranty: '6 Months ALZINO Comprehensive Hardware Warranty',
+      specs: 'Battery Health 94% • A15 Bionic • Ceramic Shield • Tested 24-Point QC Check',
+      rack: 'R-02',
+      bin: 'B-04',
+      deliveryTime: '15-30 Mins',
+      image: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&auto=format&fit=crop&q=80',
+      type: 'refurbished'
+    },
+    {
+      id: 'SHOW-REF-02',
+      name: 'OnePlus 11 5G (256GB - Titan Black)',
+      category: 'Used Mobiles',
+      department: 'mobiles',
+      brand: 'OnePlus',
+      price: 36999,
+      mrp: 61999,
+      stock: 1,
+      condition: 'Certified Grade A+',
+      discountPct: 40,
+      warranty: '6 Months ALZINO Comprehensive Hardware Warranty',
+      specs: 'Battery Health 96% • Hasselblad Triple Camera • 100W Charging • Original Box',
+      rack: 'R-02',
+      bin: 'B-06',
+      deliveryTime: '15-30 Mins',
+      image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&auto=format&fit=crop&q=80',
+      type: 'refurbished'
+    },
+    {
+      id: 'SHOW-ACC-01',
+      name: 'Apple 20W USB-C Power Adapter (Original Box)',
+      category: 'Mobile Accessories',
+      department: 'accessories',
+      brand: 'Apple',
+      price: 1699,
+      mrp: 1900,
+      stock: 12,
+      condition: '100% Genuine Box',
+      discountPct: 11,
+      warranty: '1 Year Apple Official Warranty',
+      specs: 'Original Apple 20W Fast Charging • Works with iPhone 15/14/13 & iPad • BIS Mark',
+      rack: 'R-03',
+      bin: 'B-01',
+      deliveryTime: '15 Mins',
+      image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80',
+      type: 'accessory'
+    },
+    {
+      id: 'SHOW-ACC-02',
+      name: 'OnePlus 80W SUPERVOOC Power Adapter + Type-C Cable',
+      category: 'Mobile Accessories',
+      department: 'accessories',
+      brand: 'OnePlus',
+      price: 2499,
+      mrp: 3499,
+      stock: 10,
+      condition: 'Flash Charge Deal',
+      discountPct: 29,
+      warranty: '1 Year Instant Replacement Warranty',
+      specs: 'Original OnePlus 80W Flash Charge • GaN Technology • 10-Layer Safety Protection',
+      rack: 'R-03',
+      bin: 'B-03',
+      deliveryTime: '15 Mins',
+      image: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80',
+      type: 'accessory'
+    },
+    {
+      id: 'SHOW-ACC-03',
+      name: 'boAt Airdopes 141 True Wireless Earbuds (42H Playtime)',
+      category: 'Mobile Accessories',
+      department: 'accessories',
+      brand: 'boAt',
+      price: 1199,
+      mrp: 4490,
+      stock: 20,
+      condition: 'Mega Price Drop',
+      discountPct: 73,
+      warranty: '1 Year boAt India Warranty',
+      specs: '42H Total Playtime • Beast Mode 80ms Low Latency • ENx Tech Mic • ASAP Charge',
+      rack: 'R-03',
+      bin: 'B-05',
+      deliveryTime: '15 Mins',
+      image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80',
+      type: 'accessory'
+    },
+    {
+      id: 'SHOW-ACC-04',
+      name: 'Noise ColorFit Pulse 3 AMOLED Bluetooth Calling Smartwatch',
+      category: 'Mobile Accessories',
+      department: 'accessories',
+      brand: 'Noise',
+      price: 1799,
+      mrp: 6999,
       stock: 15,
-      condition: 'In-Store Deal',
-      discountPct: 50,
-      warranty: '1 Year Instant Counter Replacement Warranty',
-      specs: 'GaN III Tech • Power Delivery 3.0 • Fast charges Laptops, iPhones & Androids',
+      condition: '74% Clearance Deal',
+      discountPct: 74,
+      warranty: '1 Year Noise Official Warranty',
+      specs: '1.96" AMOLED Always-On Display • BT Calling with Dialpad • 100+ Sports Modes',
       rack: 'R-03',
       bin: 'B-08',
       deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
+      image: 'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80',
+      type: 'accessory'
+    },
+    {
+      id: 'SHOW-ACC-05',
+      name: 'Anker 20,000mAh 22.5W Fast Charging Power Bank',
+      category: 'Mobile Accessories',
+      department: 'accessories',
+      brand: 'Anker',
+      price: 2199,
+      mrp: 3999,
+      stock: 8,
+      condition: 'Fast PD Power',
+      discountPct: 45,
+      warranty: '18 Months Anker Warranty',
+      specs: 'Dual USB-A + Type-C PD Output • PowerIQ 3.0 • MultiProtect Safety • LED Display',
+      rack: 'R-03',
+      bin: 'B-10',
+      deliveryTime: '15 Mins',
+      image: 'https://images.unsplash.com/photo-1609592424109-dd9892f1b177?w=800&auto=format&fit=crop&q=80',
+      type: 'accessory'
     }
   ];
 
@@ -251,42 +493,50 @@ export default function CustomerStorefront({
     return text.replace(/[⚡🏷️🔥✨🎉●]/g, '').trim();
   };
 
-  // Build live showroom products list combining real admin inventory & refurbished
+  // Build live showroom products list combining real admin inventory & refurbished & showcase
   const liveProducts = useMemo(() => {
     const list = [];
+    const seenNames = new Set();
 
     // 1. Add active inventory items
     if (inventory && inventory.length > 0) {
       inventory.forEach(item => {
-        const isAppliance = item.category === 'Home Appliances' || 
-                            (item.name && (item.name.toLowerCase().includes('tv') || 
-                                           item.name.toLowerCase().includes('ac') || 
-                                           item.name.toLowerCase().includes('cooler') || 
-                                           item.name.toLowerCase().includes('washing machine') || 
-                                           item.name.toLowerCase().includes('fridge')));
+        const cleanName = (item.name || '').replace(/^sSamsung/i, 'Samsung');
+        seenNames.add(cleanName.toLowerCase());
 
-        const department = isAppliance ? 'appliances' : 'mobiles';
+        const isAppliance = item.category === 'Home Appliances' || 
+                            (cleanName && (cleanName.toLowerCase().includes('tv') || 
+                                           cleanName.toLowerCase().includes('ac') || 
+                                           cleanName.toLowerCase().includes('cooler') || 
+                                           cleanName.toLowerCase().includes('washing machine') || 
+                                           cleanName.toLowerCase().includes('fridge')));
+
+        const isAccessory = item.category === 'Mobile Accessories' && 
+                            !cleanName.toLowerCase().includes('galaxy') && 
+                            !cleanName.toLowerCase().includes('iphone');
+
+        const department = isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles');
         const agingDays = getAgingDays(item);
         const hasOffer = item.offer && item.offer.pct > 0;
-        const regularPrice = item.offer?.regularPrice || item.mrp || (item.sellPrice * 1.15);
+        const regularPrice = item.offer?.regularPrice || item.mrp || Math.round((item.sellPrice || 0) * 1.08);
         const sellPrice = item.sellPrice || 0;
         const discount = regularPrice > sellPrice ? Math.round(((regularPrice - sellPrice) / regularPrice) * 100) : 0;
 
-        let condition = 'Brand New';
+        let condition = 'In-Store Stock';
         if (hasOffer) {
           condition = cleanBadgeText(item.offer.label || `Special Deal (${item.offer.pct}% Off)`);
         } else if (agingDays >= 60) {
           condition = `Clearance Deal (${discount}% Off)`;
-        } else if (discount > 10) {
-          condition = `In-Store Deal (${discount}% Off)`;
+        } else if (discount > 5) {
+          condition = `${discount}% OFF Deal`;
         }
 
         list.push({
           id: item.id,
-          name: item.name,
-          category: item.category || (isAppliance ? 'Home Appliances' : 'New Mobiles'),
+          name: cleanName,
+          category: item.category || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles')),
           department,
-          brand: item.brand || item.name.split(' ')[0] || 'ALZINO',
+          brand: item.brand || cleanName.split(' ')[0] || 'Samsung',
           price: sellPrice,
           mrp: regularPrice,
           discountPct: discount,
@@ -296,10 +546,10 @@ export default function CustomerStorefront({
           rack: item.rack || 'R-01',
           bin: item.bin || 'B-01',
           deliveryTime: isAppliance ? 'Same-Day Bodhan' : '15-30 Mins',
-          specs: item.description || item.specs || 'Genuine Bodhan In-Store Stock • Official GST Bill',
+          specs: item.description || 'Genuine Bodhan In-Store Stock • Official GST Bill',
           image: null,
           images: item.images || null,
-          type: isAppliance ? 'appliance' : 'new'
+          type: isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new')
         });
       });
     }
@@ -312,9 +562,12 @@ export default function CustomerStorefront({
           const sellP = Number(item.expectedSellingPrice || buyP * 1.25);
           const mrpVal = Number(sellP * 1.35);
           const disc = mrpVal > sellP ? Math.round(((mrpVal - sellP) / mrpVal) * 100) : 0;
+          const uName = `${item.brand || ''} ${item.model || ''} (${item.storage || ''} ${item.color || ''})`.trim();
+          seenNames.add(uName.toLowerCase());
+
           list.push({
             id: item.id || `USED-${Math.random()}`,
-            name: `${item.brand || ''} ${item.model || ''} (${item.storage || ''} ${item.color || ''})`,
+            name: uName,
             category: 'Used Mobiles',
             department: 'mobiles',
             brand: item.brand || 'Refurbished',
@@ -336,9 +589,12 @@ export default function CustomerStorefront({
       });
     }
 
-    if (list.length === 0) {
-      return fallbackShowroomCatalog;
-    }
+    // 3. Always include showcase catalog so the customer store has full product variety across all categories
+    fallbackShowroomCatalog.forEach(showcaseItem => {
+      if (!seenNames.has(showcaseItem.name.toLowerCase())) {
+        list.push(showcaseItem);
+      }
+    });
 
     return list;
   }, [inventory, usedPurchases]);
@@ -387,10 +643,20 @@ export default function CustomerStorefront({
   const filteredProducts = useMemo(() => {
     let result = liveProducts.filter(item => {
       // 1. Category Filter
-      if (selectedCategory === 'smartphones' && item.department !== 'mobiles') return false;
-      if (selectedCategory === 'appliances' && item.department !== 'appliances') return false;
-      if (selectedCategory === 'refurbished' && item.type !== 'refurbished') return false;
-      if (selectedCategory === 'accessories' && item.category !== 'Mobile Accessories') return false;
+      if (selectedCategory === 'smartphones') {
+        const isSmart = (item.department === 'mobiles' || item.category === 'New Mobiles') && item.type !== 'refurbished' && item.category !== 'Mobile Accessories';
+        if (!isSmart) return false;
+      }
+      if (selectedCategory === 'appliances') {
+        const isAppliance = item.department === 'appliances' || item.category === 'Home Appliances';
+        if (!isAppliance) return false;
+      }
+      if (selectedCategory === 'refurbished') {
+        if (item.type !== 'refurbished' && item.category !== 'Used Mobiles') return false;
+      }
+      if (selectedCategory === 'accessories') {
+        if (item.department !== 'accessories' && item.category !== 'Mobile Accessories') return false;
+      }
       if (selectedCategory === 'clearance') {
         const hasDiscount = (item.discountPct && item.discountPct >= 10) || 
                             (item.condition && (item.condition.includes('Clearance') || item.condition.includes('Deal') || item.condition.includes('Off')));
@@ -982,17 +1248,25 @@ export default function CustomerStorefront({
                     >
                       {prod.images ? (
                         <ProductImageViewer product={prod} height={150} />
-                      ) : prod.image ? (
-                        <img 
-                          src={prod.image} 
-                          alt={prod.name} 
-                          style={{ maxHeight: '140px', maxWidth: '100%', objectFit: 'contain' }} 
-                        />
                       ) : (
-                        <div style={{ textAlign: 'center', color: '#9CA3AF' }}>
-                          {prod.type === 'appliance' ? <Tv size={42} /> : <Smartphone size={42} />}
-                          <div style={{ fontSize: '0.65rem', marginTop: '0.2rem' }}>{prod.brand}</div>
-                        </div>
+                        <img 
+                          src={getRealProductImage(prod)} 
+                          alt={prod.name} 
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = prod.type === 'appliance'
+                              ? 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80'
+                              : 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80';
+                          }}
+                          style={{ 
+                            maxHeight: '142px', 
+                            maxWidth: '95%', 
+                            objectFit: 'contain',
+                            borderRadius: '8px',
+                            transition: 'transform 0.25s ease'
+                          }} 
+                        />
                       )}
                     </div>
 
@@ -1078,8 +1352,36 @@ export default function CustomerStorefront({
                       )}
                     </div>
 
-                    {/* Quick-Commerce Stepper ADD Button (Blinkit/Zepto Style) */}
-                    <div>
+                    {/* Quick Actions: WhatsApp Enquiry & Add to Cart */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSingleWhatsAppInquiry(prod);
+                        }}
+                        title="Enquire on WhatsApp"
+                        style={{
+                          backgroundColor: '#25D366',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '0.38rem 0.55rem',
+                          fontWeight: 700,
+                          fontSize: '0.74rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.28rem',
+                          boxShadow: '0 1px 3px rgba(37,211,102,0.3)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <WhatsAppIcon size={13} color="#FFFFFF" />
+                        <span>Enquire</span>
+                      </button>
+
+                      {/* Quick-Commerce Stepper ADD Button (Blinkit/Zepto Style) */}
                       {qtyInCart > 0 ? (
                         <div style={{
                           display: 'flex',
@@ -1090,7 +1392,11 @@ export default function CustomerStorefront({
                           overflow: 'hidden'
                         }}>
                           <button
-                            onClick={() => removeFromCart(prod)}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFromCart(prod);
+                            }}
                             style={{
                               backgroundColor: 'transparent',
                               border: 'none',
@@ -1107,7 +1413,11 @@ export default function CustomerStorefront({
                             {qtyInCart}
                           </span>
                           <button
-                            onClick={() => addToCart(prod)}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addToCart(prod);
+                            }}
                             style={{
                               backgroundColor: 'transparent',
                               border: 'none',
@@ -1123,13 +1433,17 @@ export default function CustomerStorefront({
                         </div>
                       ) : (
                         <button
-                          onClick={() => addToCart(prod)}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToCart(prod);
+                          }}
                           style={{
                             backgroundColor: '#FFFFFF',
                             color: '#0C5B43',
                             border: '1.5px solid #0C5B43',
                             borderRadius: '6px',
-                            padding: '0.38rem 1rem',
+                            padding: '0.38rem 0.8rem',
                             fontWeight: 800,
                             fontSize: '0.78rem',
                             cursor: 'pointer',
@@ -1876,12 +2190,12 @@ export default function CustomerStorefront({
             }}>
               {selectedProductModal.images ? (
                 <ProductImageViewer product={selectedProductModal} height={200} />
-              ) : selectedProductModal.image ? (
-                <img src={selectedProductModal.image} alt={selectedProductModal.name} style={{ maxHeight: '190px', maxWidth: '100%', objectFit: 'contain' }} />
               ) : (
-                <div style={{ textAlign: 'center', color: '#9CA3AF' }}>
-                  {selectedProductModal.type === 'appliance' ? <Tv size={56} /> : <Smartphone size={56} />}
-                </div>
+                <img 
+                  src={getRealProductImage(selectedProductModal)} 
+                  alt={selectedProductModal.name} 
+                  style={{ maxHeight: '190px', maxWidth: '90%', objectFit: 'contain' }} 
+                />
               )}
             </div>
 
@@ -1925,15 +2239,38 @@ export default function CustomerStorefront({
               <div><strong>Stock Status:</strong> {selectedProductModal.stock > 0 ? `In Stock (${selectedProductModal.stock} units in Bodhan)` : 'On Order'}</div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.65rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.65rem' }}>
               <button
+                type="button"
+                onClick={() => handleSingleWhatsAppInquiry(selectedProductModal)}
+                style={{
+                  backgroundColor: '#25D366',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.45rem',
+                  boxShadow: '0 4px 12px rgba(37, 211, 102, 0.25)'
+                }}
+              >
+                <WhatsAppIcon size={17} color="#FFFFFF" />
+                <span>Enquire on WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   addToCart(selectedProductModal);
                   setSelectedProductModal(null);
                   setIsCartOpen(true);
                 }}
                 style={{
-                  flex: 1,
                   backgroundColor: '#0C5B43',
                   color: '#FFFFFF',
                   border: 'none',
@@ -1948,30 +2285,8 @@ export default function CustomerStorefront({
                   gap: '0.35rem'
                 }}
               >
-                <ShoppingCart size={16} />
+                <Plus size={16} />
                 <span>Add to Cart</span>
-              </button>
-
-              <button
-                onClick={() => handleSingleWhatsAppInquiry(selectedProductModal)}
-                style={{
-                  flex: 1,
-                  backgroundColor: '#25D366',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.75rem',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.35rem'
-                }}
-              >
-                <MessageCircle size={16} />
-                <span>Reserve on WhatsApp</span>
               </button>
             </div>
           </div>
@@ -2006,44 +2321,6 @@ export default function CustomerStorefront({
             <div>Station Road, Bodhan, Telangana - 503185 • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
           </div>
 
-          {/* Discreet Staff Portal Links (Tucked away neatly in footer) */}
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.72rem', color: '#9CA3AF' }}>Store Staff:</span>
-            <button 
-              onClick={() => onNavigatePortal('/cashier')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#4B5563',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem'
-              }}
-            >
-              <Lock size={11} />
-              <span>Cashier POS</span>
-            </button>
-            <button 
-              onClick={() => onNavigatePortal('/admin')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#4B5563',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem'
-              }}
-            >
-              <ShieldCheck size={11} />
-              <span>Admin ERP</span>
-            </button>
-          </div>
         </div>
 
         <div style={{
