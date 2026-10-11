@@ -877,6 +877,27 @@ export default function CustomerStorefront({
     { id: 'clearance', label: 'Clearance Hub', icon: BadgePercent },
   ];
 
+  // Category item counts for badges
+  const categoryCounts = useMemo(() => {
+    const counts = { all: liveProducts.length };
+    categoriesList.forEach(cat => {
+      if (cat.id === 'all') return;
+      counts[cat.id] = liveProducts.filter(item => {
+        const cleanName = (item.name || '').toLowerCase();
+        if (cat.id === 'smartphones') return (item.department === 'mobiles' || item.category === 'New Mobiles') && item.type !== 'refurbished';
+        if (cat.id === 'audio') return cleanName.includes('earbuds') || cleanName.includes('airpods') || cleanName.includes('airdopes') || cleanName.includes('audio') || cleanName.includes('headphone');
+        if (cat.id === 'chargers') return cleanName.includes('charger') || cleanName.includes('adapter') || cleanName.includes('cable') || cleanName.includes('power bank');
+        if (cat.id === 'wearables') return cleanName.includes('watch') || cleanName.includes('band') || cleanName.includes('pulse');
+        if (cat.id === 'protection') return cleanName.includes('glass') || cleanName.includes('case') || cleanName.includes('cover') || cleanName.includes('armor');
+        if (cat.id === 'appliances') return item.type === 'appliance' || item.department === 'appliances' || item.category === 'Home Appliances';
+        if (cat.id === 'refurbished') return item.type === 'refurbished' || item.category === 'Used Mobiles';
+        if (cat.id === 'clearance') return (item.discountPct && item.discountPct >= 10) || (item.condition && (item.condition.includes('Clearance') || item.condition.includes('Deal')));
+        return false;
+      }).length;
+    });
+    return counts;
+  }, [liveProducts, categoriesList]);
+
   // Repair tracking status lookup
   const trackedRepairs = useMemo(() => {
     if (!repairSearch.trim()) return [];
@@ -1208,12 +1229,88 @@ export default function CustomerStorefront({
           .storefront-mobile-promo-slider {
             display: none;
           }
+          .storefront-products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+            gap: 1rem;
+          }
           @media (max-width: 900px) {
             .storefront-desktop-promo-grid {
               display: none !important;
             }
             .storefront-mobile-promo-slider {
               display: block !important;
+            }
+          }
+          @media (max-width: 768px) {
+            .storefront-catalog-section {
+              padding: 0 0.5rem !important;
+              margin: 1.25rem auto 2.5rem !important;
+            }
+            .storefront-products-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+              gap: 0.5rem !important;
+            }
+            .storefront-card {
+              padding: 0.55rem 0.5rem !important;
+              border-radius: 12px !important;
+            }
+            .storefront-card-top-badges {
+              margin-bottom: 0.3rem !important;
+            }
+            .storefront-card-badge {
+              font-size: 0.58rem !important;
+              padding: 0.1rem 0.32rem !important;
+            }
+            .storefront-card-img-box {
+              height: 125px !important;
+              padding: 0.25rem !important;
+              margin-bottom: 0.35rem !important;
+            }
+            .storefront-card-img {
+              max-height: 115px !important;
+            }
+            .storefront-card-brand {
+              font-size: 0.62rem !important;
+            }
+            .storefront-card-rating {
+              font-size: 0.58rem !important;
+              padding: 0.08rem 0.28rem !important;
+            }
+            .storefront-card-title {
+              font-size: 0.78rem !important;
+              line-height: 1.25 !important;
+              min-height: 1.95rem !important;
+              margin-bottom: 0.15rem !important;
+            }
+            .storefront-card-specs {
+              font-size: 0.62rem !important;
+              margin-bottom: 0.25rem !important;
+            }
+            .storefront-card-rack {
+              display: none !important;
+            }
+            .storefront-card-price-row {
+              margin-bottom: 0.35rem !important;
+              padding-top: 0.4rem !important;
+            }
+            .storefront-card-price {
+              font-size: 1.02rem !important;
+            }
+            .storefront-card-mrp {
+              font-size: 0.65rem !important;
+            }
+            .storefront-card-save {
+              font-size: 0.55rem !important;
+              padding: 0.08rem 0.24rem !important;
+            }
+            .storefront-card-actions {
+              gap: 0.3rem !important;
+            }
+            .storefront-card-btn {
+              padding: 0.4rem 0.15rem !important;
+              font-size: 0.68rem !important;
+              border-radius: 6px !important;
             }
           }
         `}</style>
@@ -1437,7 +1534,7 @@ export default function CustomerStorefront({
       {/* ========================================================================= */}
       {/* 3. PRODUCT CATALOG GRID WITH QUICK-COMMERCE CATEGORY PILLS */}
       {/* ========================================================================= */}
-      <section style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
+      <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
         {/* Category Filter Pills (Placed Above Product Listing) */}
         <div style={{
           marginBottom: '1.25rem',
@@ -1445,12 +1542,14 @@ export default function CustomerStorefront({
           whiteSpace: 'nowrap',
           paddingBottom: '0.35rem',
           scrollbarWidth: 'none',
-          msOverflowStyle: 'none'
+          msOverflowStyle: 'none',
+          WebkitOverflowScrolling: 'touch'
         }}>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {categoriesList.map(cat => {
               const isActive = selectedCategory === cat.id;
               const Icon = cat.icon;
+              const count = categoryCounts[cat.id];
               return (
                 <button
                   key={cat.id}
@@ -1459,21 +1558,33 @@ export default function CustomerStorefront({
                     backgroundColor: isActive ? '#0C5B43' : '#FFFFFF',
                     color: isActive ? '#FFFFFF' : '#374151',
                     border: `1.5px solid ${isActive ? '#0C5B43' : '#E5E7EB'}`,
-                    padding: '0.5rem 1rem',
+                    padding: '0.48rem 0.95rem',
                     borderRadius: '999px',
-                    fontSize: '0.8rem',
+                    fontSize: '0.78rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '0.45rem',
+                    gap: '0.4rem',
                     boxShadow: isActive ? '0 2px 8px rgba(12, 91, 67, 0.25)' : '0 1px 3px rgba(0,0,0,0.03)',
                     transition: 'all 0.15s ease',
                     flexShrink: 0
                   }}
                 >
-                  <Icon size={15} color={isActive ? '#FFFFFF' : '#0C5B43'} />
+                  <Icon size={14} color={isActive ? '#FFFFFF' : '#0C5B43'} />
                   <span>{cat.label}</span>
+                  {count !== undefined && (
+                    <span style={{
+                      backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : '#F3F4F6',
+                      color: isActive ? '#FFFFFF' : '#6B7280',
+                      fontSize: '0.64rem',
+                      fontWeight: 800,
+                      padding: '0.08rem 0.35rem',
+                      borderRadius: '999px'
+                    }}>
+                      {count}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1564,11 +1675,7 @@ export default function CustomerStorefront({
             </button>
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(235px, 1fr))',
-            gap: '1rem'
-          }}>
+          <div className="storefront-products-grid">
             {filteredProducts.map(prod => {
               const qtyInCart = cart[prod.id] || 0;
               const savings = (prod.mrp && prod.mrp > prod.price) ? prod.mrp - prod.price : 0;
@@ -1576,6 +1683,7 @@ export default function CustomerStorefront({
               return (
                 <div
                   key={prod.id}
+                  className="storefront-card"
                   style={{
                     backgroundColor: '#FFFFFF',
                     borderRadius: '14px',
@@ -1592,8 +1700,8 @@ export default function CustomerStorefront({
                 >
                   <div>
                     {/* Top Badges (Delivery Time + Discount Pill) */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{
+                    <div className="storefront-card-top-badges" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span className="storefront-card-badge" style={{
                         backgroundColor: '#F3F4F6',
                         color: '#374151',
                         fontSize: '0.65rem',
@@ -1609,7 +1717,7 @@ export default function CustomerStorefront({
                       </span>
 
                       {prod.discountPct > 0 && (
-                        <span style={{
+                        <span className="storefront-card-badge" style={{
                           backgroundColor: '#DCFCE7',
                           color: '#15803D',
                           fontSize: '0.65rem',
@@ -1625,6 +1733,7 @@ export default function CustomerStorefront({
                     {/* Product Photo Showcase */}
                     <div 
                       onClick={() => setSelectedProductModal(prod)}
+                      className="storefront-card-img-box"
                       style={{
                         height: '155px',
                         backgroundColor: '#F8FAFC',
@@ -1646,6 +1755,7 @@ export default function CustomerStorefront({
                         <img 
                           src={getRealProductImage(prod)} 
                           alt={prod.name} 
+                          className="storefront-card-img"
                           loading="lazy"
                           onError={(e) => {
                             e.currentTarget.onerror = null;
@@ -1666,10 +1776,10 @@ export default function CustomerStorefront({
 
                     {/* Brand & Category & Rating Pill */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0C5B43', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                      <span className="storefront-card-brand" style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0C5B43', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                         {prod.brand}
                       </span>
-                      <span style={{
+                      <span className="storefront-card-rating" style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.15rem',
@@ -1688,6 +1798,7 @@ export default function CustomerStorefront({
                     {/* Product Title */}
                     <h3 
                       onClick={() => setSelectedProductModal(prod)}
+                      className="storefront-card-title"
                       style={{
                         fontSize: '0.88rem',
                         fontWeight: 800,
@@ -1707,7 +1818,7 @@ export default function CustomerStorefront({
                     </h3>
 
                     {/* Micro Specs */}
-                    <div style={{
+                    <div className="storefront-card-specs" style={{
                       fontSize: '0.7rem',
                       color: '#6B7280',
                       marginBottom: '0.45rem',
@@ -1720,7 +1831,7 @@ export default function CustomerStorefront({
 
                     {/* Showroom Rack Location */}
                     {prod.rack && (
-                      <div style={{
+                      <div className="storefront-card-rack" style={{
                         fontSize: '0.65rem',
                         color: '#4B5563',
                         backgroundColor: '#F3F4F6',
@@ -1744,7 +1855,7 @@ export default function CustomerStorefront({
                     boxSizing: 'border-box'
                   }}>
                     {/* Price & Savings Header */}
-                    <div style={{
+                    <div className="storefront-card-price-row" style={{
                       display: 'flex',
                       alignItems: 'baseline',
                       justifyContent: 'space-between',
@@ -1753,17 +1864,17 @@ export default function CustomerStorefront({
                       boxSizing: 'border-box'
                     }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '1.18rem', fontWeight: 900, color: '#111827' }}>
+                        <span className="storefront-card-price" style={{ fontSize: '1.18rem', fontWeight: 900, color: '#111827' }}>
                           ₹{prod.price.toLocaleString()}
                         </span>
                         {prod.mrp && prod.mrp > prod.price && (
-                          <span style={{ fontSize: '0.72rem', color: '#9CA3AF', textDecoration: 'line-through' }}>
+                          <span className="storefront-card-mrp" style={{ fontSize: '0.72rem', color: '#9CA3AF', textDecoration: 'line-through' }}>
                             ₹{prod.mrp.toLocaleString()}
                           </span>
                         )}
                       </div>
                       {savings > 0 && (
-                        <span style={{
+                        <span className="storefront-card-save" style={{
                           fontSize: '0.62rem',
                           color: '#16A34A',
                           fontWeight: 800,
@@ -1777,7 +1888,7 @@ export default function CustomerStorefront({
                     </div>
 
                     {/* Quick Actions Grid: 50% Enquire + 50% ADD/Stepper (Fits 100% inside container) */}
-                    <div style={{
+                    <div className="storefront-card-actions" style={{
                       display: 'grid',
                       gridTemplateColumns: '1fr 1fr',
                       gap: '0.45rem',
@@ -1791,6 +1902,7 @@ export default function CustomerStorefront({
                           handleSingleWhatsAppInquiry(prod);
                         }}
                         title="Enquire on WhatsApp"
+                        className="storefront-card-btn"
                         style={{
                           backgroundColor: '#25D366',
                           color: '#FFFFFF',
@@ -1878,6 +1990,7 @@ export default function CustomerStorefront({
                             e.stopPropagation();
                             addToCart(prod);
                           }}
+                          className="storefront-card-btn"
                           style={{
                             backgroundColor: '#FFFFFF',
                             color: '#0C5B43',
