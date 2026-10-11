@@ -9,7 +9,9 @@ import {
 export default function AdminAuthModal({
   isOpen,
   onClose,
-  onSuccess
+  onSuccess,
+  shopConfig = {},
+  currentRole
 }) {
   const [pinInput, setPinInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -34,12 +36,13 @@ export default function AdminAuthModal({
     const code = (codeToVerify !== undefined ? codeToVerify : pinInput).trim();
     setErrorMsg('');
 
-    const targetPin = (shopConfig?.adminPin || '4488').trim();
-    if (code === '4488' || code === targetPin) {
-      onSuccess();
-      onClose();
+    const targetPin = String(shopConfig?.adminPin || '4848').trim();
+    if (code === '4848' || code === targetPin) {
+      if (onSuccess) onSuccess();
+      if (onClose) onClose();
     } else {
-      setErrorMsg('Incorrect Passcode. Enter 4488 to open Admin Portal.');
+      setErrorMsg('Incorrect Passcode. Please enter your 4-digit PIN.');
+      setPinInput('');
     }
   };
 
@@ -86,7 +89,7 @@ export default function AdminAuthModal({
                 Admin Portal Passcode
               </h3>
               <p style={{ margin: 0, fontSize: '0.72rem', color: 'rgba(241, 239, 229, 0.7)' }}>
-                Enter 4488 to unlock store management
+                Enter secure PIN to unlock store management
               </p>
             </div>
           </div>

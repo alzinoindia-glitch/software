@@ -30,7 +30,12 @@ import {
   Plus,
   Landmark,
   Image as ImageIcon,
-  Star
+  Star,
+  Printer,
+  Barcode,
+  FileText,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { 
   defaultShopConfig, 
@@ -44,6 +49,9 @@ import {
 } from '../data/initialData';
 import {
   mountSsdArchive,
+  createNewSsdDatabase,
+  saveToActiveSsd,
+  getActiveSsdStatus,
   exportYearlyArchiveToSsd,
   isFileSystemAccessSupported,
   FastCustomerSearchEngine
@@ -53,6 +61,11 @@ import {
   getOtpAuthUri,
   verifyTotpToken
 } from '../utils/totp';
+import {
+  playDeviceBeep,
+  getSampleDeviceTestInvoice,
+  PRINTER_PROFILES
+} from '../utils/hardwareDevices';
 
 export default function SettingsBackup({ 
   shopConfig, 
@@ -72,7 +85,8 @@ export default function SettingsBackup({
   invoices, 
   setInvoices, 
   role, 
-  setRole 
+  setRole,
+  onPrintInvoice 
 }) {
   const [formData, setFormData] = useState(() => {
     const initialAccounts = (shopConfig.upiAccounts && shopConfig.upiAccounts.length > 0)
@@ -89,11 +103,19 @@ export default function SettingsBackup({
         ];
     return {
       ...shopConfig,
+      defaultPrinter: shopConfig.defaultPrinter || 'thermal-80mm',
+      thermalRollWidth: shopConfig.thermalRollWidth || '80mm',
+      autoPrintOnCheckout: shopConfig.autoPrintOnCheckout !== false,
+      normalPrintCopies: shopConfig.normalPrintCopies || 1,
+      barcodeScannerBeep: shopConfig.barcodeScannerBeep !== false,
+      barcodeScannerAutoAdd: shopConfig.barcodeScannerAutoAdd !== false,
+      storageMode: shopConfig.storageMode || 'ssd-local',
+      ssdAutoSave: shopConfig.ssdAutoSave !== false,
       upiAccounts: initialAccounts,
       qrCodeImage: shopConfig.qrCodeImage || initialAccounts.find(a => a.isDefault)?.qrCodeImage || null
     };
   });
-  const [adminPinInput, setAdminPinInput] = useState(shopConfig.adminPin || '4488');
+  const [adminPinInput, setAdminPinInput] = useState(shopConfig.adminPin || '4848');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Multi-Bank UPI & QR Code Management Handlers
@@ -272,7 +294,107 @@ export default function SettingsBackup({
     setSearchSpeedMs((t1 - t0).toFixed(2));
   };
 
-  // Mount External SSD Cold Archive
+  // Hardware Devices: Barcode Scanner Live Test State
+  const [testScanInput, setTestScanInput] = useState('');
+  const [scannerDiagnostic, setScannerDiagnostic] = useState(null);
+  const [scanKeyTimings, setScanKeyTimings] = useState([]);
+
+  const handleTestScanKeyDown = (e) => {
+    const now = performance.now();
+    setScanKeyTimings(prev => [...prev, now]);
+
+    if (e.key === 'Enter') {
+      const code = testScanInput.trim();
+      const count = scanKeyTimings.length;
+      const duration = count > 1 ? scanKeyTimings[count - 1] - scanKeyTimings[0] : 0;
+      const avgInterval = count > 1 ? (duration / (count - 1)).toFixed(1) : '—';
+
+      playDeviceBeep('success');
+      setScannerDiagnostic({
+        scannedCode: code,
+        charCount: code.length,
+        durationMs: Math.round(duration),
+        avgIntervalMs: avgInterval,
+        isHardwareScanner: Number(avgInterval) < 60 && code.length >= 3
+      });
+
+      setTestScanInput('');
+      setScanKeyTimings([]);
+    }
+  };
+
+  // Hardware Devices: Test Print Triggers
+  const handleTestPrintThermal = (mode = 'thermal') => {
+    const sample = getSampleDeviceTestInvoice(formData);
+    if (onPrintInvoice) {
+      onPrintInvoice(sample, mode);
+    } else {
+      alert("Print preview handler not connected.");
+    }
+  };
+
+  const handleTestPrintNormalA4 = () => {
+    const sample = getSampleDeviceTestInvoice(formData);
+    if (onPrintInvoice) {
+      onPrintInvoice(sample, 'a4');
+    } else {
+      alert("Print preview handler not connected.");
+    }
+  };
+
+  // Direct SSD File: Create New Database File on SSD
+  const handleCreateSsdDatabase = async () => {
+    const fullPayload = {
+      timestamp: new Date().toISOString(),
+      shopConfig: formData,
+      inventory,
+      usedPurchases,
+      repairJobs,
+      customers,
+      suppliers,
+      expenses,
+      invoices
+    };
+
+    const res = await createNewSsdDatabase(fullPayload);
+    if (res.success) {
+      setMountedSsd({
+        fileName: res.fileName,
+        sizeMb: (JSON.stringify(fullPayload).length / (1024 * 1024)).toFixed(2),
+        lastModified: 'Just now',
+        invoiceCount: invoices.length,
+        customerCount: customers.length,
+        inventoryCount: inventory.length
+      });
+      alert(`SSD Database file "${res.fileName}" successfully created and saved directly to your SSD!`);
+    } else if (!res.aborted) {
+      alert(`Could not create SSD file: ${res.error || 'Unknown error'}`);
+    }
+  };
+
+  // Direct SSD File: Save Live State into Active Mounted SSD File Handle
+  const handleSaveSnapshotToSsd = async () => {
+    const fullPayload = {
+      timestamp: new Date().toISOString(),
+      shopConfig: formData,
+      inventory,
+      usedPurchases,
+      repairJobs,
+      customers,
+      suppliers,
+      expenses,
+      invoices
+    };
+
+    const res = await saveToActiveSsd(fullPayload);
+    if (res.success) {
+      alert(`✓ Live state successfully written to mounted SSD file: ${res.fileName} at ${res.savedAt}`);
+    } else {
+      alert(res.error || 'Please mount an SSD database file first using the Mount SSD button.');
+    }
+  };
+
+  // Mount External SSD Database
   const handleMountSsd = async () => {
     setIsMounting(true);
     const res = await mountSsdArchive();
@@ -280,6 +402,28 @@ export default function SettingsBackup({
 
     if (res.success) {
       setMountedSsd(res);
+
+      if (res.data && (res.data.invoices || res.data.inventory)) {
+        const shouldRestore = window.confirm(
+          `SSD Database Recognized: ${res.fileName} (${res.sizeMb} MB).\n` +
+          `Contains ${res.invoiceCount} invoices, ${res.customerCount} customers, and ${res.inventoryCount} items.\n\n` +
+          `Would you like to LOAD this database into your active ALZINO workspace right now?`
+        );
+        if (shouldRestore) {
+          if (res.data.shopConfig) {
+            setShopConfig(res.data.shopConfig);
+            setFormData(prev => ({ ...prev, ...res.data.shopConfig }));
+          }
+          if (res.data.inventory) setInventory(res.data.inventory);
+          if (res.data.invoices) setInvoices(res.data.invoices);
+          if (res.data.customers) setCustomers(res.data.customers);
+          if (res.data.repairJobs) setRepairJobs(res.data.repairJobs);
+          if (res.data.usedPurchases) setUsedPurchases(res.data.usedPurchases);
+          if (res.data.suppliers) setSuppliers(res.data.suppliers);
+          if (res.data.expenses) setExpenses(res.data.expenses);
+          alert('✓ Data successfully loaded from SSD!');
+        }
+      }
     } else if (res.fallbackRequired) {
       alert("Please use the file upload selector below to pick your SSD archive file.");
     } else if (!res.aborted) {
@@ -293,25 +437,14 @@ export default function SettingsBackup({
       invoices,
       customers,
       inventory,
+      shopConfig: formData,
+      usedPurchases,
+      repairJobs,
+      suppliers,
+      expenses,
       yearLabel: archiveYear
     });
     alert(`Archive ${res.filename} generated successfully! Save this directly to your connected External SSD (Samsung / SanDisk drive).`);
-  };
-
-  // Trigger Outbox Sync to Supabase
-  const handleTriggerSync = () => {
-    if (!isOnline) {
-      alert("No internet connection detected. Offline entries remain safely queued locally in IndexedDB/Storage.");
-      return;
-    }
-    setIsSyncing(true);
-    setSyncMessage("Connecting to Supabase... Verifying outbox queue...");
-    setTimeout(() => {
-      setIsSyncing(false);
-      setPendingOutboxCount(0);
-      setSyncMessage("Sync complete! 0 pending changes. Supabase is up to date.");
-      setTimeout(() => setSyncMessage(''), 4000);
-    }, 1200);
   };
 
   const handleSaveProfile = (e) => {
@@ -725,7 +858,7 @@ export default function SettingsBackup({
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Admin Passcode / PIN (Default: 4488)</label>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Admin Passcode / PIN (Default: 4848)</label>
               <input
                 type="text"
                 maxLength={6}
@@ -859,7 +992,7 @@ export default function SettingsBackup({
                   <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>Active Admin Portal Passcode</strong>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                  Enter code <strong style={{ color: 'var(--accent-primary)' }}>4488</strong> whenever unlocking the Admin Portal from Cashier mode.
+                  Enter code <strong style={{ color: 'var(--accent-primary)' }}>4848</strong> whenever unlocking the Admin Portal from Cashier mode.
                 </div>
               </div>
               <div style={{
@@ -873,7 +1006,7 @@ export default function SettingsBackup({
                 letterSpacing: '0.2em',
                 color: 'var(--text-primary)'
               }}>
-                {adminPinInput || '4488'}
+                {adminPinInput || '4848'}
               </div>
             </div>
 
@@ -912,7 +1045,7 @@ export default function SettingsBackup({
 
               <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--border-color)' }}>
                 <p style={{ margin: '0 0 0.65rem 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                  Two-factor authentication is currently bypassed in favor of the quick <strong>4488</strong> code. You can scan this QR code now if you wish to prepare Google Authenticator for later activation.
+                  Two-factor authentication is currently bypassed in favor of the quick <strong>4848</strong> code. You can scan this QR code now if you wish to prepare Google Authenticator for later activation.
                 </p>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
@@ -1027,100 +1160,349 @@ export default function SettingsBackup({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2ND SECTION: OFFLINE SYNC TO SUPABASE & EXTERNAL SSD 5-YEAR COLD STORAGE   */}
+      {/* 2ND SECTION: EXTERNAL HARDWARE DEVICES (BARCODE SCANNER, THERMAL & NORMAL PRINTER) */}
       {/* ========================================================================= */}
-      <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         
-        {/* Banner: Bodhan Retail Architecture Overview */}
+        {/* Banner: External Devices Management */}
         <div className="illoca-card" style={{
           padding: '1.25rem',
-          background: 'linear-gradient(135deg, rgba(12, 91, 67, 0.08) 0%, rgba(15, 37, 30, 0.03) 100%)',
+          background: 'linear-gradient(135deg, rgba(59, 96, 197, 0.08) 0%, rgba(15, 37, 30, 0.03) 100%)',
           border: '1.5px solid var(--border-color, #C2D2CB)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
-                <Cpu size={22} color="var(--accent-primary)" />
+                <Printer size={22} color="var(--accent-primary)" />
                 <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>
-                  ALZINO Big Data & Zero-Cost Architecture (Bodhan, Telangana)
+                  External Hardware Devices (Barcode Scanner, Thermal & Normal Printer)
                 </h3>
               </div>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '850px', lineHeight: 1.5 }}>
-                100% Offline-first desktop counter operation. Invoices, barcode scans, and repairs never wait for cloud latency.
-                When mobile or broadband connects, offline entries automatically sync to Supabase without duplicates.
-                After 5 years of big data growth, cold data archives are saved on your <strong>External SSD</strong> to keep cloud maintenance cost at <strong>₹0 / month forever</strong>.
+                Plug and play integration for physical retail devices: USB / Bluetooth laser barcode scanners, 
+                high-speed 3-inch (80mm) &amp; 2-inch (58mm) POS thermal receipt printers, and standard A4 desktop laser/inkjet printers.
               </p>
             </div>
 
-            {/* Live Connection & Sync Pill */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span className={`mono-tag ${isOnline ? 'chip-green' : 'chip-amber'}`} style={{ fontWeight: 800, padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}>
-                {isOnline ? <Cloud size={14} style={{ display: 'inline', marginRight: '5px' }} /> : <CloudOff size={14} style={{ display: 'inline', marginRight: '5px' }} />}
-                {isOnline ? 'Cloud Sync Online' : '100% Offline Mode'}
+              <span className="mono-tag chip-green" style={{ fontWeight: 800, padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}>
+                🟢 Hardware Devices Ready
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 Hardware Devices Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+          
+          {/* DEVICE 1: USB / BLUETOOTH BARCODE SCANNER */}
+          <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Barcode size={18} color="var(--accent-primary)" />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                    1. Barcode &amp; IMEI Scanner
+                  </h4>
+                </div>
+                <span className="mono-tag chip-green" style={{ fontSize: '0.72rem', padding: '0.2rem 0.45rem' }}>
+                  Listening
+                </span>
+              </div>
+              
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.85rem' }}>
+                Supports all handheld USB / Bluetooth HID laser and 2D optical scanners (Honeywell, Zebra, TVS, Datalogic).
+              </p>
+
+              {/* Live Scanner Test Bench */}
+              <div style={{ background: 'var(--surface-primary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.85rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                  Live Scanner Diagnostic Bench:
+                </div>
+                <input
+                  type="text"
+                  placeholder="Click here and scan any box barcode or IMEI..."
+                  value={testScanInput}
+                  onChange={(e) => setTestScanInput(e.target.value)}
+                  onKeyDown={handleTestScanKeyDown}
+                  className="input-field"
+                  style={{ width: '100%', fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                />
+
+                {scannerDiagnostic && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.76rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    <div>Decoded Code: <strong>{scannerDiagnostic.scannedCode}</strong> ({scannerDiagnostic.charCount} chars)</div>
+                    <div>Key Interval: <strong>{scannerDiagnostic.avgIntervalMs} ms/char</strong> in {scannerDiagnostic.durationMs}ms</div>
+                    <div style={{ color: scannerDiagnostic.isHardwareScanner ? 'var(--status-green)' : 'var(--status-amber)', fontWeight: 700 }}>
+                      {scannerDiagnostic.isHardwareScanner ? '✓ Laser Scanner Burst Detected (Hardware HID)' : 'ℹ️ Manual Human Keypress Speed'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Toggles */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.8rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.barcodeScannerBeep}
+                    onChange={(e) => setFormData(prev => ({ ...prev, barcodeScannerBeep: e.target.checked }))}
+                  />
+                  <span>Audio Confirmation Beep on Scan (1800Hz POS tone)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.barcodeScannerAutoAdd}
+                    onChange={(e) => setFormData(prev => ({ ...prev, barcodeScannerAutoAdd: e.target.checked }))}
+                  />
+                  <span>Auto-add scanned product directly to POS Cart</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* DEVICE 2: THERMAL RECEIPT PRINTER */}
+          <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Printer size={18} color="var(--accent-primary)" />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                    2. Thermal Receipt Printer
+                  </h4>
+                </div>
+                <span className="mono-tag chip-blue" style={{ fontSize: '0.72rem', padding: '0.2rem 0.45rem' }}>
+                  Roll Printer
+                </span>
+              </div>
+
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.85rem' }}>
+                ESC/POS roll receipt printers. High-speed, ink-free receipt printing with embedded UPI payment QR.
+              </p>
+
+              {/* Roll Width Selection */}
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Thermal Roll Size:
+                </label>
+                <select
+                  value={formData.thermalRollWidth || '80mm'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, thermalRollWidth: e.target.value }))}
+                  className="input-field"
+                  style={{ width: '100%', fontSize: '0.82rem', padding: '0.4rem 0.6rem' }}
+                >
+                  <option value="80mm">3-Inch (80mm) Standard POS Roll (Epson, TVS, Citizen, POS-80)</option>
+                  <option value="58mm">2-Inch (58mm) Mini Compact Roll (Bluetooth / USB POS-58)</option>
+                </select>
+              </div>
+
+              {/* Auto print on checkout */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8rem', marginBottom: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.autoPrintOnCheckout}
+                  onChange={(e) => setFormData(prev => ({ ...prev, autoPrintOnCheckout: e.target.checked }))}
+                />
+                <span>Auto-open print dialog immediately on POS bill completion</span>
+              </label>
+            </div>
+
+            {/* Test Print Buttons */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
-                onClick={handleTriggerSync}
-                disabled={isSyncing}
+                type="button"
+                onClick={() => handleTestPrintThermal('thermal')}
                 className="btn-primary"
-                style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                style={{ flex: 1, justifyContent: 'center', padding: '0.45rem', fontSize: '0.78rem' }}
               >
-                <RefreshCw size={13} className={isSyncing ? 'spinning' : ''} />
-                <span>{isSyncing ? 'Syncing...' : 'Sync Outbox Now'}</span>
+                🖨️ Test 3" (80mm) Print
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTestPrintThermal('thermal-58')}
+                className="btn-secondary"
+                style={{ flex: 1, justifyContent: 'center', padding: '0.45rem', fontSize: '0.78rem' }}
+              >
+                🧾 Test 2" (58mm) Print
               </button>
             </div>
           </div>
 
-          {syncMessage && (
-            <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--status-green)', fontWeight: 700 }}>
-              ✓ {syncMessage}
-            </div>
-          )}
-        </div>
-
-        {/* 3-Column Architectural Cards: Offline Sync, SSD Archiving, 100k Big Data Search */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-          
-          {/* Card 1: Offline Outbox Queue to Supabase */}
+          {/* DEVICE 3: NORMAL PRINTER (A4 LASER / INKJET) */}
           <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
-                <Zap size={18} color="var(--status-amber)" />
-                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
-                  1. Offline Outbox Sync Engine
-                </h4>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FileText size={18} color="var(--accent-primary)" />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                    3. Normal Printer (A4 Desktop)
+                  </h4>
+                </div>
+                <span className="mono-tag chip-purple" style={{ fontSize: '0.72rem', padding: '0.2rem 0.45rem' }}>
+                  A4 / Letter
+                </span>
               </div>
+
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.85rem' }}>
-                Every sale, customer, and repair made offline is saved locally in IndexedDB with a unique client UUID. When internet reconnects:
+                Standard desktop Laser, Inkjet, or Deskjet printers (HP, Canon, Brother, Epson). Official GST Tax Invoices.
               </p>
-              
-              <ul style={{ fontSize: '0.8rem', color: 'var(--text-primary)', paddingLeft: '1.1rem', margin: '0 0 1rem 0', lineHeight: 1.6 }}>
-                <li>Auto-drains pending outbox queue into Supabase via batch upsert</li>
-                <li>Pulls updates made by shop staff on mobile phones</li>
-                <li>Zero data loss during power cuts or broadband outages in Bodhan</li>
-              </ul>
+
+              {/* Default Copies Selection */}
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Default Print Copies:
+                </label>
+                <select
+                  value={formData.normalPrintCopies || 1}
+                  onChange={(e) => setFormData(prev => ({ ...prev, normalPrintCopies: Number(e.target.value) }))}
+                  className="input-field"
+                  style={{ width: '100%', fontSize: '0.82rem', padding: '0.4rem 0.6rem' }}
+                >
+                  <option value={1}>1 Copy (Original for Buyer)</option>
+                  <option value={2}>2 Copies (Original for Buyer + Duplicate for Shop Record)</option>
+                </select>
+              </div>
+
+              {/* Master Default Printer Preference */}
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  Counter Default Invoice Printer:
+                </label>
+                <select
+                  value={formData.defaultPrinter || 'thermal-80mm'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, defaultPrinter: e.target.value }))}
+                  className="input-field"
+                  style={{ width: '100%', fontSize: '0.82rem', padding: '0.4rem 0.6rem' }}
+                >
+                  <option value="thermal-80mm">3-Inch Thermal Receipt Printer (80mm)</option>
+                  <option value="thermal-58mm">2-Inch Compact Thermal Printer (58mm)</option>
+                  <option value="normal-a4">Normal A4 Desktop Printer (GST Tax Invoice)</option>
+                </select>
+              </div>
             </div>
 
-            <div style={{ background: 'var(--surface-primary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Pending Outbox Changes:</span>
-                <strong style={{ color: pendingOutboxCount > 0 ? 'var(--status-amber)' : 'var(--status-green)' }}>
-                  {pendingOutboxCount} Records Pending
-                </strong>
-              </div>
-            </div>
+            {/* Test Print A4 Button */}
+            <button
+              type="button"
+              onClick={handleTestPrintNormalA4}
+              className="btn-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: '0.45rem', fontSize: '0.78rem' }}
+            >
+              📄 Test Print Normal A4 Invoice
+            </button>
           </div>
 
-          {/* Card 2: External SSD Cold Storage Archiving */}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 3RD SECTION: LOCAL SSD STORAGE ENGINE (100% OFFLINE DISK PERSISTENCE)     */}
+        {/* ========================================================================= */}
+        <div className="illoca-card" style={{
+          padding: '1.25rem',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 37, 30, 0.03) 100%)',
+          border: '1.5px solid var(--border-color, #C2D2CB)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+                <HardDrive size={22} color="var(--status-green)" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>
+                  Local Hard Drive &amp; SSD Storage Engine (100% Offline &amp; Zero Cloud Lock-In)
+                </h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '850px', lineHeight: 1.5 }}>
+                Your data is stored securely on your computer's <strong>Internal SSD / External USB Drive</strong> and high-capacity local IndexedDB. 
+                Zero dependency on Supabase cloud servers, zero monthly subscription fees, and complete ownership of your customer and financial records.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span className="mono-tag chip-green" style={{ fontWeight: 800, padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}>
+                <HardDrive size={14} style={{ display: 'inline', marginRight: '5px' }} />
+                SSD Hardware Storage Active
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3-Column SSD Storage & Search Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+          
+          {/* Card 1: Live SSD Mount & File Persistence */}
           <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
                 <HardDrive size={18} color="var(--accent-primary)" />
                 <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
-                  2. External SSD Cold Archive (5-Year Plan)
+                  1. Direct SSD Database File
                 </h4>
               </div>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.85rem' }}>
-                Supabase Free Tier offers 500MB storage. To avoid paying $25-$100/mo after 5 years of huge data, archive completed financial years to your external SSD:
+                Mount an external SSD drive (e.g., Samsung T7, SanDisk) or choose a local folder on your computer to save your complete database directly to disk:
+              </p>
+
+              {mountedSsd ? (
+                <div style={{ padding: '0.65rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.78rem', marginBottom: '0.85rem' }}>
+                  <div style={{ fontWeight: 800, color: 'var(--status-green)' }}>📁 Connected SSD File:</div>
+                  <div>File: <strong>{mountedSsd.fileName}</strong> ({mountedSsd.sizeMb || '0.5'} MB)</div>
+                  <div>Invoices on Disk: <strong>{mountedSsd.invoiceCount || invoices.length}</strong></div>
+                  <div>Inventory on Disk: <strong>{mountedSsd.inventoryCount || inventory.length}</strong></div>
+                </div>
+              ) : (
+                <div style={{ padding: '0.65rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.78rem', marginBottom: '0.85rem' }}>
+                  <div style={{ fontWeight: 800, color: 'var(--accent-primary)' }}>💾 Storage Mode:</div>
+                  <div>IndexedDB Local SSD Store (High Quota, 100+ GB)</div>
+                  <div>Total Invoices: <strong>{invoices.length}</strong> | Stock: <strong>{inventory.length}</strong></div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleMountSsd}
+                disabled={isMounting}
+                className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', fontSize: '0.8rem' }}
+              >
+                <FolderCheck size={15} />
+                <span>{isMounting ? 'Connecting...' : 'Mount / Load SSD Database File'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCreateSsdDatabase}
+                className="btn-secondary"
+                style={{ width: '100%', justifyContent: 'center', padding: '0.55rem', fontSize: '0.8rem' }}
+              >
+                <Save size={15} />
+                <span>Create New Database on SSD Disk</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveSnapshotToSsd}
+                className="btn-outline"
+                style={{ width: '100%', justifyContent: 'center', padding: '0.5rem', fontSize: '0.78rem' }}
+              >
+                ⚡ Write Live Snapshot to Mounted SSD
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: 1-Click Cold Archive & Migration */}
+          <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
+                <Download size={18} color="var(--accent-primary)" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                  2. 5-Year Cold Archive Export
+                </h4>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.85rem' }}>
+                Export structured archives of completed financial years to your SSD. Never worry about database bloat or paying monthly cloud tiers:
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
@@ -1133,38 +1515,24 @@ export default function SettingsBackup({
                   <option value="FY_2024-25">Financial Year 2024-25</option>
                   <option value="FY_2023-24">Financial Year 2023-24</option>
                   <option value="FY_2022-23">Financial Year 2022-23</option>
-                  <option value="ALL_HISTORICAL">All Completed FYs</option>
+                  <option value="ALL_HISTORICAL">All Completed Records</option>
                 </select>
 
                 <button
+                  type="button"
                   onClick={handleExportToSsd}
                   className="btn-secondary"
                   style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
                 >
                   <Download size={13} />
-                  <span>Save to SSD</span>
+                  <span>Export to SSD</span>
                 </button>
               </div>
             </div>
 
-            <div>
-              <button
-                onClick={handleMountSsd}
-                disabled={isMounting}
-                className="btn-primary"
-                style={{ width: '100%', justifyContent: 'center', padding: '0.6rem' }}
-              >
-                <FolderCheck size={16} />
-                <span>{isMounting ? 'Recognizing SSD...' : 'Mount External SSD Drive in Browser'}</span>
-              </button>
-
-              {mountedSsd && (
-                <div style={{ marginTop: '0.65rem', padding: '0.6rem', background: 'var(--surface-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.76rem' }}>
-                  <div style={{ fontWeight: 800, color: 'var(--accent-primary)' }}>📁 SSD Archive Recognized:</div>
-                  <div>File: <strong>{mountedSsd.fileName}</strong> ({mountedSsd.sizeMb} MB)</div>
-                  <div>Historical Invoices Available: <strong>{mountedSsd.invoiceCount}</strong></div>
-                </div>
-              )}
+            <div style={{ background: 'var(--surface-primary)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.76rem' }}>
+              <div style={{ fontWeight: 800, color: 'var(--status-green)', marginBottom: '0.2rem' }}>✓ Zero Cloud Lock-In:</div>
+              <div>Archive format is open JSON schema (.json) compatible with Excel, Python, and all future ERP versions.</div>
             </div>
           </div>
 
@@ -1174,11 +1542,11 @@ export default function SettingsBackup({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem' }}>
                 <Search size={18} color="var(--accent-primary)" />
                 <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
-                  3. 100,000+ Big Data Customer Search
+                  3. 100,000+ SSD Search Engine
                 </h4>
               </div>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.45, marginBottom: '0.75rem' }}>
-                Searching 100,000 records without lag: Uses PostgreSQL Trigram GIN Index + Client-side Radix/Prefix Index. Searches execute in &lt; 2ms with zero UI freeze.
+                Instant phone &amp; name indexing straight from SSD memory. Searches 100,000+ customer records in &lt; 2ms with zero UI freeze:
               </p>
 
               {/* Interactive Search Test */}
@@ -1231,15 +1599,15 @@ export default function SettingsBackup({
                 <tr>
                   <th>Architecture Dimension</th>
                   <th>Standard Cloud ERP (Vyapar / Zoho / AWS)</th>
-                  <th>ALZINO Offline-First + SSD Cold Storage</th>
+                  <th>ALZINO Offline-First + SSD Hardware Storage</th>
                   <th>Your Shop Advantage</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>Cloud DB Monthly Cost</strong></td>
+                  <td><strong>Database Monthly Cost</strong></td>
                   <td>$25 to $100 / month (₹25,000 to ₹1,00,000 / year)</td>
-                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>₹0 / month (Supabase Free Tier 500MB)</td>
+                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>₹0 / month (Local SSD Storage)</td>
                   <td>100% Free forever</td>
                 </tr>
                 <tr>
@@ -1250,21 +1618,21 @@ export default function SettingsBackup({
                 </tr>
                 <tr>
                   <td><strong>5-Year Big Data Storage (500k Bills)</strong></td>
-                  <td>Forces database plan upgrades & expensive EBS storage</td>
-                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>Stored on 1TB External SSD (One-time ₹4,000 device)</td>
+                  <td>Forces database plan upgrades &amp; expensive cloud storage</td>
+                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>Stored on Local SSD (One-time hardware storage)</td>
                   <td>Save ₹1,50,000+ in 5 years</td>
                 </tr>
                 <tr>
                   <td><strong>100,000 Customer Search Speed</strong></td>
                   <td>300ms to 1200ms round-trip cloud API latency</td>
-                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>&lt; 2ms Client-side IndexedDB & Trigram</td>
+                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>&lt; 2ms Client-side IndexedDB &amp; Trigram</td>
                   <td>Instant typing with zero lag</td>
                 </tr>
                 <tr>
-                  <td><strong>Mobile Sync</strong></td>
-                  <td>Only works when connected</td>
-                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>Bi-directional Outbox queue with auto-merge</td>
-                  <td>Seamless mobile-to-desktop</td>
+                  <td><strong>Hardware Devices</strong></td>
+                  <td>Requires special cloud bridge drivers</td>
+                  <td style={{ fontWeight: 800, color: 'var(--status-green)' }}>Direct USB / Bluetooth HID scanner &amp; ESC/POS Thermal / A4</td>
+                  <td>Zero driver configuration needed</td>
                 </tr>
               </tbody>
             </table>

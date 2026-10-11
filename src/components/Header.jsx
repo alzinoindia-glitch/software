@@ -37,7 +37,8 @@ export default function Header({
   shopConfig,
   role = 'admin',
   onLockToCashier = () => {},
-  onOpenAdminAuth = () => {}
+  onOpenAdminAuth = () => {},
+  onNavigatePortal = () => {}
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -58,12 +59,12 @@ export default function Header({
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hotkey: 'F1' },
     { id: 'pos', label: 'POS Billing', icon: ShoppingCart, hotkey: 'F2' },
-    { id: 'inventory', label: 'Stock & IMEIs', icon: Package, count: 5, alert: lowStockCount > 0 },
-    { id: 'used-phones', label: 'Used or Refurbished Mobiles', icon: Smartphone, badge: 'Aadhaar', hotkey: 'F4' },
-    { id: 'repairs', label: 'Repairs', icon: Wrench, count: 2, hotkey: 'F5' },
-    { id: 'invoices', label: 'Invoices', icon: FileText, count: 2 },
+    { id: 'inventory', label: 'Stock & IMEIs', icon: Package },
+    { id: 'used-phones', label: 'Used or Refurbished Mobiles', icon: Smartphone, hotkey: 'F4' },
+    { id: 'repairs', label: 'Repairs', icon: Wrench, hotkey: 'F5' },
+    { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'barcodes', label: 'Barcodes', icon: Barcode },
-    { id: 'khata', label: 'Customers', icon: Users },
+    { id: 'customers', label: 'Customers', icon: Users },
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'reports', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -71,8 +72,8 @@ export default function Header({
 
   const cashierNavItems = [
     { id: 'pos', label: 'POS Billing Counter', icon: ShoppingCart, hotkey: 'F2' },
-    { id: 'repairs', label: 'Repairs (Intake & Delivery)', icon: Wrench, count: pendingRepairsCount, hotkey: 'F5' },
-    { id: 'inventory', label: 'Stock & Price Lookup', icon: Package, alert: lowStockCount > 0 },
+    { id: 'repairs', label: 'Repairs (Intake & Delivery)', icon: Wrench, hotkey: 'F5' },
+    { id: 'inventory', label: 'Stock & Price Lookup', icon: Package },
     { id: 'barcodes', label: 'Print Barcodes', icon: Barcode },
   ];
 
@@ -128,6 +129,18 @@ export default function Header({
             }}>
               {shopConfig.name}
             </span>
+            <span style={{
+              background: role === 'admin' ? 'rgba(169, 188, 92, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+              color: role === 'admin' ? '#A9BC5C' : '#FEF08A',
+              border: role === 'admin' ? '1px solid rgba(169, 188, 92, 0.4)' : '1px solid rgba(234, 179, 8, 0.4)',
+              padding: '0.1rem 0.45rem',
+              borderRadius: '4px',
+              fontSize: '0.68rem',
+              fontWeight: 700,
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {role === 'admin' ? '/admin' : '/cashier'}
+            </span>
           </div>
 
           {/* Middle: Quick Search (Desktop) */}
@@ -170,6 +183,28 @@ export default function Header({
 
           {/* Right: Search (on mobile before menu) + Menu on Right */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {/* View Customer Storefront Button */}
+            <button
+              onClick={() => onNavigatePortal('/')}
+              style={{
+                background: 'rgba(52, 211, 153, 0.12)',
+                border: '1px solid rgba(52, 211, 153, 0.35)',
+                color: '#34D399',
+                padding: '0.38rem 0.65rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+              title="Open Customer Portal (alzino.shop)"
+            >
+              <span style={{ fontSize: '0.85rem' }}>🌐</span>
+              <span className="hide-on-mobile">alzino.shop</span>
+            </button>
+
             {/* Mobile Search Button (before Menu) */}
             <button 
               onClick={openSearch}
@@ -469,6 +504,96 @@ export default function Header({
               >
                 {theme === 'cream' ? <Moon size={13} color="#F1EFE5" /> : <Sun size={13} color="#A9BC5C" />}
                 <span>{theme === 'cream' ? 'Dark' : 'Warm'}</span>
+              </button>
+            </div>
+
+            {/* Portal Quick Navigation */}
+            <div style={{
+              padding: '0.65rem 0.85rem',
+              background: '#0B1D17',
+              borderTop: '1px solid rgba(210, 222, 216, 0.1)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.35rem'
+            }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(241, 239, 229, 0.6)', textTransform: 'uppercase' }}>
+                Portals & URL Navigation
+              </div>
+              <button 
+                onClick={() => { setMenuOpen(false); onNavigatePortal('/'); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.2rem 0',
+                  color: '#34D399',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontWeight: 600
+                }}
+              >
+                <span>🌐</span>
+                <span>Customer Storefront (alzino.shop)</span>
+              </button>
+              <button 
+                onClick={() => { setMenuOpen(false); onNavigatePortal('/cashier'); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.2rem 0',
+                  color: '#FEF08A',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontWeight: 600
+                }}
+              >
+                <span>💳</span>
+                <span>Cashier Counter (/cashier)</span>
+              </button>
+              <button 
+                onClick={() => { setMenuOpen(false); onNavigatePortal('/admin'); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.2rem 0',
+                  color: '#A9BC5C',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontWeight: 600
+                }}
+              >
+                <span>👑</span>
+                <span>Admin Management (/admin)</span>
+              </button>
+              <button 
+                onClick={() => { setMenuOpen(false); onNavigatePortal('/admin/customers'); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.2rem 0',
+                  color: '#93C5FD',
+                  fontSize: '0.76rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontWeight: 600
+                }}
+              >
+                <span>📁</span>
+                <span>Customer Data (/admin/customers)</span>
               </button>
             </div>
 

@@ -26,12 +26,30 @@ export default function MarketPriceCompareModal({
   onUpdateProductPrices,
   shopConfig
 }) {
-  if (!isOpen || !product) return null;
-
   // Build comparison data safely from product
   const getInitialComp = (p) => {
+    if (!p) {
+      return {
+        model: '',
+        ram: '',
+        storage: '',
+        color: '',
+        alzinoBuyRate: 0,
+        amazonNormalPrice: 0,
+        amazonCoupon: 0,
+        amazonBankOffer: 0,
+        amazonExchangeBonus: 0,
+        flipkartNormalPrice: 0,
+        flipkartBankOffer: 0,
+        flipkartExchangeBonus: 0,
+        brandPrice: 0,
+        distributorRate: 0,
+        lastUpdated: '',
+        source: 'Amazon & Flipkart Real-Time Feed'
+      };
+    }
     return p.marketComparison || {
-      model: p.name,
+      model: p.name || '',
       ram: p.ram || '',
       storage: p.storage || '',
       color: p.color || '',
@@ -65,6 +83,8 @@ export default function MarketPriceCompareModal({
       setIsEditingManual(false);
     }
   }, [product?.id]);
+
+  if (!isOpen || !product) return null;
 
   // Lowest genuine online price calculation (Strictly ignores exchange bonus and coupons)
   const validPrices = [

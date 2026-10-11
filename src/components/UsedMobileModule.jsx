@@ -578,7 +578,7 @@ export default function UsedMobileModule({
             }}
           >
             <Plus size={14} />
-            <span>+ Buy Used Phone (KYC)</span>
+            <span>Buy Used Phone (KYC)</span>
           </button>
 
           <button
@@ -716,7 +716,7 @@ export default function UsedMobileModule({
                 style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
               >
                 <Plus size={14} />
-                <span>+ Buy Used Phone</span>
+                <span>Buy Used Phone</span>
               </button>
             </div>
           </div>
@@ -1371,7 +1371,7 @@ export default function UsedMobileModule({
                   }}
                 >
                   <Upload size={14} />
-                  <span>+ Add Mobile Photos</span>
+                  <span>Add Mobile Photos</span>
                 </label>
 
                 {deviceImages.map((imgSrc, idx) => (

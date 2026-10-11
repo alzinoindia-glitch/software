@@ -452,7 +452,7 @@ export default function CustomerKhata({
               background: 'var(--badge-bg)',
               color: 'var(--badge-text)'
             }}>
-              ADMIN PORTAL
+              ADMIN PORTAL • /admin/customers
             </span>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>

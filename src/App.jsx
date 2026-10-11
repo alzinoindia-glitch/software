@@ -15,6 +15,7 @@ import IllocaPulloutDrawer from './components/IllocaPulloutDrawer';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import PrintTemplates from './components/PrintTemplates';
 import AdminAuthModal from './components/AdminAuthModal';
+import CustomerStorefront from './components/CustomerStorefront';
 import { Lock, ShieldCheck, Key } from 'lucide-react';
 
 import {
@@ -32,18 +33,63 @@ import {
   purgeDemoRecords
 } from './data/initialData';
 
-export default function App() {
-  // Theme State & Portal Role Mode ('admin' | 'cashier')
-  const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
-  const [role, setRole] = useState(() => getStorageData('ROLE', 'admin')); // 'admin' | 'cashier'
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState(() => {
-    const savedRole = getStorageData('ROLE', 'admin');
-    return savedRole === 'cashier' ? 'pos' : 'dashboard';
-  });
+// Parse active portal and tab from URL path and domain
+export function parseRoute() {
+  if (typeof window === 'undefined') {
+    return { portal: 'customer', role: 'customer', tab: 'storefront' };
+  }
+  const host = (window.location.hostname || '').toLowerCase();
+  let path = (window.location.pathname || '/').replace(/\\/g, '/').toLowerCase();
 
-  // Core Persistent Data States
-  const [shopConfig, setShopConfig] = useState(() => getStorageData('SHOP_CONFIG', defaultShopConfig));
+  // 1. Domain detection for alzino.shop
+  if (host === 'alzino.shop' || host.endsWith('.alzino.shop')) {
+    if (path.startsWith('/admin')) {
+      const sub = path.replace(/^\/admin\/?/, '').trim();
+      const tab = (sub === 'customers' || sub === 'khata') ? 'customers' : (sub || 'dashboard');
+      return { portal: 'admin', role: 'admin', tab };
+    }
+    if (path.startsWith('/cashier')) {
+      const sub = path.replace(/^\/cashier\/?/, '').trim();
+      return { portal: 'cashier', role: 'cashier', tab: sub || 'pos' };
+    }
+    return { portal: 'customer', role: 'customer', tab: 'storefront' };
+  }
+
+  // 2. Direct /admin or /admin/customers path
+  if (path.startsWith('/admin')) {
+    const sub = path.replace(/^\/admin\/?/, '').trim();
+    const tab = (sub === 'customers' || sub === 'khata') ? 'customers' : (sub || 'dashboard');
+    return { portal: 'admin', role: 'admin', tab };
+  }
+
+  // 3. Direct /cashier path
+  if (path.startsWith('/cashier')) {
+    const sub = path.replace(/^\/cashier\/?/, '').trim();
+    return { portal: 'cashier', role: 'cashier', tab: sub || 'pos' };
+  }
+
+  // 4. Default: Customer portal (alzino.shop)
+  return { portal: 'customer', role: 'customer', tab: 'storefront' };
+}
+
+export default function App() {
+  const initialRoute = parseRoute();
+  // Portal Mode ('customer' | 'admin' | 'cashier')
+  const [portal, setPortal] = useState(() => initialRoute.portal);
+  // Theme State
+  const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
+  // Role Mode ('admin' | 'cashier')
+  const [role, setRole] = useState(() => initialRoute.role !== 'customer' ? initialRoute.role : getStorageData('ROLE', 'admin'));
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
+
+  const [shopConfig, setShopConfig] = useState(() => {
+    const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
+    if (!cfg?.adminPin || cfg.adminPin === '4488') {
+      return { ...cfg, adminPin: '4848' };
+    }
+    return cfg;
+  });
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
   const [usedPurchases, setUsedPurchases] = useState(() => getStorageData('USED_PURCHASES', initialUsedPurchases));
   const [repairJobs, setRepairJobs] = useState(() => getStorageData('REPAIR_JOBS', initialRepairJobs));
@@ -62,12 +108,70 @@ export default function App() {
   const [printData, setPrintData] = useState(null);
   const [printMode, setPrintMode] = useState(''); // thermal | a4 | voucher | repair | barcodes
 
+  // Synchronize Tab and URL Path
+  const handleSelectTab = (tabId) => {
+    const normTab = tabId === 'khata' ? 'customers' : tabId;
+    setActiveTab(normTab);
+    if (portal === 'admin') {
+      const url = normTab === 'dashboard' ? '/admin' : `/admin/${normTab}`;
+      window.history.pushState(null, '', url);
+    } else if (portal === 'cashier') {
+      const url = normTab === 'pos' ? '/cashier' : `/cashier/${normTab}`;
+      window.history.pushState(null, '', url);
+    }
+  };
+
+  const handleNavigatePortal = (targetPath) => {
+    const cleanPath = targetPath.replace(/\\/g, '/');
+    if (cleanPath.startsWith('/admin') && role !== 'admin') {
+      setIsAdminAuthModalOpen(true);
+      return;
+    }
+    window.history.pushState(null, '', cleanPath);
+    const r = parseRoute();
+    setPortal(r.portal);
+    if (r.portal === 'admin') {
+      setRole('admin');
+      setActiveTab(r.tab || 'dashboard');
+    } else if (r.portal === 'cashier') {
+      setRole('cashier');
+      setActiveTab(r.tab || 'pos');
+    } else {
+      setRole('customer');
+      setActiveTab('storefront');
+    }
+  };
+
+  // Handle browser Back & Forward Navigation
+  useEffect(() => {
+    const onPopState = () => {
+      const r = parseRoute();
+      setPortal(r.portal);
+      if (r.portal === 'admin') {
+        setRole('admin');
+        setActiveTab(r.tab || 'dashboard');
+      } else if (r.portal === 'cashier') {
+        setRole('cashier');
+        setActiveTab(r.tab || 'pos');
+      } else {
+        setRole('customer');
+        setActiveTab('storefront');
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   // Quick Bill Product (from Stock Lookup to POS)
   const [quickBillProduct, setQuickBillProduct] = useState(null);
 
   const handleQuickBill = (product) => {
     setQuickBillProduct(product);
-    setActiveTab('pos');
+    if (portal === 'customer') {
+      handleNavigatePortal('/cashier');
+    } else {
+      handleSelectTab('pos');
+    }
   };
 
   // Inventory targeted search term (when tapped from Low Stock alert)
@@ -75,7 +179,7 @@ export default function App() {
 
   const handleOpenProductInventory = (product) => {
     setInventorySearchTerm(product.name || product.id || '');
-    setActiveTab('inventory');
+    handleSelectTab('inventory');
     setIsPulloutOpen(false);
   };
 
@@ -107,14 +211,13 @@ export default function App() {
   // Enforce Cashier Access Control: Cashier can access 'pos', 'repairs', 'inventory', 'barcodes'
   useEffect(() => {
     if (role === 'cashier' && !['pos', 'repairs', 'inventory', 'barcodes'].includes(activeTab)) {
-      setActiveTab('pos');
+      handleSelectTab('pos');
     }
   }, [role, activeTab]);
 
   // Role Switcher Actions
   const handleLockToCashier = () => {
-    setRole('cashier');
-    setActiveTab('pos');
+    handleNavigatePortal('/cashier');
   };
 
   const handleOpenAdminAuth = () => {
@@ -122,7 +225,11 @@ export default function App() {
   };
 
   const handleAdminAuthSuccess = () => {
+    setIsAdminAuthModalOpen(false);
     setRole('admin');
+    setPortal('admin');
+    setActiveTab('dashboard');
+    window.history.pushState(null, '', '/admin');
   };
 
   // Apply theme class to <body>
@@ -214,15 +321,12 @@ export default function App() {
   // Barcode Jump helper from Inventory
   const handleSelectBarcodeFromInventory = (item) => {
     setSelectedItemForBarcode(item);
-    setActiveTab('barcodes');
+    handleSelectTab('barcodes');
   };
 
   // Search Jump Action
   const handleSearchAction = (targetTab, item) => {
-    setActiveTab(targetTab);
-    if (targetTab === 'inventory') {
-      // jump
-    }
+    handleSelectTab(targetTab);
   };
 
   // Badge Counts
@@ -230,31 +334,45 @@ export default function App() {
   const pendingRepairsCount = repairJobs.filter(j => j.status !== 'Delivered').length;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
-      
-      {/* Header */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        theme={theme}
-        toggleTheme={toggleTheme}
-        openSearch={() => setIsSearchOpen(true)}
-        openPullout={() => setIsPulloutOpen(true)}
-        lowStockCount={lowStockCount}
-        pendingRepairsCount={pendingRepairsCount}
-        invoicesCount={invoices.length}
-        shopConfig={shopConfig}
-        role={role}
-        onLockToCashier={handleLockToCashier}
-        onOpenAdminAuth={handleOpenAdminAuth}
-      />
+    <>
+      {portal === 'customer' ? (
+        <CustomerStorefront
+          shopConfig={shopConfig}
+          inventory={inventory}
+          usedPurchases={usedPurchases}
+          repairJobs={repairJobs}
+          onNavigatePortal={handleNavigatePortal}
+          theme={theme}
+        />
+      ) : (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+          
+          {/* Header */}
+          <Header
+            activeTab={activeTab}
+            setActiveTab={handleSelectTab}
+            theme={theme}
+            toggleTheme={toggleTheme}
+            openSearch={() => setIsSearchOpen(true)}
+            openPullout={() => setIsPulloutOpen(true)}
+            lowStockCount={lowStockCount}
+            pendingRepairsCount={pendingRepairsCount}
+            invoicesCount={invoices.length}
+            shopConfig={shopConfig}
+            role={role}
+            onLockToCashier={handleLockToCashier}
+            onOpenAdminAuth={handleOpenAdminAuth}
+            onNavigatePortal={handleNavigatePortal}
+          />
 
-      {/* Main Tab Content */}
-      <main style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+          {/* Main Tab Content */}
+          <main style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
         {activeTab === 'dashboard' && role === 'admin' && (
           <ExecutiveDashboard
             invoices={invoices}
             inventory={inventory}
+            setInventory={setInventory}
+            customers={customers}
             usedPurchases={usedPurchases}
             repairJobs={repairJobs}
             expenses={expenses}
@@ -262,6 +380,8 @@ export default function App() {
             setWarrantyClaims={setWarrantyClaims}
             shopConfig={shopConfig}
             setActiveTab={setActiveTab}
+            onNavigateTab={handleSelectTab}
+            onPrintInvoice={handlePrintInvoice}
             onOpenProductInventory={handleOpenProductInventory}
           />
         )}
@@ -409,9 +529,33 @@ export default function App() {
             setInvoices={setInvoices}
             role={role}
             setRole={setRole}
+            onPrintInvoice={handlePrintInvoice}
           />
         )}
       </main>
+
+      {/* Minimal Footer */}
+      <footer className="no-print" style={{
+        padding: '0.65rem 1.25rem',
+        borderTop: '1px solid var(--border-color)',
+        fontSize: '0.75rem',
+        color: 'var(--text-secondary)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: 'var(--surface-primary)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, fontFamily: 'var(--font-heading)' }}>{shopConfig.name} ERP</span>
+          <span>• Station Road, Bodhan, Telangana</span>
+        </div>
+        <div>
+          <span>Keyboard: <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F2: POS</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F4: Used Phone</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>⌘K: Search</kbd></span>
+        </div>
+      </footer>
+
+    </div>
+    )}
 
       {/* Signature Illoca Feature Demo Pullout Drawer */}
       <IllocaPulloutDrawer
@@ -421,7 +565,7 @@ export default function App() {
         shopConfig={shopConfig}
         onSelectProduct={(p) => {
           setIsPulloutOpen(false);
-          setActiveTab('pos');
+          handleSelectTab('pos');
         }}
         onOpenProductInventory={handleOpenProductInventory}
       />
@@ -457,26 +601,6 @@ export default function App() {
         currentRole={role}
       />
 
-      {/* Minimal Footer */}
-      <footer className="no-print" style={{
-        padding: '0.65rem 1.25rem',
-        borderTop: '1px solid var(--border-color)',
-        fontSize: '0.75rem',
-        color: 'var(--text-secondary)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'var(--surface-primary)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontWeight: 700, fontFamily: 'var(--font-heading)' }}>{shopConfig.name} ERP</span>
-          <span>• Station Road, Bodhan, Telangana</span>
-        </div>
-        <div>
-          <span>Keyboard: <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F2: POS</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F4: Used Phone</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>⌘K: Search</kbd></span>
-        </div>
-      </footer>
-
-    </div>
+    </>
   );
 }

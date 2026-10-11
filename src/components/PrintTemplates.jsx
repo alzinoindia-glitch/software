@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { renderBarcodeSvg, getUpiQrUrl } from '../utils/barcode';
 
 // Number to Words converter for Indian Rupee
@@ -24,7 +24,16 @@ export default function PrintTemplates({
   shopConfig, 
   onClosePrint 
 }) {
+  const [activeFormat, setActiveFormat] = useState(() => {
+    if (printMode === 'a4') return 'a4';
+    if (printMode === 'thermal-58') return 'thermal-58';
+    return printMode || 'thermal';
+  });
+  const [copies, setCopies] = useState(shopConfig?.normalPrintCopies || 1);
+
   if (!printData) return null;
+
+  const isInvoiceBill = Boolean(printData.invoiceNo || printData.items);
 
   return (
     <div className="print-modal-container" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -33,17 +42,83 @@ export default function PrintTemplates({
       <div className="no-print" style={{ 
         background: '#111622', 
         color: '#FFF', 
-        padding: '0.75rem 1.5rem', 
+        padding: '0.65rem 1.25rem', 
         borderRadius: '8px', 
         display: 'flex', 
-        gap: '1rem', 
+        gap: '0.75rem', 
         alignItems: 'center', 
+        flexWrap: 'wrap',
+        justifyContent: 'center',
         marginBottom: '1rem',
         boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
       }}>
-        <span style={{ fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
-          Print Preview ({printMode.toUpperCase()})
-        </span>
+        {/* Format Switcher if document is an invoice / cash memo */}
+        {isInvoiceBill && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.5rem', borderRadius: '6px' }}>
+            <span style={{ fontSize: '0.75rem', color: '#AAA', fontWeight: 600 }}>Printer:</span>
+            <button
+              onClick={() => setActiveFormat('thermal')}
+              style={{
+                background: activeFormat === 'thermal' ? 'var(--accent-primary)' : 'transparent',
+                color: '#FFF',
+                border: 'none',
+                padding: '0.3rem 0.6rem',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              🧾 3" Thermal (80mm)
+            </button>
+            <button
+              onClick={() => setActiveFormat('thermal-58')}
+              style={{
+                background: activeFormat === 'thermal-58' ? 'var(--accent-primary)' : 'transparent',
+                color: '#FFF',
+                border: 'none',
+                padding: '0.3rem 0.6rem',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              🧾 2" Thermal (58mm)
+            </button>
+            <button
+              onClick={() => setActiveFormat('a4')}
+              style={{
+                background: activeFormat === 'a4' ? 'var(--accent-primary)' : 'transparent',
+                color: '#FFF',
+                border: 'none',
+                padding: '0.3rem 0.6rem',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              📄 Normal Printer (A4)
+            </button>
+          </div>
+        )}
+
+        {/* Copies selector for A4 normal printer */}
+        {activeFormat === 'a4' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem' }}>
+            <span style={{ color: '#AAA' }}>Copies:</span>
+            <select
+              value={copies}
+              onChange={(e) => setCopies(Number(e.target.value))}
+              style={{ background: '#222', color: '#FFF', border: '1px solid #444', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.78rem' }}
+            >
+              <option value={1}>1 Copy (Original for Buyer)</option>
+              <option value={2}>2 Copies (Original + Shop Duplicate)</option>
+            </select>
+          </div>
+        )}
+
         <button
           onClick={() => window.print()}
           style={{
@@ -52,11 +127,16 @@ export default function PrintTemplates({
             padding: '0.45rem 1.1rem',
             borderRadius: '4px',
             fontWeight: 700,
-            cursor: 'pointer'
+            cursor: 'pointer',
+            border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
           }}
         >
           🖨️ Print Now
         </button>
+
         <button
           onClick={onClosePrint}
           style={{
@@ -64,10 +144,11 @@ export default function PrintTemplates({
             color: '#FFF',
             padding: '0.45rem 0.9rem',
             borderRadius: '4px',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            border: 'none'
           }}
         >
-          Close Preview
+          ✕ Close
         </button>
       </div>
 
@@ -75,10 +156,10 @@ export default function PrintTemplates({
       <div className="print-container" style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
         
         {/* ========================================================== */}
-        {/* MODE 1: 3-INCH (80mm) THERMAL POS RECEIPT                  */}
+        {/* MODE 1A: 3-INCH (80mm) THERMAL POS RECEIPT                 */}
         {/* ========================================================== */}
-        {printMode === 'thermal' && (
-          <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3 }}>
+        {activeFormat === 'thermal' && (
+          <div className="thermal-receipt-80mm" style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3 }}>
             
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '3mm', marginBottom: '3mm' }}>
@@ -277,268 +358,378 @@ export default function PrintTemplates({
         )}
 
         {/* ========================================================== */}
-        {/* MODE 2: FULL A4 TAX INVOICE / NON-GST ESTIMATE             */}
+        {/* MODE 1B: 2-INCH (58mm) COMPACT THERMAL POS RECEIPT         */}
         {/* ========================================================== */}
-        {printMode === 'a4' && (
-          <div style={{ width: '210mm', minHeight: '297mm', padding: '12mm', fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '12px', color: '#111', boxSizing: 'border-box' }}>
+        {activeFormat === 'thermal-58' && (
+          <div className="thermal-receipt-58mm" style={{ width: '54mm', padding: '2mm 1mm', fontFamily: 'monospace', fontSize: '9px', lineHeight: 1.25, color: '#000' }}>
             
-            {/* Tax Invoice Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '6mm', marginBottom: '6mm' }}>
-              <div>
-                <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em' }}>
-                  {shopConfig.name}
-                </div>
-                <div style={{ fontSize: '11px', fontWeight: 600, color: '#444' }}>{shopConfig.tagline}</div>
-                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px', maxWidth: '380px' }}>{shopConfig.address}</div>
-                <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
-                  <strong>Phone:</strong> {shopConfig.phone} | <strong>Email:</strong> {shopConfig.email}
-                </div>
-                {!printData.isNonGst && (
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#111', marginTop: '3px' }}>
-                    GSTIN: {shopConfig.gstin} | State: Telangana (Code: {shopConfig.stateCode})
-                  </div>
-                )}
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#111', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {printData.isNonGst ? 'ESTIMATE / CASH MEMO' : 'TAX INVOICE'}
-                </div>
-                <div style={{ fontSize: '10px', color: '#666' }}>
-                  {printData.isNonGst ? '(COMMERCIAL ESTIMATE / BILL OF SUPPLY)' : '(ORIGINAL FOR RECIPIENT)'}
-                </div>
-                <div style={{ marginTop: '4mm', fontSize: '12px' }}>
-                  <div><strong>{printData.isNonGst ? 'Estimate No:' : 'Invoice No:'}</strong> {printData.invoiceNo}</div>
-                  <div><strong>Date:</strong> {printData.date}</div>
-                  <div><strong>Place of Supply:</strong> Telangana (36)</div>
-                  {!printData.isNonGst && <div><strong>Reverse Charge:</strong> No</div>}
-                </div>
-              </div>
+            {/* Header */}
+            <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
+              <div style={{ fontSize: '15px', fontWeight: 'bold' }}>{shopConfig.name}</div>
+              <div style={{ fontSize: '8.5px' }}>{shopConfig.tagline}</div>
+              <div style={{ fontSize: '8px' }}>{shopConfig.address}</div>
+              <div style={{ fontSize: '8.5px' }}>Tel: {shopConfig.phone}</div>
+              {!printData.isNonGst ? (
+                <div style={{ fontSize: '8.5px', fontWeight: 'bold' }}>GST: {shopConfig.gstin}</div>
+              ) : (
+                <div style={{ fontSize: '8.5px', fontWeight: 'bold' }}>* ESTIMATE / CASH MEMO *</div>
+              )}
             </div>
 
-            {/* Bill To & Ship To Details Box */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid #CCC', borderRadius: '4px', padding: '4mm', marginBottom: '6mm', background: '#FBFBFB' }}>
-              <div>
-                <div style={{ fontWeight: 700, borderBottom: '1px solid #DDD', paddingBottom: '2px', marginBottom: '3px', color: '#3B60C5' }}>
-                  BILLED TO (BUYER DETAILS)
-                </div>
-                <div style={{ fontWeight: 700, fontSize: '13px' }}>{printData.customerName || 'Cash Customer'}</div>
-                <div>Address: {printData.customerAddress || 'Bodhan, Telangana'}</div>
-                <div>Phone: {printData.customerPhone || '—'}</div>
-                {!printData.isNonGst && <div>GSTIN / Unique ID: {printData.customerGstin || 'URP (Unregistered)'}</div>}
-                <div>State: Telangana (Code: 36)</div>
-              </div>
-
-              <div style={{ paddingLeft: '6mm', borderLeft: '1px solid #DDD' }}>
-                <div style={{ fontWeight: 700, borderBottom: '1px solid #DDD', paddingBottom: '2px', marginBottom: '3px', color: '#3B60C5' }}>
-                  PAYMENT & DISPATCH DETAILS
-                </div>
-                <div>Payment Terms: {printData.paymentMode}</div>
-                <div>Payment Status: {printData.khataDue > 0 ? 'Partially Paid' : 'Paid in Full'}</div>
-                <div>Amount Paid: ₹{printData.paidAmount?.toLocaleString()}</div>
-                {printData.khataDue > 0 && (
-                  <div style={{ color: '#D00', fontWeight: 700 }}>
-                    Balance Receivable (Khata): ₹{printData.khataDue.toLocaleString()}
-                  </div>
-                )}
-                <div>Dispatched By: Hand Delivery (Over Counter)</div>
-              </div>
+            {/* Meta */}
+            <div style={{ borderBottom: '1px dashed #000', paddingBottom: '1.5mm', marginBottom: '1.5mm', fontSize: '8.5px' }}>
+              <div><strong>{printData.isNonGst ? 'EST:' : 'INV:'}</strong> {printData.invoiceNo}</div>
+              <div><strong>DT:</strong> {printData.date}</div>
+              <div><strong>CUST:</strong> {printData.customerName || 'Walk-in'}</div>
+              {printData.customerPhone && <div><strong>PH:</strong> {printData.customerPhone}</div>}
             </div>
 
-            {/* Items Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '6mm' }}>
+            {/* Items */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5px', marginBottom: '2mm' }}>
               <thead>
-                <tr style={{ background: '#3B60C5', color: '#FFF', textAlign: 'left' }}>
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>#</th>
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>ITEM DESCRIPTION & SPECIFICATIONS</th>
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>HSN</th>
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'center' }}>QTY</th>
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>RATE</th>
-                  {!printData.isNonGst && (
-                    <>
-                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>TAXABLE</th>
-                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>CGST</th>
-                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>SGST</th>
-                    </>
-                  )}
-                  <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>TOTAL</th>
+                <tr style={{ borderBottom: '1px solid #000', textAlign: 'left' }}>
+                  <th style={{ width: '50%' }}>ITEM</th>
+                  <th style={{ width: '15%', textAlign: 'center' }}>Q</th>
+                  <th style={{ width: '35%', textAlign: 'right' }}>AMT</th>
                 </tr>
               </thead>
               <tbody>
-                {printData.items.map((item, idx) => {
-                  const rateVal = printData.isNonGst ? item.rate : (item.rate / (1 + (item.gstRate / 100)));
-                  const taxVal = item.taxable || (item.total / (1 + (item.gstRate / 100)));
-                  const cgstVal = (item.total - taxVal) / 2;
-                  const sgstVal = cgstVal;
-
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #DDD' }}>
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE' }}>{idx + 1}</td>
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE' }}>
-                        <div style={{ fontWeight: 700 }}>{item.name}</div>
-                        {item.imeis && item.imeis.length > 0 && (
-                          <div style={{ fontSize: '10px', color: '#333', fontFamily: 'monospace', marginTop: '2px' }}>
-                            IMEI/Serial: {item.imeis.join(', ')}
-                          </div>
-                        )}
-                        {(item.condition || item.warranty || item.accessories) && (
-                          <div style={{ fontSize: '9.5px', color: '#555', marginTop: '2px', lineHeight: 1.3 }}>
-                            {item.condition && <div><span style={{ fontWeight: 600 }}>Condition:</span> {item.condition}</div>}
-                            {item.warranty && <div><span style={{ fontWeight: 600, color: '#3B60C5' }}>Warranty:</span> {item.warranty}</div>}
-                            {item.accessories && <div><span style={{ fontWeight: 600 }}>Included Accessories:</span> {item.accessories}</div>}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE', fontFamily: 'monospace' }}>{item.hsn || '—'}</td>
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'center' }}>{item.qty} PCS</td>
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
-                        ₹{rateVal.toFixed(2)}
-                      </td>
-                      {!printData.isNonGst && (
-                        <>
-                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
-                            ₹{taxVal.toFixed(2)}
-                          </td>
-                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
-                            ₹{cgstVal.toFixed(2)} ({item.gstRate / 2}%)
-                          </td>
-                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
-                            ₹{sgstVal.toFixed(2)} ({item.gstRate / 2}%)
-                          </td>
-                        </>
-                      )}
-                      <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                        ₹{item.total.toLocaleString()}
-                      </td>
+                {printData.items.map((item, idx) => (
+                  <React.Fragment key={idx}>
+                    <tr>
+                      <td style={{ paddingTop: '2px', fontWeight: 'bold', wordBreak: 'break-word' }}>{item.name}</td>
+                      <td style={{ textAlign: 'center', paddingTop: '2px' }}>{item.qty}</td>
+                      <td style={{ textAlign: 'right', paddingTop: '2px' }}>₹{item.total.toLocaleString()}</td>
                     </tr>
-                  );
-                })}
+                    {item.imeis && item.imeis.length > 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ fontSize: '7.5px', paddingLeft: '2px', color: '#333' }}>
+                          IMEI: {item.imeis.join(', ')}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
 
-            {/* Calculations & Total Table */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8mm', marginBottom: '6mm' }}>
-              <div>
-                <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', marginBottom: '4mm' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>INVOICE AMOUNT IN WORDS:</div>
-                  <div style={{ fontSize: '12px', fontWeight: 700 }}>
-                    {numberToWords(printData.grandTotal)}
+            {/* Totals */}
+            <div style={{ borderTop: '1px dashed #000', paddingTop: '1.5mm', marginBottom: '1.5mm', fontSize: '8.5px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 'bold', borderTop: '1px solid #000', marginTop: '1mm', paddingTop: '1mm' }}>
+                <span>NET TOTAL:</span>
+                <span>₹{printData.grandTotal.toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', marginTop: '1px' }}>
+                <span>MODE:</span>
+                <span>{printData.paymentMode}</span>
+              </div>
+              {printData.khataDue > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontWeight: 'bold', color: '#D00', marginTop: '1px' }}>
+                  <span>DUE:</span>
+                  <span>₹{printData.khataDue.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+
+            {/* QR */}
+            <div style={{ textAlign: 'center', marginTop: '2mm', padding: '1mm 0', borderTop: '1px dashed #000' }}>
+              <img 
+                src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
+                alt="UPI QR"
+                style={{ width: '26mm', height: '26mm', margin: '0 auto', display: 'block' }}
+              />
+              <div style={{ fontSize: '7px', marginTop: '1px' }}>{shopConfig.upiId}</div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ textAlign: 'center', fontSize: '7.5px', marginTop: '2mm', borderTop: '1px dashed #000', paddingTop: '1.5mm' }}>
+              <div>THANK YOU! VISIT AGAIN</div>
+              <div>ALZINO ERP • Bodhan</div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================== */}
+        {/* MODE 2: FULL A4 TAX INVOICE / NON-GST ESTIMATE             */}
+        {/* ========================================================== */}
+        {activeFormat === 'a4' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8mm' }}>
+            {[1, ...(copies === 2 ? [2] : [])].map((copyNum) => (
+              <div 
+                key={copyNum} 
+                style={{ 
+                  width: '210mm', 
+                  minHeight: '297mm', 
+                  padding: '12mm', 
+                  fontFamily: "'Plus Jakarta Sans', sans-serif", 
+                  fontSize: '12px', 
+                  color: '#111', 
+                  boxSizing: 'border-box',
+                  pageBreakBefore: copyNum === 2 ? 'always' : 'auto'
+                }}
+              >
+                {/* Tax Invoice Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '6mm', marginBottom: '6mm' }}>
+                  <div>
+                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em' }}>
+                      {shopConfig.name}
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#444' }}>{shopConfig.tagline}</div>
+                    <div style={{ fontSize: '11px', color: '#555', marginTop: '2px', maxWidth: '380px' }}>{shopConfig.address}</div>
+                    <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
+                      <strong>Phone:</strong> {shopConfig.phone} | <strong>Email:</strong> {shopConfig.email}
+                    </div>
+                    {!printData.isNonGst && (
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#111', marginTop: '3px' }}>
+                        GSTIN: {shopConfig.gstin} | State: Telangana (Code: {shopConfig.stateCode})
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#111', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {printData.isNonGst ? 'ESTIMATE / CASH MEMO' : 'TAX INVOICE'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#666', fontWeight: 700 }}>
+                      {printData.isNonGst 
+                        ? (copyNum === 1 ? '(COMMERCIAL ESTIMATE / BILL OF SUPPLY)' : '(SHOP RECORD COPY)') 
+                        : (copyNum === 1 ? '(ORIGINAL FOR RECIPIENT)' : '(DUPLICATE FOR SUPPLIER / SHOP RECORD)')}
+                    </div>
+                    <div style={{ marginTop: '4mm', fontSize: '12px' }}>
+                      <div><strong>{printData.isNonGst ? 'Estimate No:' : 'Invoice No:'}</strong> {printData.invoiceNo}</div>
+                      <div><strong>Date:</strong> {printData.date}</div>
+                      <div><strong>Place of Supply:</strong> Telangana (36)</div>
+                      {!printData.isNonGst && <div><strong>Reverse Charge:</strong> No</div>}
+                    </div>
                   </div>
                 </div>
 
-                {/* A4 EMI Finance Sanction Details */}
-                {printData.emiDetails && (
-                  <div style={{ padding: '3mm', background: '#F0FDF4', border: '1.5px solid #16A34A', borderRadius: '4px', marginBottom: '4mm' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#15803D', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>CONSUMER FINANCE / EMI DETAILS:</span>
-                      <span style={{ background: '#DCFCE7', color: '#166534', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>SANCTIONED</span>
+                {/* Bill To & Ship To Details Box */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid #CCC', borderRadius: '4px', padding: '4mm', marginBottom: '6mm', background: '#FBFBFB' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, borderBottom: '1px solid #DDD', paddingBottom: '2px', marginBottom: '3px', color: '#3B60C5' }}>
+                      BILLED TO (BUYER DETAILS)
                     </div>
-                    <div style={{ fontSize: '10.5px', lineHeight: 1.45 }}>
-                      <div><strong>Financier Partner:</strong> {printData.emiDetails.financier}</div>
-                      <div><strong>Down Payment Received:</strong> ₹{Number(printData.emiDetails.downPayment || 0).toLocaleString()} ({printData.emiDetails.downPaymentMode || 'PAID'})</div>
-                      <div><strong>Loan / Financed Amount:</strong> ₹{Number(printData.emiDetails.loanAmount || 0).toLocaleString()}</div>
-                      <div><strong>Tenure & Installments:</strong> {printData.emiDetails.tenureMonths} Months @ ₹{Number(printData.emiDetails.monthlyEmi || 0).toLocaleString()} / month</div>
-                      {printData.emiDetails.approvalCode && (
-                        <div><strong>Approval / DO Number:</strong> {printData.emiDetails.approvalCode}</div>
+                    <div style={{ fontWeight: 700, fontSize: '13px' }}>{printData.customerName || 'Cash Customer'}</div>
+                    <div>Address: {printData.customerAddress || 'Bodhan, Telangana'}</div>
+                    <div>Phone: {printData.customerPhone || '—'}</div>
+                    {!printData.isNonGst && <div>GSTIN / Unique ID: {printData.customerGstin || 'URP (Unregistered)'}</div>}
+                    <div>State: Telangana (Code: 36)</div>
+                  </div>
+
+                  <div style={{ paddingLeft: '6mm', borderLeft: '1px solid #DDD' }}>
+                    <div style={{ fontWeight: 700, borderBottom: '1px solid #DDD', paddingBottom: '2px', marginBottom: '3px', color: '#3B60C5' }}>
+                      PAYMENT & DISPATCH DETAILS
+                    </div>
+                    <div>Payment Terms: {printData.paymentMode}</div>
+                    <div>Payment Status: {printData.khataDue > 0 ? 'Partially Paid' : 'Paid in Full'}</div>
+                    <div>Amount Paid: ₹{printData.paidAmount?.toLocaleString()}</div>
+                    {printData.khataDue > 0 && (
+                      <div style={{ color: '#D00', fontWeight: 700 }}>
+                        Balance Receivable (Khata): ₹{printData.khataDue.toLocaleString()}
+                      </div>
+                    )}
+                    <div>Dispatched By: Hand Delivery (Over Counter)</div>
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', marginBottom: '6mm' }}>
+                  <thead>
+                    <tr style={{ background: '#3B60C5', color: '#FFF', textAlign: 'left' }}>
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>#</th>
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>ITEM DESCRIPTION & SPECIFICATIONS</th>
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5' }}>HSN</th>
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'center' }}>QTY</th>
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>RATE</th>
+                      {!printData.isNonGst && (
+                        <>
+                          <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>TAXABLE</th>
+                          <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>CGST</th>
+                          <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>SGST</th>
+                        </>
+                      )}
+                      <th style={{ padding: '6px 4px', border: '1px solid #3B60C5', textAlign: 'right' }}>TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printData.items.map((item, idx) => {
+                      const rateVal = printData.isNonGst ? item.rate : (item.rate / (1 + (item.gstRate / 100)));
+                      const taxVal = item.taxable || (item.total / (1 + (item.gstRate / 100)));
+                      const cgstVal = (item.total - taxVal) / 2;
+                      const sgstVal = cgstVal;
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid #DDD' }}>
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE' }}>{idx + 1}</td>
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE' }}>
+                            <div style={{ fontWeight: 700 }}>{item.name}</div>
+                            {item.imeis && item.imeis.length > 0 && (
+                              <div style={{ fontSize: '10px', color: '#333', fontFamily: 'monospace', marginTop: '2px' }}>
+                                IMEI/Serial: {item.imeis.join(', ')}
+                              </div>
+                            )}
+                            {(item.condition || item.warranty || item.accessories) && (
+                              <div style={{ fontSize: '9.5px', color: '#555', marginTop: '2px', lineHeight: 1.3 }}>
+                                {item.condition && <div><span style={{ fontWeight: 600 }}>Condition:</span> {item.condition}</div>}
+                                {item.warranty && <div><span style={{ fontWeight: 600, color: '#3B60C5' }}>Warranty:</span> {item.warranty}</div>}
+                                {item.accessories && <div><span style={{ fontWeight: 600 }}>Included Accessories:</span> {item.accessories}</div>}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', fontFamily: 'monospace' }}>{item.hsn || '—'}</td>
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'center' }}>{item.qty} PCS</td>
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
+                            ₹{rateVal.toFixed(2)}
+                          </td>
+                          {!printData.isNonGst && (
+                            <>
+                              <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
+                                ₹{taxVal.toFixed(2)}
+                              </td>
+                              <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
+                                ₹{cgstVal.toFixed(2)} ({item.gstRate / 2}%)
+                              </td>
+                              <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontFamily: 'monospace' }}>
+                                ₹{sgstVal.toFixed(2)} ({item.gstRate / 2}%)
+                              </td>
+                            </>
+                          )}
+                          <td style={{ padding: '6px 4px', border: '1px solid #EEE', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
+                            ₹{item.total.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Calculations & Total Table */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8mm', marginBottom: '6mm' }}>
+                  <div>
+                    <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', marginBottom: '4mm' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>INVOICE AMOUNT IN WORDS:</div>
+                      <div style={{ fontSize: '12px', fontWeight: 700 }}>
+                        {numberToWords(printData.grandTotal)}
+                      </div>
+                    </div>
+
+                    {/* A4 EMI Finance Sanction Details */}
+                    {printData.emiDetails && (
+                      <div style={{ padding: '3mm', background: '#F0FDF4', border: '1.5px solid #16A34A', borderRadius: '4px', marginBottom: '4mm' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 800, color: '#15803D', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>CONSUMER FINANCE / EMI DETAILS:</span>
+                          <span style={{ background: '#DCFCE7', color: '#166534', padding: '1px 5px', borderRadius: '3px', fontSize: '9px', fontWeight: 700 }}>SANCTIONED</span>
+                        </div>
+                        <div style={{ fontSize: '10.5px', lineHeight: 1.45 }}>
+                          <div><strong>Financier Partner:</strong> {printData.emiDetails.financier}</div>
+                          <div><strong>Down Payment Received:</strong> ₹{Number(printData.emiDetails.downPayment || 0).toLocaleString()} ({printData.emiDetails.downPaymentMode || 'PAID'})</div>
+                          <div><strong>Loan / Financed Amount:</strong> ₹{Number(printData.emiDetails.loanAmount || 0).toLocaleString()}</div>
+                          <div><strong>Tenure & Installments:</strong> {printData.emiDetails.tenureMonths} Months @ ₹{Number(printData.emiDetails.monthlyEmi || 0).toLocaleString()} / month</div>
+                          {printData.emiDetails.approvalCode && (
+                            <div><strong>Approval / DO Number:</strong> {printData.emiDetails.approvalCode}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '11px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
+                        <div><strong>Bank:</strong> {shopConfig.bankName}</div>
+                        <div><strong>Account No:</strong> {shopConfig.accountNo}</div>
+                        <div><strong>IFSC Code:</strong> {shopConfig.ifsc}</div>
+                        <div><strong>UPI ID:</strong> {shopConfig.upiId}</div>
+                      </div>
+                      <div style={{ textAlign: 'center', marginLeft: '3mm' }}>
+                        <img 
+                          src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
+                          alt="UPI QR"
+                          style={{ width: '22mm', height: '22mm', objectFit: 'contain', display: 'block', margin: '0 auto', border: '1px solid #E5E5E5', padding: '1mm', background: '#FFF' }}
+                        />
+                        <div style={{ fontSize: '7.5px', fontWeight: 800, marginTop: '1px' }}>SCAN & PAY</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Totals Summary */}
+                  <div style={{ border: '1px solid #CCC', borderRadius: '4px', padding: '4mm', background: '#FFF' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span>{printData.isNonGst ? 'Subtotal Amount:' : 'Total Taxable Value:'}</span>
+                      <span style={{ fontFamily: 'monospace' }}>₹{printData.taxableAmount ? printData.taxableAmount.toFixed(2) : printData.subtotal}</span>
+                    </div>
+                    {!printData.isNonGst && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                          <span>Central GST (CGST 9%):</span>
+                          <span style={{ fontFamily: 'monospace' }}>₹{printData.cgstTotal ? printData.cgstTotal.toFixed(2) : '0.00'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                          <span>State GST (SGST 9%):</span>
+                          <span style={{ fontFamily: 'monospace' }}>₹{printData.sgstTotal ? printData.sgstTotal.toFixed(2) : '0.00'}</span>
+                        </div>
+                      </>
+                    )}
+                    {printData.discount > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', color: '#10B981' }}>
+                        <span>Special Discount:</span>
+                        <span style={{ fontFamily: 'monospace' }}>-₹{printData.discount}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #3B60C5', marginTop: '3mm', paddingTop: '2mm', fontSize: '16px', fontWeight: 800, color: '#3B60C5' }}>
+                      <span>{printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:'}</span>
+                      <span>₹{printData.grandTotal.toLocaleString()}</span>
+                    </div>
+
+                    {/* Payment Mode & Reference info */}
+                    <div style={{ marginTop: '2mm', paddingTop: '2mm', borderTop: '1px dashed #DDD', fontSize: '10.5px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1px' }}>
+                        <span>Payment Mode:</span>
+                        <strong>{printData.paymentMode}</strong>
+                      </div>
+                      {printData.paymentRef && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '10px' }}>
+                          <span>Ref / UTR Number:</span>
+                          <span style={{ fontFamily: 'monospace' }}>{printData.paymentRef}</span>
+                        </div>
+                      )}
+                      {printData.khataDue > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#DC2626', fontWeight: 700, marginTop: '1px' }}>
+                          <span>Khata Balance Due:</span>
+                          <span style={{ fontFamily: 'monospace' }}>₹{printData.khataDue.toLocaleString()}</span>
+                        </div>
                       )}
                     </div>
                   </div>
-                )}
-
-                <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '11px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
-                    <div><strong>Bank:</strong> {shopConfig.bankName}</div>
-                    <div><strong>Account No:</strong> {shopConfig.accountNo}</div>
-                    <div><strong>IFSC Code:</strong> {shopConfig.ifsc}</div>
-                    <div><strong>UPI ID:</strong> {shopConfig.upiId}</div>
-                  </div>
-                  <div style={{ textAlign: 'center', marginLeft: '3mm' }}>
-                    <img 
-                      src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
-                      alt="UPI QR"
-                      style={{ width: '22mm', height: '22mm', objectFit: 'contain', display: 'block', margin: '0 auto', border: '1px solid #E5E5E5', padding: '1mm', background: '#FFF' }}
-                    />
-                    <div style={{ fontSize: '7.5px', fontWeight: 800, marginTop: '1px' }}>SCAN & PAY</div>
-                  </div>
                 </div>
-              </div>
 
-              {/* Totals Summary */}
-              <div style={{ border: '1px solid #CCC', borderRadius: '4px', padding: '4mm', background: '#FFF' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span>{printData.isNonGst ? 'Subtotal Amount:' : 'Total Taxable Value:'}</span>
-                  <span style={{ fontFamily: 'monospace' }}>₹{printData.taxableAmount ? printData.taxableAmount.toFixed(2) : printData.subtotal}</span>
-                </div>
-                {!printData.isNonGst && (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                      <span>Central GST (CGST 9%):</span>
-                      <span style={{ fontFamily: 'monospace' }}>₹{printData.cgstTotal ? printData.cgstTotal.toFixed(2) : '0.00'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                      <span>State GST (SGST 9%):</span>
-                      <span style={{ fontFamily: 'monospace' }}>₹{printData.sgstTotal ? printData.sgstTotal.toFixed(2) : '0.00'}</span>
-                    </div>
-                  </>
-                )}
-                {printData.discount > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', color: '#10B981' }}>
-                    <span>Special Discount:</span>
-                    <span style={{ fontFamily: 'monospace' }}>-₹{printData.discount}</span>
+                {/* Special Remarks / Invoice Notes */}
+                {printData.notes && (
+                  <div style={{ marginBottom: '4mm', padding: '2mm 3mm', background: '#F8FAFC', borderLeft: '3px solid #3B60C5', fontSize: '10px', color: '#334155' }}>
+                    <strong>Special Remarks / Notes:</strong> {printData.notes}
                   </div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #3B60C5', marginTop: '3mm', paddingTop: '2mm', fontSize: '16px', fontWeight: 800, color: '#3B60C5' }}>
-                  <span>{printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:'}</span>
-                  <span>₹{printData.grandTotal.toLocaleString()}</span>
-                </div>
 
-                {/* Payment Mode & Reference info */}
-                <div style={{ marginTop: '2mm', paddingTop: '2mm', borderTop: '1px dashed #DDD', fontSize: '10.5px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1px' }}>
-                    <span>Payment Mode:</span>
-                    <strong>{printData.paymentMode}</strong>
+                {/* Terms and Signatures */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8mm', borderTop: '1px solid #CCC', paddingTop: '4mm' }}>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#333', marginBottom: '2px' }}>TERMS & CONDITIONS:</div>
+                    <div style={{ fontSize: '9px', color: '#666', lineHeight: 1.4 }}>
+                      {shopConfig.termsConditions}
+                    </div>
                   </div>
-                  {printData.paymentRef && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '10px' }}>
-                      <span>Ref / UTR Number:</span>
-                      <span style={{ fontFamily: 'monospace' }}>{printData.paymentRef}</span>
+
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '24mm' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700 }}>For {shopConfig.name}</div>
+                    <div style={{ borderTop: '1px dashed #777', width: '80%', margin: '0 auto', paddingTop: '2px', fontSize: '10px', color: '#444' }}>
+                      Authorized Signatory & Stamp
                     </div>
-                  )}
-                  {printData.khataDue > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#DC2626', fontWeight: 700, marginTop: '1px' }}>
-                      <span>Khata Balance Due:</span>
-                      <span style={{ fontFamily: 'monospace' }}>₹{printData.khataDue.toLocaleString()}</span>
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Special Remarks / Invoice Notes */}
-            {printData.notes && (
-              <div style={{ marginBottom: '4mm', padding: '2mm 3mm', background: '#F8FAFC', borderLeft: '3px solid #3B60C5', fontSize: '10px', color: '#334155' }}>
-                <strong>Special Remarks / Notes:</strong> {printData.notes}
               </div>
-            )}
-
-            {/* Terms and Signatures */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8mm', borderTop: '1px solid #CCC', paddingTop: '4mm' }}>
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 700, color: '#333', marginBottom: '2px' }}>TERMS & CONDITIONS:</div>
-                <div style={{ fontSize: '9px', color: '#666', lineHeight: 1.4 }}>
-                  {shopConfig.termsConditions}
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '24mm' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700 }}>For {shopConfig.name}</div>
-                <div style={{ borderTop: '1px dashed #777', width: '80%', margin: '0 auto', paddingTop: '2px', fontSize: '10px', color: '#444' }}>
-                  Authorized Signatory & Stamp
-                </div>
-              </div>
-            </div>
-
+            ))}
           </div>
         )}
 
@@ -548,7 +739,7 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {/* MODE 3: USED MOBILE PURCHASE VOUCHER                       */}
         {/* ========================================================== */}
-        {printMode === 'voucher' && (
+        {(activeFormat === 'voucher' || printMode === 'voucher') && (
           <div style={{ width: '210mm', padding: '14mm', fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '12px', color: '#111', boxSizing: 'border-box' }}>
             
             {/* Clean Store Header */}
@@ -678,7 +869,7 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {/* MODE 4: REPAIR CLAIM TOKEN SLIP                           */}
         {/* ========================================================== */}
-        {printMode === 'repair' && (
+        {(activeFormat === 'repair' || printMode === 'repair') && (
           <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3 }}>
             
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
@@ -734,7 +925,7 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {/* MODE 5: BARCODE LABELS PRINT SHEET / SINGLE STICKER        */}
         {/* ========================================================== */}
-        {printMode === 'barcodes' && (
+        {(activeFormat === 'barcodes' || printMode === 'barcodes') && (
           printData.copies === 1 || printData.format === 'single' ? (
             <div style={{ width: '50mm', minHeight: '28mm', padding: '2.5mm', boxSizing: 'border-box', textAlign: 'center', background: '#FFF' }}>
               <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px' }}>{shopConfig.name} • BODHAN</div>
@@ -789,7 +980,7 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {/* MODE 6: CUSTOMER KHATA ACCOUNT STATEMENT (A4)              */}
         {/* ========================================================== */}
-        {printMode === 'khata-statement' && (
+        {(activeFormat === 'khata-statement' || printMode === 'khata-statement') && (
           <div style={{ width: '210mm', minHeight: '297mm', padding: '14mm', boxSizing: 'border-box', fontFamily: 'var(--font-sans, system-ui, sans-serif)', fontSize: '12px', lineHeight: 1.4, color: '#152620' }}>
             
             {/* Header / Shop Banner */}
@@ -941,7 +1132,7 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {/* MODE 7: DAY-END CASH REGISTER Z-REPORT (3-INCH THERMAL)   */}
         {/* ========================================================== */}
-        {printMode === 'z-report' && (
+        {(activeFormat === 'z-report' || printMode === 'z-report') && (
           <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3, color: '#000000' }}>
             
             {/* Header */}

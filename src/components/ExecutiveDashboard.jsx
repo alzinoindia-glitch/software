@@ -26,11 +26,13 @@ import {
   Send,
   Plus
 } from 'lucide-react';
+import { getAgingDays, applyOffer, removeOffer, recommendedOfferPct } from '../utils/stockOffers';
 
 export default function ExecutiveDashboard({
   invoices = [],
   expenses = [],
   inventory = [],
+  setInventory = null,
   customers = [],
   usedPurchases = [],
   repairJobs = [],
@@ -122,31 +124,73 @@ export default function ExecutiveDashboard({
   }, [inventory]);
 
   // 7. PURANA STOCK (Aging analysis: 30 / 60 / 90+ days without sale)
+  const agedInventory = useMemo(
+    () => inventory.map(item => ({ ...item, computedAgingDays: getAgingDays(item) })),
+    [inventory]
+  );
+
   const agingStockItems = useMemo(() => {
-    return inventory.map(item => {
-      // Determine aging days from item.agingDays or calculate from item.receivedDate
-      let days = item.agingDays;
-      if (days === undefined) {
-        if (item.receivedDate) {
-          const diffMs = new Date() - new Date(item.receivedDate);
-          days = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-        } else {
-          days = 25; // default fallback
-        }
-      }
-      return { ...item, computedAgingDays: days };
-    }).filter(item => {
-      if (item.stock === 0) return false;
+    return agedInventory.filter(item => {
+      if (!(Number(item.stock) > 0)) return false;
       if (agingFilter === '30') return item.computedAgingDays >= 30 && item.computedAgingDays < 60;
       if (agingFilter === '60') return item.computedAgingDays >= 60 && item.computedAgingDays < 90;
       if (agingFilter === '90') return item.computedAgingDays >= 90;
       return item.computedAgingDays >= 30; // 'all' shows anything >= 30 days
     }).sort((a, b) => b.computedAgingDays - a.computedAgingDays);
-  }, [inventory, agingFilter]);
+  }, [agedInventory, agingFilter]);
 
-  const deadStockCount90 = inventory.filter(i => i.stock > 0 && (i.agingDays >= 90 || false)).length;
-  const slowStockCount60 = inventory.filter(i => i.stock > 0 && (i.agingDays >= 60 && i.agingDays < 90)).length;
-  const slowStockCount30 = inventory.filter(i => i.stock > 0 && (i.agingDays >= 30 && i.agingDays < 60)).length;
+  const inStockAged = agedInventory.filter(i => Number(i.stock) > 0);
+  const deadStockCount90 = inStockAged.filter(i => i.computedAgingDays >= 90).length;
+  const slowStockCount60 = inStockAged.filter(i => i.computedAgingDays >= 60 && i.computedAgingDays < 90).length;
+  const slowStockCount30 = inStockAged.filter(i => i.computedAgingDays >= 30 && i.computedAgingDays < 60).length;
+
+  // Offer actions (update live sellPrice -> reflected in POS + alzino.shop)
+  const [offerDraft, setOfferDraft] = useState({}); // { [productId]: pct }
+  const handleApplyOffer = (item, type) => {
+    if (!setInventory) return;
+    const pct = Number(offerDraft[item.id] ?? (recommendedOfferPct(item) || 5));
+    if (!(pct > 0)) return;
+    setInventory(prev => prev.map(p => (p.id === item.id ? applyOffer(p, pct, type) : p)));
+  };
+
+  const handleRemoveOffer = (item) => {
+    if (!setInventory) return;
+    setInventory(prev => prev.map(p => (p.id === item.id ? removeOffer(p) : p)));
+  };
+
+  const renderOfferButton = (item, type) => (
+    item.offer ? (
+      <button
+        onClick={() => handleRemoveOffer(item)}
+        className="btn-secondary"
+        style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: 'var(--status-red)' }}
+        title={`Live offer: ${item.offer.label}. Click to restore ₹${Number(item.offer.regularPrice).toLocaleString()}`}
+      >
+        Remove {item.offer.pct}% Offer
+      </button>
+    ) : (
+      <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
+        <select
+          aria-label={`Offer percent for ${item.name}`}
+          value={offerDraft[item.id] ?? (recommendedOfferPct(item) || 5)}
+          onChange={(e) => setOfferDraft(d => ({ ...d, [item.id]: Number(e.target.value) }))}
+          className="input-field"
+          style={{ padding: '0.2rem 0.3rem', fontSize: '0.74rem', width: 'auto' }}
+        >
+          {[5, 8, 10, 12, 15, 20, 25].map(p => <option key={p} value={p}>{p}%</option>)}
+        </select>
+        <button
+          onClick={() => handleApplyOffer(item, type)}
+          className="btn-secondary"
+          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', color: 'var(--status-green)', fontWeight: 700 }}
+          title={`Apply discount — shown on alzino.shop and used in POS billing. Never below buy cost ₹${Number(item.buyPrice || 0).toLocaleString()}`}
+          disabled={!setInventory}
+        >
+          Apply Offer
+        </button>
+      </span>
+    )
+  );
 
   const totalCapitalLockedInAging = agingStockItems.reduce(
     (sum, item) => sum + ((Number(item.buyPrice) || 0) * (Number(item.stock) || 0)), 
@@ -534,6 +578,7 @@ export default function ExecutiveDashboard({
                         >
                           Call Supplier
                         </button>
+                        {Number(item.stock) > 0 && renderOfferButton(item, 'low-stock')}
                       </div>
                     </td>
                   </tr>
@@ -654,9 +699,12 @@ export default function ExecutiveDashboard({
                         ₹{(Number(item.buyPrice) * Number(item.stock)).toLocaleString()}
                       </td>
                       <td>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          {isCritical ? '🔥 Offer 15% Clearance / Bundle with Mobile' : isModerate ? 'Offer 5-8% Counter Discount to clear' : 'Keep visible on display showcase'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            {isCritical ? '🔥 Offer 15% Clearance / Bundle with Mobile' : isModerate ? 'Offer 5-8% Counter Discount to clear' : 'Keep visible on display showcase'}
+                          </span>
+                          {renderOfferButton(item, 'old-stock')}
+                        </div>
                       </td>
                     </tr>
                   );

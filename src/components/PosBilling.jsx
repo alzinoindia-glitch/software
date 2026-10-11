@@ -32,10 +32,12 @@ import {
   Landmark,
   Percent,
   Clock,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Barcode
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
+import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareDevices';
 
 export default function PosBilling({ 
   inventory, 
@@ -152,6 +154,7 @@ export default function PosBilling({
   const [invoiceSearchTerm, setInvoiceSearchTerm] = useState('');
   const [editingInvoiceModal, setEditingInvoiceModal] = useState(false);
   const [invoiceToEdit, setInvoiceToEdit] = useState(null);
+  const [scanNotification, setScanNotification] = useState('');
   
   const searchInputRef = useRef(null);
 
@@ -188,7 +191,42 @@ export default function PosBilling({
     });
   }, [inventory, selectedCategory, posTaxFilter, searchTerm]);
 
-  // Handle Barcode scanner auto-enter
+  // Global Hardware Barcode Scanner Listener for POS Billing Counter
+  useEffect(() => {
+    const scanner = new HardwareBarcodeScannerEngine({
+      soundEnabled: shopConfig?.barcodeScannerBeep !== false,
+      onScan: (scannedCode) => {
+        const clean = scannedCode.trim().toLowerCase();
+        const exactMatch = inventory.find(item => 
+          (item.barcode && item.barcode.trim().toLowerCase() === clean) ||
+          (item.imeis && item.imeis.some(imei => imei.trim().toLowerCase() === clean))
+        );
+
+        if (exactMatch) {
+          if (exactMatch.stock <= 0) {
+            playDeviceBeep('error');
+            setScanNotification(`⚠️ OUT OF STOCK: "${exactMatch.name}" (${scannedCode})`);
+            setTimeout(() => setScanNotification(''), 3500);
+            return;
+          }
+          const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
+          addToCart(exactMatch, matchedImei);
+          playDeviceBeep('double');
+          setScanNotification(`✓ Auto-Added to Cart: ${exactMatch.name} [Code: ${scannedCode}]`);
+          setTimeout(() => setScanNotification(''), 3500);
+        } else {
+          playDeviceBeep('error');
+          setScanNotification(`⚠️ Scanned Barcode/IMEI not in inventory: "${scannedCode}"`);
+          setTimeout(() => setScanNotification(''), 4000);
+        }
+      }
+    });
+
+    scanner.start();
+    return () => scanner.stop();
+  }, [inventory, shopConfig?.barcodeScannerBeep]);
+
+  // Handle Barcode scanner auto-enter inside manual search box
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter') {
       const q = searchTerm.trim().toLowerCase();
@@ -199,7 +237,14 @@ export default function PosBilling({
       if (exactMatch && exactMatch.stock > 0) {
         const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.toLowerCase() === q) : null;
         addToCart(exactMatch, matchedImei);
+        playDeviceBeep('double');
+        setScanNotification(`✓ Scanned: ${exactMatch.name}`);
+        setTimeout(() => setScanNotification(''), 3000);
         setSearchTerm('');
+      } else if (exactMatch && exactMatch.stock <= 0) {
+        playDeviceBeep('error');
+        setScanNotification(`⚠️ OUT OF STOCK: ${exactMatch.name}`);
+        setTimeout(() => setScanNotification(''), 3500);
       }
     }
   };
@@ -649,8 +694,15 @@ export default function PosBilling({
     setShowCheckoutModal(true);
 
     try {
+      playDeviceBeep('cash');
       confetti({ particleCount: 75, spread: 70, origin: { y: 0.6 } });
     } catch (e) {}
+
+    // Auto-Print invoice based on shopConfig default printer preference
+    if (shopConfig?.autoPrintOnCheckout) {
+      const mode = shopConfig.defaultPrinter === 'normal-a4' ? 'a4' : (shopConfig.defaultPrinter === 'thermal-58mm' ? 'thermal-58' : 'thermal');
+      onPrintInvoice(newInvoice, mode);
+    }
 
     // Reset cart & notes
     setCart([]);
@@ -813,6 +865,25 @@ export default function PosBilling({
             
             {/* Search & Mode Bar */}
             <div className="hud-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {/* Live Scanner Banner */}
+              {scanNotification && (
+                <div style={{
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '6px',
+                  background: scanNotification.includes('⚠️') ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                  border: `1.5px solid ${scanNotification.includes('⚠️') ? 'var(--status-red)' : 'var(--status-green)'}`,
+                  color: scanNotification.includes('⚠️') ? 'var(--status-red)' : 'var(--status-green)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <Barcode size={16} />
+                  <span>{scanNotification}</span>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* Search / Scan Box */}
                 <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
@@ -2859,6 +2930,18 @@ export default function PosBilling({
               >
                 <Printer size={18} />
                 <span>Print 3" (80mm) Thermal {completedInvoice.isNonGst ? 'Cash Memo' : 'Receipt'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowCheckoutModal(false);
+                  onPrintInvoice(completedInvoice, 'thermal-58');
+                }}
+                className="btn-secondary"
+                style={{ width: '100%', justifyContent: 'center', padding: '0.65rem' }}
+              >
+                <Printer size={16} />
+                <span>Print 2" (58mm) Compact Thermal</span>
               </button>
 
               <button

@@ -25,6 +25,8 @@ import {
   Sparkles
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
+import { ProductImagePicker, ProductImageViewer } from './ProductImages';
+import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
 import { renderBarcodeSvg } from '../utils/barcode';
 
 const standardBrands = [
@@ -84,6 +86,9 @@ export default function InventoryManager({
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
   const [quickBarcodeItem, setQuickBarcodeItem] = useState(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  // Product photos (front & back) for the add/edit form
+  const [formImages, setFormImages] = useState({ front: null, back: null });
 
   // Stock Transfer
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -112,6 +117,7 @@ export default function InventoryManager({
     barcode: '',
     imeisText: '',
     warranty: '1 Year Warranty',
+    receivedDate: new Date().toISOString().split('T')[0],
   });
 
   const categoryIcons = {
@@ -217,7 +223,9 @@ export default function InventoryManager({
       barcode: `ALZ-${Date.now().toString().slice(-6)}`,
       imeisText: '',
       warranty: 'Standard Warranty',
+      receivedDate: new Date().toISOString().split('T')[0],
     });
+    setFormImages({ front: null, back: null });
     setShowModal(true);
   };
 
@@ -243,13 +251,25 @@ export default function InventoryManager({
       barcode: item.barcode || '',
       imeisText: (item.imeis || []).join('\n'),
       warranty: item.warranty || '',
+      receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
     });
+    setFormImages({ front: null, back: null });
+    if (item.images?.front || item.images?.back) {
+      Promise.all([getProductImage(item.id, 'front'), getProductImage(item.id, 'back')])
+        .then(([front, back]) => setFormImages({ front, back }));
+    }
     setShowModal(true);
   };
 
-  const handleDelete = (id, name) => {
-    if (confirm(`Delete "${name}"?`)) {
-      setInventory(prev => prev.filter(i => i.id !== id));
+  const handleDelete = (item) => {
+    setDeleteConfirmItem(item);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmItem) {
+      setInventory(prev => prev.filter(i => i.id !== deleteConfirmItem.id));
+      deleteProductImages(deleteConfirmItem.id).catch(() => {});
+      setDeleteConfirmItem(null);
     }
   };
 
@@ -311,9 +331,26 @@ export default function InventoryManager({
     setShowTransferModal(false);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.sellPrice) return;
+
+    // Persist front/back photos to the on-device image store (not localStorage)
+    const productId = editingItem ? editingItem.id : `PROD-${Date.now()}`;
+    let imagesMeta = null;
+    try {
+      await Promise.all([
+        saveProductImage(productId, 'front', formImages.front),
+        saveProductImage(productId, 'back', formImages.back)
+      ]);
+      imagesMeta = (formImages.front || formImages.back)
+        ? { front: Boolean(formImages.front), back: Boolean(formImages.back), v: Date.now() }
+        : null;
+    } catch (err) {
+      console.error('Product image save failed:', err);
+      alert('Product saved, but photos could not be stored on this device.');
+      imagesMeta = editingItem?.images || null;
+    }
 
     const imeisArray = formData.imeisText
       .split('\n')
@@ -353,13 +390,17 @@ export default function InventoryManager({
             barcode: formData.barcode,
             imeis: imeisArray,
             warranty: formData.warranty,
+            receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
+            offer: editingItem.offer,
+            createdAt: editingItem.createdAt || new Date().toISOString(),
+            images: imagesMeta,
           };
         }
         return item;
       }));
     } else {
       const newItem = {
-        id: `PROD-${Date.now().toString().slice(-4)}`,
+        id: productId,
         category: formData.category,
         brand: formData.brand,
         name: formData.name,
@@ -378,6 +419,9 @@ export default function InventoryManager({
         barcode: formData.barcode || `ALZ-${Date.now().toString().slice(-6)}`,
         imeis: imeisArray,
         warranty: formData.warranty,
+        receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        images: imagesMeta,
         status: 'Active',
       };
       setInventory(prev => [newItem, ...prev]);
@@ -762,6 +806,29 @@ export default function InventoryManager({
                   </span>
                 </div>
 
+                {item.offer && (
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 800,
+                    fontSize: '0.68rem',
+                    color: '#d97706',
+                    background: 'rgba(217, 119, 6, 0.12)',
+                    border: '1px solid rgba(217, 119, 6, 0.3)',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}>
+                    {item.offer.label || `Deal (${item.offer.pct}% Off)`}
+                  </div>
+                )}
+
+                {/* Product Photo (Front / Back toggle) */}
+                {(item.images?.front || item.images?.back) && (
+                  <ProductImageViewer product={item} height={150} />
+                )}
+
                 {/* Product Name (Bold, 1-2 lines, clean) */}
                 <div style={{
                   fontFamily: 'var(--font-heading)',
@@ -947,7 +1014,7 @@ export default function InventoryManager({
                         <Edit3 size={14} />
                       </button>
                       <button
-                        onClick={() => handleDelete(item.id, item.name)}
+                        onClick={() => handleDelete(item)}
                         style={{
                           padding: '0.45rem',
                           borderRadius: '6px',
@@ -1022,14 +1089,26 @@ export default function InventoryManager({
                     </td>
 
                     <td style={{ padding: '0.65rem 0.85rem' }}>
-                      <span style={{
-                        fontFamily: 'var(--font-heading)',
-                        fontWeight: 900,
-                        fontSize: '0.92rem',
-                        color: 'var(--accent-primary)'
-                      }}>
-                        ₹{item.sellPrice.toLocaleString()}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                        <span style={{
+                          fontFamily: 'var(--font-heading)',
+                          fontWeight: 900,
+                          fontSize: '0.92rem',
+                          color: 'var(--accent-primary)'
+                        }}>
+                          ₹{item.sellPrice.toLocaleString()}
+                        </span>
+                        {item.offer && (
+                          <span style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.62rem',
+                            fontWeight: 700,
+                            color: '#d97706'
+                          }}>
+                            {item.offer.label || `${item.offer.pct}% Off`}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     <td style={{ padding: '0.65rem 0.85rem' }}>
@@ -1079,13 +1158,24 @@ export default function InventoryManager({
                           <Barcode size={13} />
                         </button>
                         {role === 'admin' && (
-                          <button
-                            onClick={() => openEditModal(item)}
-                            className="btn-secondary"
-                            style={{ padding: '0.28rem 0.45rem' }}
-                          >
-                            <Edit3 size={13} />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => openEditModal(item)}
+                              className="btn-secondary"
+                              style={{ padding: '0.28rem 0.45rem' }}
+                              title="Edit Product"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              className="btn-secondary"
+                              style={{ padding: '0.28rem 0.45rem', color: 'var(--status-red)' }}
+                              title="Delete Product"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -1094,6 +1184,54 @@ export default function InventoryManager({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmItem && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1200 }}>
+          <div className="illoca-card animate-fade-in" style={{ maxWidth: '420px', width: '100%', padding: '1.5rem', background: 'var(--surface-primary)', border: '1px solid var(--status-red)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--status-red-bg)', color: 'var(--status-red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Delete Product</h3>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>ID: {deleteConfirmItem.id}</div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-primary)', margin: '0 0 1.25rem' }}>
+              Are you sure you want to remove <strong>{deleteConfirmItem.name}</strong> from stock? This will remove all associated barcode and rack allocations.
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmItem(null)}
+                className="btn-secondary"
+                style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                style={{
+                  padding: '0.45rem 1rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  backgroundColor: 'var(--status-red)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1276,6 +1414,16 @@ export default function InventoryManager({
                 </select>
               </div>
 
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Inward Date (Aging)</label>
+                <input
+                  type="date"
+                  value={formData.receivedDate}
+                  onChange={(e) => setFormData({ ...formData, receivedDate: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
               <div style={{ gridColumn: 'span 2' }}>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>IMEIs (Optional, 1 per line)</label>
                 <textarea
@@ -1286,6 +1434,10 @@ export default function InventoryManager({
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}
                 />
+              </div>
+
+              <div style={{ gridColumn: 'span 2' }}>
+                <ProductImagePicker value={formImages} onChange={setFormImages} />
               </div>
             </div>
 
