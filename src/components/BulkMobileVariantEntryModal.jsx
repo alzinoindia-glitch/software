@@ -28,21 +28,11 @@ import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customT
 import { getProductSuggestions } from '../utils/productSuggestions';
 import { renderCodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
 export const COMMON_STORAGE_OPTIONS = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB', 'Other'];
-export const POPULAR_COLORS = [
-  { name: 'Onyx Black', hex: '#1C1C1E' },
-  { name: 'Phantom Black', hex: '#0B0B0C' },
-  { name: 'Titanium Gray', hex: '#686B6F' },
-  { name: 'Natural Titanium', hex: '#8E8A83' },
-  { name: 'Midnight Blue', hex: '#1E293B' },
-  { name: 'Flowy Emerald / Green', hex: '#0F766E' },
-  { name: 'Marble White / Silver', hex: '#E2E8F0' },
-  { name: 'Sunset Gold', hex: '#D97706' },
-  { name: 'Cobalt Violet / Purple', hex: '#7C3AED' },
-  { name: 'Amber Yellow', hex: '#EAB308' },
-];
+export { POPULAR_COLORS, getProductColorHex };
 
 export default function BulkMobileVariantEntryModal({ 
   isOpen, 
@@ -107,6 +97,7 @@ export default function BulkMobileVariantEntryModal({
     { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2 }
   ]);
   const [newColorInput, setNewColorInput] = useState('');
+  const [customColorHex, setCustomColorHex] = useState('#EC4899');
 
   // Physical Units matrix: [{ id, variantId, color, unitNo, imei1, imei2, barcode }]
   const [units, setUnits] = useState([]);
@@ -155,7 +146,7 @@ export default function BulkMobileVariantEntryModal({
             unitKey,
             variantId: variant.id,
             color: colorName,
-            colorHex: variant.hex,
+            colorHex: variant.hex || getProductColorHex(colorName),
             unitNo: i,
             globalIndex,
             imei1: existing?.imei1 || '',
@@ -180,18 +171,24 @@ export default function BulkMobileVariantEntryModal({
   const effectiveStorage = modelDetails.storage === 'Other' ? (modelDetails.customStorage || '') : modelDetails.storage;
 
   // Add a new colour to the variants list
-  const handleAddColor = (colorName, hex = '#4F46E5') => {
+  const handleAddColor = (colorName, hex = null) => {
     if (!colorName.trim()) return;
     const exists = colourVariants.some(c => c.color.toLowerCase() === colorName.trim().toLowerCase());
     if (exists) {
       alert(`Colour "${colorName}" is already in this model.`);
       return;
     }
+    const resolvedHex = hex || getProductColorHex(colorName, customColorHex || '#EC4899');
     setColourVariants(prev => [
       ...prev,
-      { id: `cv-${Date.now()}`, color: colorName.trim(), hex, qty: 1 }
+      { id: `cv-${Date.now()}`, color: colorName.trim(), hex: resolvedHex, qty: 1 }
     ]);
     setNewColorInput('');
+    setCustomColorHex('#EC4899');
+  };
+
+  const handleUpdateColorHex = (id, newHex) => {
+    setColourVariants(prev => prev.map(c => c.id === id ? { ...c, hex: newHex } : c));
   };
 
   const handleRemoveColor = (id) => {
@@ -1156,13 +1153,23 @@ export default function BulkMobileVariantEntryModal({
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ 
-                          width: '14px', 
-                          height: '14px', 
-                          borderRadius: '50%', 
-                          backgroundColor: variant.hex || '#4F46E5', 
-                          border: '1px solid rgba(0,0,0,0.2)' 
-                        }} />
+                        <label title="Click to change colour shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                          <span style={{ 
+                            width: '18px', 
+                            height: '18px', 
+                            borderRadius: '50%', 
+                            backgroundColor: variant.hex || getProductColorHex(variant.color), 
+                            border: '2px solid rgba(0,0,0,0.15)',
+                            display: 'inline-block',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }} />
+                          <input
+                            type="color"
+                            value={variant.hex || getProductColorHex(variant.color)}
+                            onChange={(e) => handleUpdateColorHex(variant.id, e.target.value)}
+                            style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                          />
+                        </label>
                         <div>
                           <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>{variant.color}</div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
@@ -1210,24 +1217,57 @@ export default function BulkMobileVariantEntryModal({
                 </div>
 
                 {/* Add Custom Colour Input */}
-                <div style={{ display: 'flex', gap: '0.4rem', maxWidth: '360px' }}>
-                  <input
-                    type="text"
-                    placeholder="Enter custom colour (e.g. Desert Sand, Mint)..."
-                    value={newColorInput}
-                    onChange={(e) => setNewColorInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddColor(newColorInput);
-                      }
-                    }}
-                    className="input-field"
-                    style={{ fontSize: '0.78rem' }}
-                  />
+                <div style={{ display: 'flex', gap: '0.4rem', maxWidth: '420px', alignItems: 'center' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1 }}>
+                    <input
+                      type="text"
+                      placeholder="Enter custom colour (e.g. Pink, Coral, Mint)..."
+                      value={newColorInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewColorInput(val);
+                        if (val.trim()) {
+                          setCustomColorHex(getProductColorHex(val));
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddColor(newColorInput, customColorHex);
+                        }
+                      }}
+                      className="input-field"
+                      style={{ fontSize: '0.78rem', paddingRight: '2.5rem' }}
+                    />
+                    <label 
+                      title="Custom colour shade" 
+                      style={{ 
+                        position: 'absolute', 
+                        right: '8px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center' 
+                      }}
+                    >
+                      <span style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        backgroundColor: customColorHex || getProductColorHex(newColorInput),
+                        border: '1px solid rgba(0,0,0,0.2)',
+                        display: 'inline-block'
+                      }} />
+                      <input
+                        type="color"
+                        value={customColorHex || '#EC4899'}
+                        onChange={(e) => setCustomColorHex(e.target.value)}
+                        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                      />
+                    </label>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleAddColor(newColorInput)}
+                    onClick={() => handleAddColor(newColorInput, customColorHex)}
                     className="btn-secondary"
                     style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                   >
@@ -1401,7 +1441,7 @@ export default function BulkMobileVariantEntryModal({
                           </span>
                           <div style={{ overflow: 'hidden' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: unit.colorHex || '#4F46E5', flexShrink: 0 }} />
+                              <span style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: unit.colorHex || getProductColorHex(unit.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
                               <span style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                                 {unit.color}
                               </span>

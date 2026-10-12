@@ -17,6 +17,7 @@ import {
   Hash
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { getProductColorHex } from '../utils/colorUtils';
 
 export default function ModelVariantImeiDirectory({
   inventory = [],
@@ -332,7 +333,7 @@ export default function ModelVariantImeiDirectory({
                               gap: '0.25rem'
                             }}
                           >
-                            <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: item.color === 'Onyx Black' ? '#111' : '#4F46E5' }} />
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.colorHex || getProductColorHex(item.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
                             <span>{item.color || 'Standard'}:</span>
                             <strong style={{ color: item.stock > 0 ? '#10B981' : '#EF4444' }}>{item.stock} pcs</strong>
                           </span>

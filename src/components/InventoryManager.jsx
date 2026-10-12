@@ -32,6 +32,7 @@ import { saveProductImage, getProductImage, deleteProductImages } from '../utils
 import { renderBarcodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
+import { getProductColorHex } from '../utils/colorUtils';
 import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
 import {
   BASE_CATEGORIES,
@@ -1159,7 +1160,7 @@ export default function InventoryManager({
                       gap: '0.25rem',
                       color: 'var(--text-primary)'
                     }}>
-                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: item.color.toLowerCase().includes('black') ? '#111' : '#4F46E5' }} />
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.colorHex || getProductColorHex(item.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
                       <span>{item.color}</span>
                     </span>
                   )}
@@ -1421,8 +1422,9 @@ export default function InventoryManager({
                           {item.brand || 'UNIVERSAL'}
                         </span>
                         {item.color && (
-                          <span style={{ fontSize: '0.65rem', background: 'rgba(0,0,0,0.05)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600 }}>
-                            {item.color}
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(0,0,0,0.05)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: item.colorHex || getProductColorHex(item.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
+                            <span>{item.color}</span>
                           </span>
                         )}
                         {(item.ram || item.storage) && (
