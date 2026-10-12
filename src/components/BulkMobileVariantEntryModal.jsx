@@ -852,22 +852,9 @@ export default function BulkMobileVariantEntryModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
-                  Bulk Add Mobiles / Variants / IMEI Batch Entry
+                  Bulk Add
                 </h3>
-                <span style={{ 
-                  fontSize: '0.7rem', 
-                  background: 'rgba(16, 185, 129, 0.2)', 
-                  color: '#34D399', 
-                  padding: '0.15rem 0.5rem', 
-                  borderRadius: '20px', 
-                  fontWeight: 700 
-                }}>
-                  Retail Fast-Inward
-                </span>
               </div>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: '#9CA3AF', marginTop: '0.15rem' }}>
-                Enter Model & Price once • Add Colour variants • Input IMEI 1 & 2 per piece • Save all units together
-              </p>
             </div>
           </div>
 
