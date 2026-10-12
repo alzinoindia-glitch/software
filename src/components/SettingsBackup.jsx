@@ -406,16 +406,22 @@ export default function SettingsBackup({
   // Clear Database / Fresh Clean Slate (Zero Demo Data & Purge Offline Test Records)
   const handleClearAllData = async () => {
     if (confirm("Are you sure you want to clear all offline test data? This will permanently wipe all test products, inventory, sales invoices, repair tokens, and customer records from LocalStorage, SSD IndexedDB, and Cloud Sync.")) {
-      await purgeAllLegacyOfflineData({
+      const result = await purgeAllLegacyOfflineData({
         setInventory,
         setUsedPurchases,
         setRepairJobs,
         setCustomers,
         setSuppliers,
         setExpenses,
-        setInvoices
+        setInvoices,
+        setWarrantyClaims
       });
-      alert("All offline test data and local/cloud records cleared! Your store database is now completely clean.");
+      if (result.cloudResult?.success) {
+        alert('Business records were cleared from this device and the connected shop cloud, including the published storefront catalog. Shop settings and access accounts were kept.');
+      } else {
+        const reason = result.cloudResult?.reason || result.cloudResult?.error || 'No active authorized shop cloud session is connected.';
+        alert(`Business records were cleared from this device. Cloud deletion was not confirmed: ${reason} Connect an authorized shop account and clear again to remove shared cloud records.`);
+      }
     }
   };
 

@@ -88,7 +88,8 @@ export default function PosBilling({
   
   // Checkout modal / complete state
   const [showPaymentVerifyModal, setShowPaymentVerifyModal] = useState(false);
-  const [cashTendered, setCashTendered] = useState('');
+  const [cashDenominationCounts, setCashDenominationCounts] = useState({});
+  const [sendInvoiceWhatsApp, setSendInvoiceWhatsApp] = useState(false);
   const [upiTxnRef, setUpiTxnRef] = useState('');
   const [upiVerified, setUpiVerified] = useState(false);
   const [copiedUpi, setCopiedUpi] = useState(false);
@@ -125,6 +126,12 @@ export default function PosBilling({
   const currentUpiAccount = useMemo(() => {
     return upiAccountsList.find(a => a.id === selectedUpiAccountId) || upiAccountsList[0];
   }, [upiAccountsList, selectedUpiAccountId]);
+
+  const cashDenominations = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+  const cashDenominationTotal = cashDenominations.reduce(
+    (total, denomination) => total + denomination * (Number(cashDenominationCounts[denomination]) || 0),
+    0
+  );
 
   // EMI Financing State (Manual Counter Entry)
   const [emiFinancier, setEmiFinancier] = useState('Bajaj Finserv');
@@ -566,136 +573,7 @@ export default function PosBilling({
       return;
     }
 
-    const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
-    const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
-
-    const cgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);
-    const sgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);
-    const igstTotal = isNonGst ? 0 : (isInterstate ? totalGst : 0);
-
-    const newInvoice = {
-      invoiceNo,
-      date: today,
-      isNonGst,
-      invoiceType: isNonGst ? 'Non-GST Cash Memo / Estimate' : 'GST Tax Invoice',
-      customerName: customerName.trim() || 'Counter Customer',
-      customerPhone: customerPhone.trim(),
-      customerAddress: customerAddress.trim() || 'Bodhan, Telangana',
-      customerGstin: isNonGst ? '' : customerGstin.trim(),
-      paymentMode: mode,
-      paymentStatus: 'PAID',
-      paymentConfirmedAt: new Date().toISOString(),
-      paymentRef: mode === 'Cash' ? 'EXPRESS_CASH' : 'EXPRESS_UPI_CONFIRMED',
-      emiDetails: null,
-      splitDetails: null,
-      cashTendered: grandTotal,
-      changeReturned: 0,
-      notes: invoiceNotes.trim(),
-      items: cart.map(item => ({
-        id: item.id,
-        name: item.name,
-        category: item.category,
-        hsn: item.hsn,
-        qty: item.qty,
-        imeis: item.selectedImeis,
-        rate: item.rate,
-        buyPrice: item.buyPrice,
-        gstRate: isNonGst ? 0 : item.gstRate,
-        taxable: isNonGst ? (item.rate * item.qty) : (item.rate * item.qty) / (1 + (item.gstRate / 100)),
-        total: item.rate * item.qty,
-        profit: (item.rate - item.buyPrice) * item.qty,
-        warranty: item.warranty || '',
-        rack: item.rack || 'R-01',
-        bin: item.bin || 'B-01'
-      })),
-      taxableAmount: totalTaxable,
-      cgstTotal,
-      sgstTotal,
-      igstTotal,
-      discount: Number(discount),
-      grandTotal,
-      paidAmount: grandTotal,
-      khataDue: 0,
-      totalProfit,
-      isInterstate,
-    };
-
-    // Deduct stock and remove sold IMEIs
-    setInventory(prev => prev.map(invItem => {
-      const cartItem = cart.find(c => c.id === invItem.id);
-      if (cartItem) {
-        const remainingImeis = (invItem.imeis || []).filter(
-          im => !cartItem.selectedImeis.includes(im)
-        );
-        const remainingUnits = (invItem.units || []).filter(
-          u => !cartItem.selectedImeis.includes(u.imei1) && !cartItem.selectedImeis.includes(u.imei2)
-        );
-        return {
-          ...invItem,
-          stock: Math.max(0, invItem.stock - cartItem.qty),
-          imeis: remainingImeis,
-          units: remainingUnits.length > 0 ? remainingUnits : (invItem.units ? [] : undefined)
-        };
-      }
-      return invItem;
-    }));
-
-    // Update Customer CRM
-    if (customerPhone.trim()) {
-      setCustomers(prev => {
-        const exists = prev.find(c => c.phone === customerPhone.trim());
-        if (exists) {
-          return prev.map(c => c.phone === customerPhone.trim() ? {
-            ...c,
-            totalSpent: c.totalSpent + grandTotal,
-          } : c);
-        } else {
-          return [
-            ...prev,
-            {
-              id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
-              name: customerName.trim() || 'Counter Customer',
-              phone: customerPhone.trim(),
-              address: customerAddress.trim() || 'Bodhan',
-              gstin: customerGstin.trim(),
-              totalSpent: grandTotal,
-              balanceDue: 0,
-            }
-          ];
-        }
-      });
-    }
-
-    setInvoices(prev => [newInvoice, ...prev]);
-
-    try {
-      playDeviceBeep('cash');
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-    } catch (e) {}
-
-    // Auto-Print invoice immediately
-    const printMode = shopConfig?.defaultPrinter === 'normal-a4' ? 'a4' : (shopConfig?.defaultPrinter === 'thermal-58mm' ? 'thermal-58' : 'thermal');
-    if (onPrintInvoice) {
-      onPrintInvoice(newInvoice, printMode);
-    }
-
-    // Auto-WhatsApp invoice
-    if (sendWhatsApp || (customerPhone && customerPhone.length >= 10)) {
-      openWhatsAppInvoice(newInvoice, shopConfig);
-    }
-
-    // Reset Cart & Counter Customer in 1 stroke
-    setCart([]);
-    setCustomerName('Counter Customer');
-    setCustomerPhone('');
-    setInvoiceNotes('');
-    setDiscount(0);
-
-    // Focus back on search input for next customer
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
+    handleInitiatePayment(mode, sendWhatsApp);
   };
 
   // Keyboard Hotkey Automation for Counter Cashiers
@@ -721,15 +599,17 @@ export default function PosBilling({
   }, [cart, grandTotal, customerName, customerPhone, customerAddress, isNonGst, shopConfig, invoices.length]);
 
   // Step 1: Open Payment Verification Modal (NO invoice or stock deduction yet)
-  const handleInitiatePayment = () => {
+  const handleInitiatePayment = (initialMode = paymentMode, sendWhatsApp = false) => {
     if (cart.length === 0) {
       alert("Cart is empty! Add items to cart first.");
       return;
     }
     const def = upiAccountsList.find(a => a.isDefault) || upiAccountsList[0];
+    setPaymentMode(initialMode);
     if (def) setSelectedUpiAccountId(def.id);
     setQrDisplayMode('dynamic');
-    setCashTendered(grandTotal);
+    setCashDenominationCounts({});
+    setSendInvoiceWhatsApp(sendWhatsApp);
     setUpiTxnRef('');
     setUpiVerified(false);
     setCopiedUpi(false);
@@ -749,7 +629,28 @@ export default function PosBilling({
   };
 
   // Step 2: Finalize Sale ONLY AFTER Payment is Confirmed
-  const handleConfirmAndGenerateInvoice = (verifiedPaymentRef = '') => {
+  const handleConfirmAndGenerateInvoice = () => {
+    const cashReceived = paymentMode === 'Cash' ? cashDenominationTotal : 0;
+    if (paymentMode === 'UPI' && (!upiTxnRef.trim() || !upiVerified)) {
+      alert('Enter the UPI UTR / transaction ID and verify that payment was received before completing this sale.');
+      return;
+    }
+    if (paymentMode === 'Cash' && cashReceived < grandTotal) {
+      alert('Enter the cash note and coin counts. The amount received must cover the total due.');
+      return;
+    }
+    if (paymentMode === 'EMI' && (!emiApprovalCode.trim() || !emiVerified || (emiDownPaymentMode === 'UPI' && Number(emiDownPayment) > 0 && !emiDownPaymentUpiRef.trim()))) {
+      alert('Enter the EMI approval / transaction ID and confirm finance approval. If the down payment was by UPI, enter its UTR too.');
+      return;
+    }
+    if (paymentMode === 'Split' && (!splitVerified || (Number(splitUpiAmount) > 0 && !splitUpiTxnRef.trim()))) {
+      alert('Verify both payment portions and enter the UPI UTR / transaction ID before completing the sale.');
+      return;
+    }
+    if (paymentMode === 'Card' && !cardAuthCode.trim()) {
+      alert('Enter the card terminal approval / transaction ID before completing the sale.');
+      return;
+    }
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
     const today = new Date().toISOString().split('T')[0];
@@ -815,11 +716,13 @@ export default function PosBilling({
       paymentMode: effectivePaymentMode,
       paymentStatus: paymentMode === 'Khata' ? 'KHATA_DUE' : (isEmi ? 'EMI_SANCTIONED' : 'PAID'),
       paymentConfirmedAt: new Date().toISOString(),
-      paymentRef: verifiedPaymentRef || upiTxnRef || (isEmi ? (emiApprovalCode ? `DO:${emiApprovalCode}` : 'EMI_APPROVED') : (isSplit ? (splitUpiTxnRef ? `UPI:${splitUpiTxnRef}` : 'SPLIT_VERIFIED') : cardAuthCode || (paymentMode === 'Cash' ? 'CASH_VERIFIED' : 'CONFIRMED'))),
+      paymentRef: paymentMode === 'UPI' ? upiTxnRef.trim() : (isEmi ? emiApprovalCode.trim() : (isSplit ? splitUpiTxnRef.trim() : (paymentMode === 'Card' ? cardAuthCode.trim() : ''))),
       emiDetails,
       splitDetails,
-      cashTendered: paymentMode === 'Cash' ? (Number(cashTendered) || grandTotal) : null,
-      changeReturned: paymentMode === 'Cash' ? Math.max(0, (Number(cashTendered) || grandTotal) - grandTotal) : 0,
+      cashTendered: paymentMode === 'Cash' ? cashReceived : null,
+      cashDenominations: paymentMode === 'Cash' ? { ...cashDenominationCounts } : null,
+      changeReturned: paymentMode === 'Cash' ? Math.max(0, cashReceived - grandTotal) : 0,
+      hidePaymentQr: true,
       notes: invoiceNotes.trim(),
       items: cart.map(item => ({
         id: item.id,
@@ -900,6 +803,10 @@ export default function PosBilling({
     // Save final verified invoice
     setInvoices(prev => [newInvoice, ...prev]);
     setCompletedInvoice(newInvoice);
+
+    if (sendInvoiceWhatsApp || (customerPhone && customerPhone.length >= 10)) {
+      openWhatsAppInvoice(newInvoice, shopConfig);
+    }
 
     // Close payment modal and open final print modal
     setShowPaymentVerifyModal(false);
@@ -1696,13 +1603,13 @@ export default function PosBilling({
                   gap: '0.15rem',
                   boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
                 }}
-                title="Instant Cash checkout + Thermal Print in 1 second [Shortcut: F2]"
+                title="Open cash payment collection and denomination entry [Shortcut: F2]"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   <Zap size={14} />
                   <span>[F2] CASH</span>
                 </div>
-                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>1-Sec Print</span>
+                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Collect cash, then finish</span>
               </button>
 
               <button
@@ -1725,13 +1632,13 @@ export default function PosBilling({
                   gap: '0.15rem',
                   boxShadow: '0 2px 8px rgba(59, 96, 197, 0.3)'
                 }}
-                title="Instant UPI checkout + Thermal Print in 1 second [Shortcut: F3]"
+                title="Open UPI QR payment and transaction verification [Shortcut: F3]"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   <QrCode size={14} />
                   <span>[F3] UPI</span>
                 </div>
-                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Scan & Print</span>
+                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Collect UTR, then finish</span>
               </button>
 
               <button
@@ -1754,11 +1661,11 @@ export default function PosBilling({
                   gap: '0.15rem',
                   boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
                 }}
-                title="Instant sale + Auto WhatsApp bill + Print [Shortcut: F4]"
+                title="Open UPI payment; send invoice on WhatsApp after confirmation [Shortcut: F4]"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   <span>💬</span>
-                  <span>[F4] WA+PRINT</span>
+                  <span>[F4] UPI + WhatsApp</span>
                 </div>
                 <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>WhatsApp & Print</span>
               </button>
@@ -2585,13 +2492,13 @@ export default function PosBilling({
 
                 <div style={{ textAlign: 'left', marginBottom: '0.75rem' }}>
                   <label className="input-label" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-                    12-Digit UPI Reference / UTR Number (From Customer Phone):
+                    UPI UTR / transaction ID (required):
                   </label>
                   <input
                     type="text"
                     value={upiTxnRef}
                     onChange={(e) => setUpiTxnRef(e.target.value)}
-                    placeholder="e.g. 428190284910 (GooglePay / PhonePe / Paytm)"
+                    placeholder="Enter the transaction ID shown in the payment app"
                     className="input-field"
                     style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem', fontFamily: 'var(--font-mono)' }}
                   />
@@ -2612,12 +2519,13 @@ export default function PosBilling({
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice(upiTxnRef ? `UPI:${upiTxnRef}` : 'UPI:QR_VERIFIED')}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
+                  disabled={!upiTxnRef.trim() || !upiVerified}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm Online UPI Received (₹{grandTotal.toLocaleString()})</span>
+                  <span>Payment Done · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -2641,36 +2549,28 @@ export default function PosBilling({
                 </div>
 
                 <div style={{ marginBottom: '0.85rem' }}>
-                  <label className="input-label" style={{ fontWeight: 700 }}>Cash Received from Customer (₹):</label>
-                  <input
-                    type="number"
-                    value={cashTendered}
-                    onChange={(e) => setCashTendered(e.target.value)}
-                    placeholder="Enter cash given by customer"
-                    className="input-field"
-                    style={{ fontSize: '1.15rem', fontWeight: 800, padding: '0.5rem 0.75rem', fontFamily: 'var(--font-mono)' }}
-                  />
-                </div>
-
-                {/* Quick Cash Chips */}
-                <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
-                  {[
-                    { label: `Exact (₹${grandTotal})`, val: grandTotal },
-                    { label: '₹500', val: 500 },
-                    { label: '₹1,000', val: 1000 },
-                    { label: '₹2,000', val: 2000 },
-                    { label: '₹5,000', val: 5000 },
-                  ].filter(c => c.val >= grandTotal || c.val === grandTotal).map((chip, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setCashTendered(chip.val)}
-                      className="btn-secondary"
-                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
+                  <label className="input-label" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Count the notes and coins received:</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(82px, 1fr))', gap: '0.4rem' }}>
+                    {cashDenominations.map(denomination => (
+                      <label key={denomination} style={{ display: 'grid', gap: '0.2rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        ₹{denomination} notes / coins
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={cashDenominationCounts[denomination] ?? ''}
+                          onChange={event => setCashDenominationCounts(current => ({ ...current, [denomination]: Math.max(0, Math.floor(Number(event.target.value) || 0)) }))}
+                          className="input-field"
+                          inputMode="numeric"
+                          aria-label={`Count of ₹${denomination} notes or coins`}
+                          style={{ padding: '0.4rem', fontFamily: 'var(--font-mono)' }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontWeight: 800 }}>
+                    <span>Cash received</span><span>₹{cashDenominationTotal.toLocaleString()}</span>
+                  </div>
                 </div>
 
                 {/* Live Return Change Calculator */}
@@ -2691,20 +2591,21 @@ export default function PosBilling({
                     fontSize: '1.25rem',
                     fontWeight: 900,
                     fontFamily: 'var(--font-mono)',
-                    color: Number(cashTendered) >= grandTotal ? 'var(--status-green)' : 'var(--status-amber)'
+                    color: cashDenominationTotal >= grandTotal ? 'var(--status-green)' : 'var(--status-amber)'
                   }}>
-                    ₹{Math.max(0, (Number(cashTendered) || grandTotal) - grandTotal).toLocaleString()}
+                    ₹{Math.max(0, cashDenominationTotal - grandTotal).toLocaleString()}
                   </span>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice('CASH:TENDER_VERIFIED')}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
+                  disabled={cashDenominationTotal < grandTotal}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm Cash Received (₹{grandTotal.toLocaleString()})</span>
+                  <span>Payment Done · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -2801,12 +2702,12 @@ export default function PosBilling({
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice(splitUpiTxnRef ? `SPLIT:CASH_${splitCashAmount}_UPI_${splitUpiAmount}_${splitUpiTxnRef}` : `SPLIT:CASH_${splitCashAmount}_UPI_${splitUpiAmount}`)}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm Split Payment (₹{grandTotal.toLocaleString()})</span>
+                  <span>Payment Done · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -3015,12 +2916,12 @@ export default function PosBilling({
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice(emiApprovalCode ? `DO:${emiApprovalCode}` : `EMI:${emiFinancier}`)}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem', background: 'var(--status-teal)', borderColor: 'var(--status-teal)', color: '#FFFFFF' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm EMI Purchase (DP: ₹{Number(emiDownPayment || 0).toLocaleString()} | Loan: ₹{emiLoanAmount.toLocaleString()})</span>
+                  <span>Payment Done · Create Invoice (DP: ₹{Number(emiDownPayment || 0).toLocaleString()} | Loan: ₹{emiLoanAmount.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -3044,7 +2945,7 @@ export default function PosBilling({
                 </p>
 
                 <div style={{ marginBottom: '0.85rem' }}>
-                  <label className="input-label">Terminal Auth / Approval Code (Optional):</label>
+                  <label className="input-label">Card terminal approval / transaction ID (required):</label>
                   <input
                     type="text"
                     value={cardAuthCode}
@@ -3057,12 +2958,13 @@ export default function PosBilling({
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice(cardAuthCode ? `CARD:${cardAuthCode}` : 'CARD:SWIPE_VERIFIED')}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
+                  disabled={!cardAuthCode.trim()}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm Card Swipe Approved (₹{grandTotal.toLocaleString()})</span>
+                  <span>Payment Done · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}
@@ -3108,12 +3010,12 @@ export default function PosBilling({
 
                 <button
                   type="button"
-                  onClick={() => handleConfirmAndGenerateInvoice('KHATA:CREDIT_AUTHORIZED')}
+                  onClick={() => handleConfirmAndGenerateInvoice()}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem', background: 'var(--status-amber)', borderColor: 'var(--status-amber)', color: '#000' }}
                 >
                   <CheckCircle2 size={18} />
-                  <span>Confirm Khata Credit Sale (₹{grandTotal.toLocaleString()})</span>
+                  <span>Confirm Khata · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
               </div>
             )}

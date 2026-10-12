@@ -373,6 +373,7 @@ export default function PrintTemplates({
 
             {/* UPI QR for counter receipt */}
             {(() => {
+              if (printData.hidePaymentQr) return null;
               const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
                 ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
                 : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));
@@ -534,6 +535,7 @@ export default function PrintTemplates({
 
             {/* QR */}
             {(() => {
+              if (printData.hidePaymentQr) return null;
               const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
                 ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
                 : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));

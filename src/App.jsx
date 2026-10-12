@@ -724,6 +724,8 @@ export default function App() {
             setExpenses={setExpenses}
             invoices={invoices}
             setInvoices={setInvoices}
+            warrantyClaims={warrantyClaims}
+            setWarrantyClaims={setWarrantyClaims}
             role={role}
             setRole={setRole}
             onPrintInvoice={handlePrintInvoice}

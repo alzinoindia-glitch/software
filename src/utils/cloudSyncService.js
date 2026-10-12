@@ -27,6 +27,24 @@ const pendingCloudWrites = new Map();
 const conflictedDomains = new Set();
 const scopeKey = (orgId, key) => `${orgId}:${KEY_TO_DOMAIN[key]}`;
 const serializePayload = payload => JSON.stringify(payload ?? []);
+const knownDomainsStorageKey = orgId => `ALZINO_ERP_CLOUD_DOMAINS_${orgId}`;
+
+const getKnownCloudDomains = orgId => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(knownDomainsStorageKey(orgId)) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const rememberCloudDomain = (orgId, key) => {
+  try {
+    const known = getKnownCloudDomains(orgId);
+    known.add(key);
+    localStorage.setItem(knownDomainsStorageKey(orgId), JSON.stringify([...known]));
+  } catch {}
+};
 
 let publicCatalogTimer = null;
 let publicCatalogRevision = 0;
@@ -110,7 +128,7 @@ export const syncPublishedCatalog = (inventory = []) => {
       for (const id of removedIds) {
         if (revision !== publicCatalogRevision) return;
         const { error } = await client.from('catalog_products')
-          .update({ is_published: false, stock_status: 'Out of stock', updated_at: new Date().toISOString() })
+          .delete()
           .eq('organization_id', organizationId)
           .eq('id', id);
         if (error) throw error;
@@ -267,6 +285,7 @@ export const pullAllFromCloud = async (setters = {}) => {
     const key = DOMAIN_TO_KEY[row.domain];
     if (!key || !setters[key] || row.payload === undefined) return;
     foundDomains.add(key);
+    rememberCloudDomain(orgId, key);
     const scope = scopeKey(orgId, key);
     lastCloudPayloads.set(scope, serializePayload(row.payload));
     versionByScope.set(scope, Number(row.version || 1));
@@ -278,6 +297,17 @@ export const pullAllFromCloud = async (setters = {}) => {
     if (foundDomains.has(key)) continue;
     versionByScope.set(scopeKey(orgId, key), 0);
     lastCloudPayloads.delete(scopeKey(orgId, key));
+    // An absent row means "empty" only on devices that previously received
+    // that domain from this shop. Preserve first-device local data so it can
+    // still be deliberately seeded to a new, empty shop cloud.
+    if (getKnownCloudDomains(orgId).has(key)) {
+      pendingCloudWrites.delete(key);
+      if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+      conflictedDomains.delete(key);
+      setters[key]?.([]);
+      try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
+      try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
+    }
   }
   return { success: true, count, source: STORE_STATE_TABLE };
 };
@@ -299,12 +329,20 @@ export const pullCollectionFromCloud = async (key, setter) => {
   if (row) {
     versionByScope.set(scope, Number(row.version || 1));
     lastCloudPayloads.set(scope, serializePayload(payload));
+    rememberCloudDomain(orgId, key);
   } else {
     versionByScope.set(scope, 0);
-    lastCloudPayloads.delete(scope);
+    lastCloudPayloads.set(scope, serializePayload([]));
+    if (getKnownCloudDomains(orgId).has(key)) {
+      setter?.([]);
+      try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
+      try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
+    }
   }
-  setter?.(payload);
-  try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+  if (row) {
+    setter?.(payload);
+    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+  }
   return { success: true, count: row ? 1 : 0, payload };
 };
 
@@ -399,18 +437,19 @@ export const subscribeRealtimeSync = (setters = {}) => {
         if (!key || !setters[key]) return;
         const scope = scopeKey(orgId, key);
         if (payload.eventType === 'DELETE') {
-          if (pendingCloudWrites.has(key)) {
-            versionByScope.set(scope, 0);
-            lastCloudPayloads.delete(scope);
-            return;
-          }
-          versionByScope.delete(scope);
+          rememberCloudDomain(orgId, key);
+          pendingCloudWrites.delete(key);
+          if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+          conflictedDomains.delete(key);
+          versionByScope.set(scope, 0);
           lastCloudPayloads.set(scope, serializePayload([]));
           setters[key]([]);
           try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
+          try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
           return;
         }
         if (row.payload === undefined) return;
+        rememberCloudDomain(orgId, key);
         const serialized = serializePayload(row.payload);
         const incomingVersion = Number(row.version || 1);
         const knownVersion = versionByScope.get(scope) || 0;
@@ -454,15 +493,25 @@ export const wipeAllDataFromCloud = async () => {
   const client = getSupabaseClient();
   const orgId = await getActiveOrgId(client);
   if (!orgId) return authRequired();
-  const { error } = await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);
-  if (!error) {
-    for (const key of SYNC_KEYS) {
-      const scope = scopeKey(orgId, key);
-      lastCloudPayloads.delete(scope);
-      versionByScope.delete(scope);
-    }
+  if (publicCatalogTimer) clearTimeout(publicCatalogTimer);
+  publicCatalogTimer = null;
+  publicCatalogRevision++;
+  for (const key of SYNC_KEYS) {
+    if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+    pendingCloudWrites.delete(key);
+    conflictedDomains.delete(key);
   }
-  return error ? { success: false, error: error.message } : { success: true };
+  const { error: stateError } = await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);
+  if (stateError) return { success: false, error: stateError.message };
+  for (const key of SYNC_KEYS) {
+    const scope = scopeKey(orgId, key);
+    lastCloudPayloads.set(scope, serializePayload([]));
+    versionByScope.set(scope, 0);
+    rememberCloudDomain(orgId, key);
+  }
+  const { error: catalogError } = await client.from('catalog_products').delete().eq('organization_id', orgId);
+  if (catalogError) return { success: false, error: `Store data was removed, but the public catalog could not be cleared: ${catalogError.message}` };
+  return { success: true };
 };
 
 export const purgeAllLegacyOfflineData = async (setters = {}) => {
@@ -475,7 +524,9 @@ export const purgeAllLegacyOfflineData = async (setters = {}) => {
   } catch (e) {
     console.debug('IndexedDB purge error:', e);
   }
-  try { await wipeAllDataFromCloud(); } catch (e) { console.debug('Cloud wipe error:', e); }
+  let cloudResult;
+  try { cloudResult = await wipeAllDataFromCloud(); }
+  catch (e) { cloudResult = { success: false, reason: e?.message || 'Cloud deletion failed.' }; }
 
   if (setters.setInventory) setters.setInventory([]);
   if (setters.setInvoices) setters.setInvoices([]);
@@ -486,5 +537,5 @@ export const purgeAllLegacyOfflineData = async (setters = {}) => {
   if (setters.setExpenses) setters.setExpenses([]);
   if (setters.setWarrantyClaims) setters.setWarrantyClaims([]);
   window.dispatchEvent(new Event('storage'));
-  return { success: true };
+  return { success: true, cloudResult };
 };

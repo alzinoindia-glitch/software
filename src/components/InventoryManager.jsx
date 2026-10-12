@@ -58,7 +58,6 @@ import {
   saveCustomSubcategory
 } from '../utils/customTaxonomy';
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
-import { purgeAllLegacyOfflineData } from '../utils/cloudSyncService';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -937,8 +936,9 @@ export default function InventoryManager({
                 <button
                   type="button"
                   onClick={async () => {
-                    if (window.confirm(`Are you sure you want to remove all ${inventory.length} items from inventory? This will clear test products from local storage, SSD IndexedDB, and Cloud Sync to start fresh.`)) {
-                      await purgeAllLegacyOfflineData({ setInventory });
+                    if (window.confirm(`Remove all ${inventory.length} products from this inventory? This clears product images on this device. The empty inventory will sync to the shop cloud when an authorized shop account is connected.`)) {
+                      await Promise.all(inventory.map(item => deleteProductImages(item.id).catch(() => {})));
+                      setInventory([]);
                     }
                   }}
                   className="btn-secondary"
