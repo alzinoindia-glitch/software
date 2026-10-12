@@ -19,6 +19,11 @@ import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
 import { findProductFromScan } from './utils/productTerms';
 import { Lock, ShieldCheck, Key } from 'lucide-react';
+import { 
+  pullAllFromCloud, 
+  pushCollectionToCloud, 
+  subscribeRealtimeSync 
+} from './utils/cloudSyncService';
 
 import {
   defaultShopConfig,
@@ -210,18 +215,65 @@ export default function App() {
     setIsPulloutOpen(false);
   };
 
-  // Save to LocalStorage whenever state changes
+  // Save to LocalStorage and sync to Cloud whenever state changes
   useEffect(() => { setStorageData('THEME', theme); }, [theme]);
   useEffect(() => { setStorageData('ROLE', role); }, [role]);
-  useEffect(() => { setStorageData('SHOP_CONFIG', shopConfig); }, [shopConfig]);
-  useEffect(() => { setStorageData('INVENTORY', inventory); }, [inventory]);
-  useEffect(() => { setStorageData('USED_PURCHASES', usedPurchases); }, [usedPurchases]);
-  useEffect(() => { setStorageData('REPAIR_JOBS', repairJobs); }, [repairJobs]);
-  useEffect(() => { setStorageData('CUSTOMERS', customers); }, [customers]);
-  useEffect(() => { setStorageData('SUPPLIERS', suppliers); }, [suppliers]);
-  useEffect(() => { setStorageData('EXPENSES', expenses); }, [expenses]);
-  useEffect(() => { setStorageData('INVOICES', invoices); }, [invoices]);
-  useEffect(() => { setStorageData('WARRANTY_CLAIMS', warrantyClaims); }, [warrantyClaims]);
+  useEffect(() => { 
+    setStorageData('SHOP_CONFIG', shopConfig); 
+    pushCollectionToCloud('SHOP_CONFIG', shopConfig);
+  }, [shopConfig]);
+  useEffect(() => { 
+    setStorageData('INVENTORY', inventory); 
+    pushCollectionToCloud('INVENTORY', inventory);
+  }, [inventory]);
+  useEffect(() => { 
+    setStorageData('USED_PURCHASES', usedPurchases); 
+    pushCollectionToCloud('USED_PURCHASES', usedPurchases);
+  }, [usedPurchases]);
+  useEffect(() => { 
+    setStorageData('REPAIR_JOBS', repairJobs); 
+    pushCollectionToCloud('REPAIR_JOBS', repairJobs);
+  }, [repairJobs]);
+  useEffect(() => { 
+    setStorageData('CUSTOMERS', customers); 
+    pushCollectionToCloud('CUSTOMERS', customers);
+  }, [customers]);
+  useEffect(() => { 
+    setStorageData('SUPPLIERS', suppliers); 
+    pushCollectionToCloud('SUPPLIERS', suppliers);
+  }, [suppliers]);
+  useEffect(() => { 
+    setStorageData('EXPENSES', expenses); 
+    pushCollectionToCloud('EXPENSES', expenses);
+  }, [expenses]);
+  useEffect(() => { 
+    setStorageData('INVOICES', invoices); 
+    pushCollectionToCloud('INVOICES', invoices);
+  }, [invoices]);
+  useEffect(() => { 
+    setStorageData('WARRANTY_CLAIMS', warrantyClaims); 
+    pushCollectionToCloud('WARRANTY_CLAIMS', warrantyClaims);
+  }, [warrantyClaims]);
+
+  // Initial Cloud Sync & Realtime multi-device subscription on mount
+  useEffect(() => {
+    const setters = {
+      INVENTORY: setInventory,
+      INVOICES: setInvoices,
+      CUSTOMERS: setCustomers,
+      REPAIR_JOBS: setRepairJobs,
+      USED_PURCHASES: setUsedPurchases,
+      SUPPLIERS: setSuppliers,
+      EXPENSES: setExpenses,
+      WARRANTY_CLAIMS: setWarrantyClaims,
+      SHOP_CONFIG: setShopConfig
+    };
+    pullAllFromCloud(setters);
+    const unsubscribe = subscribeRealtimeSync(setters);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   // Purge any residual demo data on mount
   useEffect(() => {

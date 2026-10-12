@@ -6,12 +6,25 @@ import {
   CheckCircle2, 
   Building, 
   Save, 
-  Trash2,
-  Plus,
-  Landmark,
-  Image as ImageIcon,
-  Star
+  Trash2, 
+  Plus, 
+  Landmark, 
+  Image as ImageIcon, 
+  Star,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
+import { 
+  getSupabaseCredentials, 
+  isSupabaseConfigured, 
+  saveSupabaseCredentials 
+} from '../utils/supabaseClient';
+import { 
+  pullAllFromCloud, 
+  pushAllToCloud 
+} from '../utils/cloudSyncService';
 
 export default function SettingsBackup({ 
   shopConfig, 
@@ -180,6 +193,101 @@ export default function SettingsBackup({
         qrCodeImage: defaultAcc?.qrCodeImage || null
       };
     });
+  };
+
+  // Cloud Sync State & Handlers (Supabase)
+  const [cloudCreds, setCloudCreds] = useState(() => getSupabaseCredentials());
+  const [cloudConnected, setCloudConnected] = useState(() => isSupabaseConfigured());
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState('');
+
+  const handleSaveCloudConfig = (e) => {
+    e.preventDefault();
+    if (!cloudCreds.url.trim() || !cloudCreds.anonKey.trim()) {
+      alert("Please enter both the Supabase Project URL and Public Anon Key.");
+      return;
+    }
+    saveSupabaseCredentials(cloudCreds.url, cloudCreds.anonKey);
+    setCloudConnected(isSupabaseConfigured());
+    setSyncStatusMsg('Connecting and syncing with Supabase...');
+    setIsSyncingCloud(true);
+    pullAllFromCloud({
+      INVENTORY: setInventory,
+      INVOICES: setInvoices,
+      CUSTOMERS: setCustomers,
+      REPAIR_JOBS: setRepairJobs,
+      USED_PURCHASES: setUsedPurchases,
+      SUPPLIERS: setSuppliers,
+      EXPENSES: setExpenses,
+      WARRANTY_CLAIMS: setWarrantyClaims,
+      SHOP_CONFIG: setShopConfig
+    }).then(res => {
+      setIsSyncingCloud(false);
+      if (res.success) {
+        setSyncStatusMsg('✓ Connected! Synced ' + (res.count || 0) + ' collections from cloud.');
+        alert('✓ Successfully connected to Supabase Cloud! Real-time multi-device sync is now active.');
+      } else {
+        setSyncStatusMsg('Connected to Supabase. Click "Push Local Data to Cloud" to initialize table.');
+        alert('Connected to Supabase! If you have local products on this device, click "Push Local Data to Cloud" to upload them.');
+      }
+    });
+  };
+
+  const handleDisconnectCloud = () => {
+    if (confirm("Disconnect Supabase cloud sync? Your local data will remain intact on this device.")) {
+      saveSupabaseCredentials('', '');
+      setCloudCreds({ url: '', anonKey: '' });
+      setCloudConnected(false);
+      setSyncStatusMsg('Disconnected from cloud sync.');
+    }
+  };
+
+  const handleManualPull = async () => {
+    setIsSyncingCloud(true);
+    setSyncStatusMsg('Pulling latest data from cloud...');
+    const res = await pullAllFromCloud({
+      INVENTORY: setInventory,
+      INVOICES: setInvoices,
+      CUSTOMERS: setCustomers,
+      REPAIR_JOBS: setRepairJobs,
+      USED_PURCHASES: setUsedPurchases,
+      SUPPLIERS: setSuppliers,
+      EXPENSES: setExpenses,
+      WARRANTY_CLAIMS: setWarrantyClaims,
+      SHOP_CONFIG: setShopConfig
+    });
+    setIsSyncingCloud(false);
+    if (res.success) {
+      alert('✓ Data successfully pulled from cloud! Your desktop now has the latest stock and invoices.');
+      setSyncStatusMsg('✓ Successfully pulled ' + (res.count || 0) + ' collections from cloud.');
+    } else {
+      alert('Could not pull from cloud: ' + (res.error || res.reason || 'Unknown error'));
+      setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
+    }
+  };
+
+  const handleManualPush = async () => {
+    setIsSyncingCloud(true);
+    setSyncStatusMsg('Pushing local data to cloud...');
+    const res = await pushAllToCloud({
+      INVENTORY: inventory,
+      INVOICES: invoices,
+      CUSTOMERS: customers,
+      REPAIR_JOBS: repairJobs,
+      USED_PURCHASES: usedPurchases,
+      SUPPLIERS: suppliers,
+      EXPENSES: expenses,
+      WARRANTY_CLAIMS: warrantyClaims,
+      SHOP_CONFIG: shopConfig
+    });
+    setIsSyncingCloud(false);
+    if (res.success) {
+      alert('✓ Complete local catalog (' + inventory.length + ' items) successfully uploaded to Supabase! All other logins can now see this data.');
+      setSyncStatusMsg('✓ Uploaded local database to cloud.');
+    } else {
+      alert('Could not push to cloud: ' + (res.error || res.reason || 'Check table schema'));
+      setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
+    }
   };
 
   const handleSaveProfile = (e) => {
@@ -631,9 +739,116 @@ export default function SettingsBackup({
           </div>
         </form>
 
-        {/* Right: Backup, Restore & Security */}
+        {/* Right: Cloud Sync & Offline Backup */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
+          {/* Cloud Sync (Multi-Device Login) Section */}
+          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: cloudConnected ? '4px solid var(--status-green)' : '4px solid var(--accent-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Cloud size={18} color={cloudConnected ? 'var(--status-green)' : 'var(--accent-primary)'} />
+                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cloud Sync &amp; Multi-Login</h3>
+              </div>
+              <span className="mono-tag" style={{
+                background: cloudConnected ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-primary)',
+                color: cloudConnected ? 'var(--status-green)' : 'var(--text-secondary)',
+                fontWeight: 800
+              }}>
+                {cloudConnected ? '🟢 Live Cloud Sync Active' : '⚪ Local Only'}
+              </span>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
+              Connect Supabase to keep all desktop computers, mobile phones, and cashier terminals 100% in sync in real time. Products added on your phone will instantly appear on your desktop.
+            </p>
+
+            <form onSubmit={handleSaveCloudConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '0.75rem' }}>
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
+                  Supabase Project URL
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://your-project-id.supabase.co"
+                  value={cloudCreds.url}
+                  onChange={(e) => setCloudCreds({ ...cloudCreds, url: e.target.value })}
+                  className="input-field"
+                  style={{ fontSize: '0.8rem', padding: '0.45rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
+                  Supabase Public Anon Key
+                </label>
+                <input
+                  type="password"
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  value={cloudCreds.anonKey}
+                  onChange={(e) => setCloudCreds({ ...cloudCreds, anonKey: e.target.value })}
+                  className="input-field"
+                  style={{ fontSize: '0.8rem', padding: '0.45rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                <button
+                  type="submit"
+                  disabled={isSyncingCloud}
+                  className="btn-primary"
+                  style={{ flex: 1, padding: '0.45rem 0.85rem', fontSize: '0.78rem', justifyContent: 'center' }}
+                >
+                  <Save size={14} />
+                  <span>{cloudConnected ? 'Update Cloud Keys' : 'Save & Connect Cloud'}</span>
+                </button>
+
+                {cloudConnected && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectCloud}
+                    className="btn-outline"
+                    style={{ padding: '0.45rem 0.75rem', fontSize: '0.75rem', color: 'var(--status-red)' }}
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {/* Manual Sync Actions */}
+            {cloudConnected && (
+              <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.65rem' }}>
+                <button
+                  type="button"
+                  onClick={handleManualPull}
+                  disabled={isSyncingCloud}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.75rem', justifyContent: 'center' }}
+                >
+                  <RefreshCw size={13} className={isSyncingCloud ? 'animate-spin' : ''} />
+                  <span>⬇️ Pull from Cloud</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleManualPush}
+                  disabled={isSyncingCloud}
+                  className="btn-secondary"
+                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.75rem', justifyContent: 'center' }}
+                >
+                  <Upload size={13} />
+                  <span>⬆️ Push Local to Cloud</span>
+                </button>
+              </div>
+            )}
+
+            {syncStatusMsg && (
+              <div style={{ fontSize: '0.73rem', marginTop: '0.5rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                {syncStatusMsg}
+              </div>
+            )}
+          </div>
+
           {/* Backup Section */}
           <div className="illoca-card" style={{ padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
