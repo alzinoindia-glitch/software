@@ -87,6 +87,53 @@ export const BASE_SPARE_PARTS_BRANDS = [
 const CUSTOM_CATEGORIES_KEY = 'ALZINO_CUSTOM_CATEGORIES';
 const CUSTOM_BRANDS_KEY = 'ALZINO_CUSTOM_BRANDS_BY_CAT';
 const CUSTOM_SUBCATEGORIES_KEY = 'ALZINO_CUSTOM_SUBCATEGORIES_BY_CAT';
+const CUSTOM_TECHNICIANS_KEY = 'ALZINO_CUSTOM_TECHNICIANS';
+const readMap = key => { try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; } };
+const readList = key => { try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } };
+const notifyTaxonomyUpdated = detail => {
+  window.dispatchEvent(new CustomEvent('alzino:taxonomy-updated', { detail: { ...detail, taxonomy: getCustomTaxonomy() } }));
+};
+const notifyTechniciansUpdated = technicians => {
+  window.dispatchEvent(new CustomEvent('alzino:technicians-updated', { detail: { technicians } }));
+};
+
+export function getCustomTaxonomy() {
+  return {
+    categories: readList(CUSTOM_CATEGORIES_KEY),
+    brandsByCategory: readMap(CUSTOM_BRANDS_KEY),
+    subcategoriesByCategory: readMap(CUSTOM_SUBCATEGORIES_KEY)
+  };
+}
+
+export function applyCustomTaxonomy(taxonomy = {}) {
+  try {
+    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(Array.isArray(taxonomy.categories) ? taxonomy.categories : []));
+    localStorage.setItem(CUSTOM_BRANDS_KEY, JSON.stringify(taxonomy.brandsByCategory && typeof taxonomy.brandsByCategory === 'object' ? taxonomy.brandsByCategory : {}));
+    localStorage.setItem(CUSTOM_SUBCATEGORIES_KEY, JSON.stringify(taxonomy.subcategoriesByCategory && typeof taxonomy.subcategoriesByCategory === 'object' ? taxonomy.subcategoriesByCategory : {}));
+    notifyTaxonomyUpdated({ type: 'cloud-sync' });
+  } catch (error) {
+    console.warn('Could not save synced product options:', error);
+  }
+}
+
+export function getCustomTechnicians() {
+  return readList(CUSTOM_TECHNICIANS_KEY).filter(name => name && !name.includes('Anwar') && !name.includes('Srinivas') && !name.includes('Mohsin'));
+}
+
+export function applyCustomTechnicians(technicians = []) {
+  const cleanList = Array.isArray(technicians) ? technicians.filter(name => typeof name === 'string' && name.trim()) : [];
+  try {
+    localStorage.setItem(CUSTOM_TECHNICIANS_KEY, JSON.stringify(cleanList));
+    notifyTechniciansUpdated(cleanList);
+  } catch (error) {
+    console.warn('Could not save synced repair technicians:', error);
+  }
+}
+
+export function saveCustomTechnicians(technicians = []) {
+  applyCustomTechnicians(technicians);
+}
+
 export const BASE_SUBCATEGORIES_BY_CATEGORY = {
   'New Mobiles': ['Smartphones', 'Feature Phones', 'Tablets'],
   'Used Mobiles': ['Refurbished Mobiles', 'Pre-owned Mobiles', 'Refurbished Tablets'],
@@ -110,7 +157,7 @@ export function saveCustomSubcategory(subcategory, category = 'General') {
     if (!existing.some(item => item.toLowerCase() === value.toLowerCase())) {
       map[catKey] = [...existing, value];
       localStorage.setItem(CUSTOM_SUBCATEGORIES_KEY, JSON.stringify(map));
-      window.dispatchEvent(new CustomEvent('alzino:taxonomy-updated', { detail: { type: 'subcategory', category: catKey, subcategory: value } }));
+      notifyTaxonomyUpdated({ type: 'subcategory', category: catKey, subcategory: value });
     }
   } catch (e) { console.error('Failed to save custom subcategory:', e); }
 }
@@ -152,7 +199,7 @@ export function saveCustomCategory(category) {
     if (!isAlreadyBase && !isAlreadyCustom) {
       const updated = [...existing, trimmed];
       localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('alzino:taxonomy-updated', { detail: { type: 'category', category: trimmed } }));
+      notifyTaxonomyUpdated({ type: 'category', category: trimmed });
     }
   } catch (e) {
     console.error('Failed to save custom category:', e);
@@ -187,7 +234,7 @@ export function saveCustomBrand(brand, category = 'General') {
     if (!listForCat.some(b => b.toLowerCase() === trimmedBrand.toLowerCase())) {
       map[catKey] = [...listForCat, trimmedBrand];
       localStorage.setItem(CUSTOM_BRANDS_KEY, JSON.stringify(map));
-      window.dispatchEvent(new CustomEvent('alzino:taxonomy-updated', { detail: { type: 'brand', brand: trimmedBrand, category: catKey } }));
+      notifyTaxonomyUpdated({ type: 'brand', brand: trimmedBrand, category: catKey });
     }
   } catch (e) {
     console.error('Failed to save custom brand:', e);

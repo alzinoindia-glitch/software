@@ -29,6 +29,7 @@ import {
   getActiveOrgId,
   purgeAllLegacyOfflineData
 } from '../utils/cloudSyncService';
+import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from '../utils/customTaxonomy';
 
 export default function SettingsBackup({ 
   shopConfig, 
@@ -47,6 +48,8 @@ export default function SettingsBackup({
   setExpenses, 
   invoices, 
   setInvoices, 
+  warrantyClaims,
+  setWarrantyClaims,
   role, 
   setRole,
   onPrintInvoice 
@@ -248,7 +251,9 @@ export default function SettingsBackup({
       SUPPLIERS: setSuppliers,
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig
+      SHOP_CONFIG: setShopConfig,
+      CUSTOM_TAXONOMY: applyCustomTaxonomy,
+      CUSTOM_TECHNICIANS: applyCustomTechnicians
     }).then(async res => {
       setIsSyncingCloud(false);
       const activeOrg = await getActiveOrgId(getSupabaseClient());
@@ -285,7 +290,9 @@ export default function SettingsBackup({
       SUPPLIERS: setSuppliers,
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig
+      SHOP_CONFIG: setShopConfig,
+      CUSTOM_TAXONOMY: applyCustomTaxonomy,
+      CUSTOM_TECHNICIANS: applyCustomTechnicians
     });
     setIsSyncingCloud(false);
     if (res.success) {
@@ -314,7 +321,9 @@ export default function SettingsBackup({
       SUPPLIERS: suppliers,
       EXPENSES: expenses,
       WARRANTY_CLAIMS: warrantyClaims,
-      SHOP_CONFIG: shopConfig
+      SHOP_CONFIG: shopConfig,
+      CUSTOM_TAXONOMY: getCustomTaxonomy(),
+      CUSTOM_TECHNICIANS: getCustomTechnicians()
     });
     setIsSyncingCloud(false);
     if (res.success) {

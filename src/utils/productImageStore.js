@@ -12,6 +12,11 @@ const STORE = 'images';
 export const IMAGE_SIDES = ['front', 'back'];
 
 let dbPromise = null;
+let authorizedOrgCache = { orgId: null, expiresAt: 0, pending: null };
+let authorizedOrgAuthClient = null;
+let authorizedOrgAuthSubscription = null;
+let authCacheGeneration = 0;
+const signedImageUrls = new Map();
 const openDb = () => {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
@@ -35,15 +40,38 @@ const remotePath = (organizationId, productId, side) => `${organizationId}/${pro
 
 const getAuthorizedOrganization = async () => {
   if (!isSupabaseConfigured()) return null;
+  if (authorizedOrgCache.expiresAt > Date.now()) return authorizedOrgCache.orgId;
+  if (authorizedOrgCache.pending) return authorizedOrgCache.pending;
   const client = getSupabaseClient();
   if (!client) return null;
-  const [{ data: { user } }, { data: assurance }] = await Promise.all([
-    client.auth.getUser(),
-    client.auth.mfa.getAuthenticatorAssuranceLevel()
-  ]);
-  if (!user || assurance?.currentLevel !== 'aal2') return null;
-  const { data: profile } = await client.from('profiles').select('organization_id, is_active').eq('id', user.id).maybeSingle();
-  return profile?.is_active ? profile.organization_id : null;
+  if (authorizedOrgAuthClient !== client) {
+    authorizedOrgAuthSubscription?.unsubscribe();
+    authorizedOrgAuthClient = client;
+    const { data } = client.auth.onAuthStateChange(() => {
+      authCacheGeneration++;
+      authorizedOrgCache = { orgId: null, expiresAt: 0, pending: null };
+      signedImageUrls.clear();
+    });
+    authorizedOrgAuthSubscription = data.subscription;
+  }
+  const generation = authCacheGeneration;
+  const pending = (async () => {
+    let orgId = null;
+    try {
+      const [{ data: { user } }, { data: assurance }] = await Promise.all([
+        client.auth.getUser(),
+        client.auth.mfa.getAuthenticatorAssuranceLevel()
+      ]);
+      if (!user || assurance?.currentLevel !== 'aal2') return null;
+      const { data: profile } = await client.from('profiles').select('organization_id, is_active').eq('id', user.id).maybeSingle();
+      orgId = profile?.is_active ? profile.organization_id : null;
+      return orgId;
+    } finally {
+      if (generation === authCacheGeneration) authorizedOrgCache = { orgId, expiresAt: Date.now() + 15_000, pending: null };
+    }
+  })();
+  authorizedOrgCache.pending = pending;
+  return pending;
 };
 
 const uploadRemoteImage = async (organizationId, productId, side, dataUrl) => {
@@ -54,6 +82,7 @@ const uploadRemoteImage = async (organizationId, productId, side, dataUrl) => {
     { upsert: true, contentType: blob.type || 'image/jpeg', cacheControl: '3600' }
   );
   if (error) throw error;
+  signedImageUrls.delete(remotePath(organizationId, productId, side));
 };
 
 const tx = async (mode, fn) => {
@@ -94,8 +123,14 @@ export const getProductImage = async (productId, side) => {
     });
     const organizationId = await getAuthorizedOrganization();
     if (organizationId) {
-      const { data, error } = await getSupabaseClient().storage.from('product-images').createSignedUrl(remotePath(organizationId, productId, side), 3600);
-      if (!error && data?.signedUrl) return data.signedUrl;
+      const path = remotePath(organizationId, productId, side);
+      const cached = signedImageUrls.get(path);
+      if (cached?.expiresAt > Date.now()) return cached.url;
+      const { data, error } = await getSupabaseClient().storage.from('product-images').createSignedUrl(path, 3600);
+      if (!error && data?.signedUrl) {
+        signedImageUrls.set(path, { url: data.signedUrl, expiresAt: Date.now() + 55 * 60 * 1000 });
+        return data.signedUrl;
+      }
     }
     return localImage;
   } catch {
@@ -111,6 +146,7 @@ export const deleteProductImages = async (productId) => {
     const paths = IMAGE_SIDES.map(side => remotePath(organizationId, productId, side));
     const { error } = await getSupabaseClient().storage.from('product-images').remove(paths);
     if (error) throw error;
+    paths.forEach(path => signedImageUrls.delete(path));
   } catch (error) {
     console.warn('[ProductImages] Cloud photo removal deferred:', error.message);
   }
@@ -138,14 +174,17 @@ export const syncAllProductImagesToCloud = async (organizationId) => {
   const client = getSupabaseClient();
   if (!client || !organizationId) return { count: 0 };
   const images = await exportAllProductImages();
-  let count = 0;
-  for (const [key, dataUrl] of Object.entries(images)) {
+  const uploads = Object.entries(images).flatMap(([key, dataUrl]) => {
     const separator = key.lastIndexOf(':');
     const productId = key.slice(0, separator);
     const side = key.slice(separator + 1);
-    if (!productId || !IMAGE_SIDES.includes(side) || !dataUrl) continue;
-    await uploadRemoteImage(organizationId, productId, side, dataUrl);
-    count++;
+    return productId && IMAGE_SIDES.includes(side) && dataUrl ? [[productId, side, dataUrl]] : [];
+  });
+  let count = 0;
+  for (let i = 0; i < uploads.length; i += 4) {
+    const batch = uploads.slice(i, i + 4);
+    await Promise.all(batch.map(([productId, side, dataUrl]) => uploadRemoteImage(organizationId, productId, side, dataUrl)));
+    count += batch.length;
   }
   return { count };
 };
@@ -242,5 +281,6 @@ export const clearAllProductImages = async () => {
   } catch (error) {
     console.warn('[ProductImages] Cloud photo cleanup failed:', error.message);
   }
+  signedImageUrls.clear();
   return localCleared;
 };

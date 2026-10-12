@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Wrench, 
   Plus, 
@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-react';
 import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
+import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxonomy';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -69,35 +70,22 @@ export default function RepairLab({
   const [costInformedAfterChecking, setCostInformedAfterChecking] = useState(false);
   const [advancePaid, setAdvancePaid] = useState('0');
   // Persistent Custom Technicians Manager (Starts completely empty with no pre-assigned technicians)
-  const getStoredTechnicians = () => {
-    try {
-      const raw = localStorage.getItem('ALZINO_CUSTOM_TECHNICIANS');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(t => t && !t.includes('Anwar') && !t.includes('Srinivas') && !t.includes('Mohsin'));
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [];
-  };
-
-  const saveStoredTechnicians = (list) => {
-    try {
-      localStorage.setItem('ALZINO_CUSTOM_TECHNICIANS', JSON.stringify(list));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const [techniciansList, setTechniciansList] = useState(() => getStoredTechnicians());
+  const [techniciansList, setTechniciansList] = useState(() => getCustomTechnicians());
   const [technician, setTechnician] = useState(() => {
-    const list = getStoredTechnicians();
+    const list = getCustomTechnicians();
     return list.length > 0 ? list[0] : '';
   });
   const [customTechnician, setCustomTechnician] = useState('');
+
+  useEffect(() => {
+    const onTechniciansUpdated = event => {
+      const list = Array.isArray(event.detail?.technicians) ? event.detail.technicians : getCustomTechnicians();
+      setTechniciansList(list);
+      setTechnician(current => list.includes(current) ? current : (list[0] || ''));
+    };
+    window.addEventListener('alzino:technicians-updated', onTechniciansUpdated);
+    return () => window.removeEventListener('alzino:technicians-updated', onTechniciansUpdated);
+  }, []);
 
   const commonIssues = [
     'Touch Screen Broken',
@@ -162,7 +150,7 @@ export default function RepairLab({
       if (!techniciansList.includes(newTechName)) {
         const updatedList = [...techniciansList, newTechName];
         setTechniciansList(updatedList);
-        saveStoredTechnicians(updatedList);
+        saveCustomTechnicians(updatedList);
       }
     }
 

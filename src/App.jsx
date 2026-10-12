@@ -18,11 +18,14 @@ import AdminAuthModal from './components/AdminAuthModal';
 import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
 import { findProductFromScan } from './utils/productTerms';
+import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from './utils/customTaxonomy';
 import { Lock, ShieldCheck, Key } from 'lucide-react';
 import { 
   pullAllFromCloud, 
+  pullCollectionFromCloud,
   pushCollectionToCloud, 
   subscribeRealtimeSync,
+  resolveCloudConflict,
 } from './utils/cloudSyncService';
 
 import {
@@ -277,6 +280,12 @@ export default function App() {
     if (cloudHydrated) pushCollectionToCloud('WARRANTY_CLAIMS', warrantyClaims);
   }, [warrantyClaims, cloudHydrated]);
 
+  useEffect(() => {
+    if (!cloudHydrated) return;
+    pushCollectionToCloud('CUSTOM_TAXONOMY', getCustomTaxonomy());
+    pushCollectionToCloud('CUSTOM_TECHNICIANS', getCustomTechnicians());
+  }, [cloudHydrated]);
+
   // Initial Cloud Sync & Realtime multi-device subscription on mount
   useEffect(() => {
     if (portal === 'customer' || (portal === 'cashier' && isCashierPinOpen)) {
@@ -294,8 +303,31 @@ export default function App() {
       SUPPLIERS: setSuppliers,
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig
+      SHOP_CONFIG: setShopConfig,
+      CUSTOM_TAXONOMY: applyCustomTaxonomy,
+      CUSTOM_TECHNICIANS: applyCustomTechnicians
     };
+    const handleCloudConflict = (event) => {
+      const { key, localPayload, conflictKey } = event.detail || {};
+      if (!key || !setters[key]) return;
+      const keepLocal = window.confirm(
+        `This section changed on another device while you were editing. Press OK to keep this device's version and replace the newer cloud version. Choose Cancel to load the cloud version and discard this local edit.`
+      );
+      resolveCloudConflict(key);
+      if (keepLocal) {
+        pushCollectionToCloud(key, localPayload);
+      } else {
+        try { localStorage.removeItem(conflictKey); } catch {}
+        pullCollectionFromCloud(key, setters[key]).then(result => {
+          if (!result.success) console.warn('[CloudSync] Could not reload after conflict:', result.reason || result.error);
+        });
+      }
+    };
+    const handleTaxonomyUpdated = event => pushCollectionToCloud('CUSTOM_TAXONOMY', event.detail?.taxonomy || getCustomTaxonomy());
+    const handleTechniciansUpdated = event => pushCollectionToCloud('CUSTOM_TECHNICIANS', event.detail?.technicians || getCustomTechnicians());
+    window.addEventListener('alzino-cloud-sync-conflict', handleCloudConflict);
+    window.addEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
+    window.addEventListener('alzino:technicians-updated', handleTechniciansUpdated);
     pullAllFromCloud(setters).then(result => {
       if (cancelled) return;
       if (result.success) setCloudHydrated(true);
@@ -304,6 +336,9 @@ export default function App() {
     const unsubscribe = subscribeRealtimeSync(setters);
     return () => {
       cancelled = true;
+      window.removeEventListener('alzino-cloud-sync-conflict', handleCloudConflict);
+      window.removeEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
+      window.removeEventListener('alzino:technicians-updated', handleTechniciansUpdated);
       if (unsubscribe) unsubscribe();
     };
   }, [portal, isCashierPinOpen]);
@@ -358,14 +393,14 @@ export default function App() {
     setIsAdminAuthModalOpen(true);
   };
 
-  const handleAdminAuthSuccess = () => {
-    setIsAdminAuthModalOpen(false);
+  const handleAdminAuthSuccess = async () => {
+    setCloudHydrated(false);
     setRole('admin');
     setPortal('admin');
     const targetTab = initialRoute.portal === 'admin' ? (initialRoute.tab || 'dashboard') : 'dashboard';
     setActiveTab(targetTab);
     window.history.pushState(null, '', targetTab === 'dashboard' ? '/admin' : `/admin/${targetTab}`);
-    pullAllFromCloud({
+    const result = await pullAllFromCloud({
       INVENTORY: setInventory,
       INVOICES: setInvoices,
       CUSTOMERS: setCustomers,
@@ -374,11 +409,18 @@ export default function App() {
       SUPPLIERS: setSuppliers,
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig
-    }).then(result => {
-      if (result.success) setCloudHydrated(true);
-      if (!result.success) console.warn('[CloudSync] Initial authenticated pull failed:', result.reason || result.error);
+      SHOP_CONFIG: setShopConfig,
+      CUSTOM_TAXONOMY: applyCustomTaxonomy,
+      CUSTOM_TECHNICIANS: applyCustomTechnicians
     });
+    if (!result.success) {
+      console.warn('[CloudSync] Initial authenticated pull failed:', result.reason || result.error);
+      setIsAdminAuthModalOpen(false);
+      window.alert(`Admin is verified, but shop data could not load: ${result.reason || result.error || 'Connection failed'}. Cloud sync is paused on this device until data loads.`);
+      return;
+    }
+    setCloudHydrated(true);
+    setIsAdminAuthModalOpen(false);
   };
 
   const handleCashierPinSubmit = (event) => {
@@ -562,6 +604,8 @@ export default function App() {
             setCustomers={setCustomers}
             invoices={invoices}
             setInvoices={setInvoices}
+            warrantyClaims={warrantyClaims}
+            setWarrantyClaims={setWarrantyClaims}
             shopConfig={shopConfig}
             role={role}
             onPrintInvoice={handlePrintInvoice}
