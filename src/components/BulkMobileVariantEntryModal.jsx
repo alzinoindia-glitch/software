@@ -939,7 +939,7 @@ export default function BulkMobileVariantEntryModal({
                   {/* Model Name */}
                   <div style={{ gridColumn: 'span 2', position: 'relative' }}>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
-                      Model Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(type half name for instant suggestions)</span>
+                      Model Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
                     </label>
                     <input
                       type="text"

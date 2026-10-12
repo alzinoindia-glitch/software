@@ -2035,35 +2035,8 @@ export default function InventoryManager({
               <div style={{ gridColumn: 'span 2', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                    Product Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(type half name for instant suggestions)</span>
+                    Product Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
                   </label>
-                  {(formData.brand || formData.model || formData.ram || formData.storage || formData.color) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const brand = formData.brand || '';
-                        const model = formData.model || formData.name.replace(/\(.*?\)/g, '').trim();
-                        const specs = [formData.ram, formData.storage].filter(Boolean).join('/');
-                        const colorPart = formData.color ? ` - ${formData.color}` : '';
-                        const formatted = `${brand} ${model} ${specs ? `(${specs}${colorPart})` : colorPart}`.trim();
-                        setFormData(prev => ({ ...prev, name: formatted, model: model }));
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--accent-primary)',
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem'
-                      }}
-                    >
-                      <Sparkles size={11} />
-                      <span>Auto-Format Name with Specs & Colour</span>
-                    </button>
-                  )}
                 </div>
                 <input
                   type="text"
