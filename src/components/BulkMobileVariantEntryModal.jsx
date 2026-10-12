@@ -142,7 +142,9 @@ export default function BulkMobileVariantEntryModal({
           // Preserve already typed IMEI/barcode if user previously entered it
           const existing = prevUnits.find(u => u.unitKey === unitKey) || prevUnits[globalIndex - 1];
 
-          const defaultBarcode = `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(i).padStart(2, '0')}`;
+          const unitFormat = existing?.codeFormat || codeFormat;
+          const unitPrefix = unitFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+          const defaultBarcode = `${unitPrefix}-${brandCode}-${modelCode}-${colorSlug}-${String(i).padStart(2, '0')}`;
 
           newUnits.push({
             id: `UNIT-${Date.now()}-${globalIndex}`,
@@ -153,9 +155,10 @@ export default function BulkMobileVariantEntryModal({
             image: variant.image || null,
             unitNo: i,
             globalIndex,
+            codeFormat: unitFormat,
             imei1: existing?.imei1 || '',
             imei2: existing?.imei2 || '',
-            barcode: existing?.barcode || defaultBarcode
+            barcode: (existing && existing.barcode !== undefined) ? existing.barcode : defaultBarcode
           });
           globalIndex++;
         }
@@ -333,7 +336,7 @@ export default function BulkMobileVariantEntryModal({
     })));
   };
 
-  // Toggle Admin Choice: Barcode (Code-128) vs QR Code (2D)
+  // Toggle Admin Choice: Barcode (Code-128) vs QR Code (2D) for all units
   const handleToggleCodeFormat = (newFormat) => {
     setCodeFormat(newFormat);
     const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
@@ -343,9 +346,35 @@ export default function BulkMobileVariantEntryModal({
       const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
       return {
         ...unit,
-        barcode: `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
+        codeFormat: newFormat,
+        barcode: unit.barcode === '' ? '' : `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
       };
     }));
+  };
+
+  // Toggle Barcode vs QR Code uniquely for a specific physical unit
+  const handleToggleUnitCodeFormat = (idx, newFormat) => {
+    setUnits(prev => {
+      const copy = [...prev];
+      if (copy[idx]) {
+        const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+        const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+        const colorSlug = copy[idx].color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+        const prefix = newFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+        const newCode = `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(copy[idx].unitNo).padStart(2, '0')}`;
+        copy[idx] = {
+          ...copy[idx],
+          codeFormat: newFormat,
+          barcode: copy[idx].barcode ? newCode : ''
+        };
+      }
+      return copy;
+    });
+  };
+
+  // Delete / Clear barcode for a specific unit (will store empty in DB)
+  const handleDeleteUnitBarcode = (idx) => {
+    handleUnitChange(idx, 'barcode', '');
   };
 
   // Regenerate clean barcodes/QR codes for all physical units
@@ -446,8 +475,9 @@ export default function BulkMobileVariantEntryModal({
       });
 
       const variantName = `${brandName} ${modelName} (${effectiveRam}/${effectiveStorage} - ${variant.color})`;
-      const primaryBarcode = variantUnits[0]?.barcode || `ALZ-${Date.now().toString().slice(-6)}`;
-      const allBarcodes = variantUnits.map(u => u.barcode).filter(Boolean);
+      const primaryBarcode = variantUnits.find(u => u.barcode && u.barcode.trim())?.barcode?.trim() || '';
+      const allBarcodes = variantUnits.map(u => (u.barcode || '').trim()).filter(Boolean);
+      const variantCodeFormat = variantUnits.find(u => u.barcode)?.codeFormat || codeFormat;
       const prodId = `PROD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
       if (variant.image) {
@@ -484,14 +514,14 @@ export default function BulkMobileVariantEntryModal({
         locations: [{ rack: rackVal, bin: binVal, qty: variantQty }],
         barcode: primaryBarcode,
         barcodes: allBarcodes,
-        codeFormat: codeFormat,
+        codeFormat: variantCodeFormat,
         imeis: variantImeis,
         units: variantUnits.map(u => ({
           unitId: u.id,
           imei1: u.imei1.trim(),
           imei2: u.imei2.trim(),
-          barcode: u.barcode.trim(),
-          codeFormat: codeFormat,
+          barcode: (u.barcode || '').trim(),
+          codeFormat: u.codeFormat || 'barcode',
           color: variant.color,
           colorHex: variant.hex || getProductColorHex(variant.color),
           image: variant.image || null,
@@ -1598,7 +1628,7 @@ export default function BulkMobileVariantEntryModal({
                       onClick={handleRegenerateBarcodes}
                       className="btn-secondary"
                       style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                      title="Regenerate unique SKU/Barcodes for each unit"
+                      title="Regenerate unique Barcode or QR code for each unit"
                     >
                       <RefreshCw size={12} />
                       <span>Reset {codeFormat === 'qr' ? 'QR Codes' : 'Barcodes'}</span>
@@ -1736,43 +1766,132 @@ export default function BulkMobileVariantEntryModal({
                           />
                         </div>
 
-                        {/* Unique Unit Barcode / SKU */}
+                        {/* Unique Unit Barcode & QR Code Option */}
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
-                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                              Unit {codeFormat === 'qr' ? 'QR Code' : 'Barcode'}
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewUnit(unit)}
-                              style={{ 
-                                background: 'transparent', 
-                                border: 'none', 
-                                color: codeFormat === 'qr' ? '#4F46E5' : '#10B981', 
-                                cursor: 'pointer', 
-                                padding: 0, 
-                                fontSize: '0.66rem', 
-                                fontWeight: 800, 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: '2px' 
-                              }}
-                              title={`Preview & Print ${codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker`}
-                            >
-                              <Eye size={11} />
-                              <span>View</span>
-                            </button>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.18rem', gap: '0.2rem' }}>
+                            <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.06)', padding: '2px', borderRadius: '5px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'barcode')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: unit.codeFormat !== 'qr' ? '#10B981' : 'transparent',
+                                  color: unit.codeFormat !== 'qr' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set 1D Barcode (Code-128) for this unit"
+                              >
+                                <Barcode size={10} />
+                                <span>Barcode</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'qr')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: unit.codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                                  color: unit.codeFormat === 'qr' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set 2D QR Code for this unit"
+                              >
+                                <QrCode size={10} />
+                                <span>QR</span>
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {unit.barcode ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewUnit(unit)}
+                                    style={{ 
+                                      background: 'transparent', 
+                                      border: 'none', 
+                                      color: unit.codeFormat === 'qr' ? '#4F46E5' : '#10B981', 
+                                      cursor: 'pointer', 
+                                      padding: '0 2px', 
+                                      fontSize: '0.64rem', 
+                                      fontWeight: 800, 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: '1px' 
+                                    }}
+                                    title={`Preview & Print ${unit.codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker`}
+                                  >
+                                    <Eye size={11} />
+                                    <span>View</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteUnitBarcode(idx)}
+                                    style={{ 
+                                      background: 'transparent', 
+                                      border: 'none', 
+                                      color: '#EF4444', 
+                                      cursor: 'pointer', 
+                                      padding: '0 2px', 
+                                      display: 'flex', 
+                                      alignItems: 'center' 
+                                    }}
+                                    title="Delete barcode/QR code from this unit (stores empty in DB)"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+                                    const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+                                    const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+                                    const prefix = unit.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                                    handleUnitChange(idx, 'barcode', `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--accent-primary)',
+                                    cursor: 'pointer',
+                                    padding: '0 2px',
+                                    fontSize: '0.64rem',
+                                    fontWeight: 700
+                                  }}
+                                  title="Add fresh code to this unit"
+                                >
+                                  + Add Code
+                                </button>
+                              )}
+                            </div>
                           </div>
+
                           <input
                             type="text"
-                            value={unit.barcode}
+                            placeholder="No code (deleted)"
+                            value={unit.barcode || ''}
                             onChange={(e) => handleUnitChange(idx, 'barcode', e.target.value)}
                             className="input-field"
                             style={{ 
                               padding: '0.28rem 0.5rem', 
                               fontSize: '0.74rem', 
                               fontFamily: 'var(--font-mono)', 
-                              color: codeFormat === 'qr' ? '#4F46E5' : '#10B981',
+                              color: !unit.barcode ? 'var(--text-muted)' : (unit.codeFormat === 'qr' ? '#4F46E5' : '#10B981'),
                               fontWeight: 700
                             }}
                           />

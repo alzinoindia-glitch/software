@@ -535,7 +535,7 @@ export default function ExecutiveDashboard({
                         <span>{item.name}</span>
                         <ArrowUpRight size={13} />
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Brand: {item.brand} • SKU: {item.id}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Brand: {item.brand} • Item ID: {item.id}</div>
                     </td>
                     <td>
                       <span className="mono-tag">{item.category}</span>

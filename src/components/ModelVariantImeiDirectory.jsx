@@ -375,7 +375,7 @@ export default function ModelVariantImeiDirectory({
                               <th style={{ padding: '0.45rem 0.5rem' }}>Spec</th>
                               <th style={{ padding: '0.45rem 0.5rem' }}>IMEI 1 (SIM 1)</th>
                               <th style={{ padding: '0.45rem 0.5rem' }}>IMEI 2 (SIM 2)</th>
-                              <th style={{ padding: '0.45rem 0.5rem' }}>Barcode / SKU</th>
+                              <th style={{ padding: '0.45rem 0.5rem' }}>Barcode / QR Code</th>
                               <th style={{ padding: '0.45rem 0.5rem' }}>Shelf</th>
                               <th style={{ padding: '0.45rem 0.5rem' }}>Status</th>
                               <th style={{ padding: '0.45rem 0.5rem', textAlign: 'right' }}>Actions</th>
@@ -451,9 +451,25 @@ export default function ModelVariantImeiDirectory({
                                     )}
                                   </td>
 
-                                  {/* Barcode / SKU */}
-                                  <td style={{ padding: '0.45rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--accent-primary, #4F46E5)' }}>
-                                    {unit.barcode || '—'}
+                                  {/* Barcode / QR Code */}
+                                  <td style={{ padding: '0.45rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                                    {unit.barcode ? (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-primary, #4F46E5)' }}>
+                                        <span style={{
+                                          fontSize: '0.62rem',
+                                          padding: '1px 4px',
+                                          borderRadius: '3px',
+                                          background: (unit.codeFormat === 'qr' || unit.barcode.includes('QR-')) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                                          color: (unit.codeFormat === 'qr' || unit.barcode.includes('QR-')) ? '#059669' : '#4F46E5',
+                                          fontWeight: 800
+                                        }}>
+                                          {(unit.codeFormat === 'qr' || unit.barcode.includes('QR-')) ? 'QR' : '1D'}
+                                        </span>
+                                        {unit.barcode}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-muted)' }}>None</span>
+                                    )}
                                   </td>
 
                                   {/* Shelf Location */}

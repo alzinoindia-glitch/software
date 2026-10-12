@@ -24,12 +24,13 @@ import {
   Printer,
   Sparkles,
   Camera,
-  RefreshCw
+  RefreshCw,
+  QrCode
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
 import { ProductImagePicker, ProductImageViewer } from './ProductImages';
 import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
-import { renderBarcodeSvg } from '../utils/barcode';
+import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
 import { getProductColorHex } from '../utils/colorUtils';
@@ -134,6 +135,7 @@ export default function InventoryManager({
     lowStockThreshold: 2,
     rack: 'R-01',
     bin: 'B-01',
+    codeFormat: 'barcode',
     barcode: '',
     imeisText: '',
     imei1: '',
@@ -388,6 +390,7 @@ export default function InventoryManager({
       lowStockThreshold: 2,
       rack: 'R-01',
       bin: 'B-01',
+      codeFormat: 'barcode',
       barcode: `ALZ-${Date.now().toString().slice(-6)}`,
       imeisText: '',
       imei1: '',
@@ -408,9 +411,10 @@ export default function InventoryManager({
     setIsCustomBrand(isBrCustom);
     setIsCustomStorage(Boolean(item.storage && !COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(item.storage)));
     setIsCustomRam(Boolean(item.ram && !COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(item.ram)));
-    const isGenerated = Boolean(item.barcode && item.barcode.startsWith('ALZ-'));
+    const isGenerated = Boolean(item.barcode && (item.barcode.startsWith('ALZ-') || item.barcode.startsWith('ALZ-QR-')));
     setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
+    const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
     setFormData({
       category: item.category || 'New Mobiles',
       brand: item.brand || 'Universal',
@@ -430,6 +434,7 @@ export default function InventoryManager({
       lowStockThreshold: item.lowStockThreshold || 2,
       rack: item.rack || (item.locations?.[0]?.rack) || 'R-01',
       bin: item.bin || (item.locations?.[0]?.bin) || 'B-01',
+      codeFormat: itemCodeFormat,
       barcode: item.barcode || '',
       imeisText: (item.imeis || []).join('\n'),
       imei1: item.units?.[0]?.imei1 || item.imeis?.[0] || '',
@@ -602,7 +607,8 @@ export default function InventoryManager({
             rack: rackVal,
             bin: binVal,
             locations: updatedLocs,
-            barcode: formData.barcode,
+            barcode: (formData.barcode || '').trim(),
+            codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
             imeis: imeisArray,
             units: unitRecords,
             warranty: formData.warranty,
@@ -636,7 +642,8 @@ export default function InventoryManager({
         rack: rackVal,
         bin: binVal,
         locations: [{ rack: rackVal, bin: binVal, qty: calculatedStock }],
-        barcode: formData.barcode || `ALZ-${Date.now().toString().slice(-6)}`,
+        barcode: (formData.barcode || '').trim(),
+        codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
         imeis: imeisArray,
         units: unitRecords,
         warranty: formData.warranty,
@@ -2188,21 +2195,82 @@ export default function InventoryManager({
                 />
               </div>
 
-              {/* Smart Barcode & Label Suite */}
+              {/* Smart Barcode & QR Code Suite (Unique per product) */}
               <div style={{ gridColumn: 'span 2', background: 'var(--surface-secondary, rgba(255,255,255,0.03))', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  <label style={{ fontSize: '0.76rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)' }}>
-                    <Barcode size={16} color="var(--accent-primary)" />
-                    <span>Barcode & Product Sticker</span>
-                  </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <QrCode size={16} color="var(--accent-primary)" />
+                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Barcode & QR Code Option
+                    </span>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '1px 6px', borderRadius: '4px' }}>
+                      Unique per product
+                    </span>
+                  </div>
 
+                  {/* Format Switcher: 1D Barcode vs 2D QR Code */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.35)', padding: '2px 4px', borderRadius: '7px' }}>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 700, paddingLeft: '4px' }}>Code:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (nextCode && nextCode.includes('ALZ-QR-')) {
+                          nextCode = nextCode.replace('ALZ-QR-', 'ALZ-');
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'barcode', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: (formData.codeFormat || 'barcode') === 'barcode' ? 'var(--accent-primary, #6366F1)' : 'transparent',
+                        color: '#FFFFFF',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="1D Standard Barcode (Code-128) - Laser scanner readable"
+                    >
+                      1D Barcode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (nextCode && nextCode.startsWith('ALZ-') && !nextCode.includes('ALZ-QR-')) {
+                          nextCode = nextCode.replace('ALZ-', 'ALZ-QR-');
+                        } else if (!nextCode && barcodeMode === 'generate') {
+                          nextCode = `ALZ-QR-${Date.now().toString().slice(-6)}`;
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'qr', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        borderRadius: '5px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: formData.codeFormat === 'qr' ? '#10B981' : 'transparent',
+                        color: '#FFFFFF',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="2D QR Code - Phone camera & 2D scanner readable"
+                    >
+                      2D QR Code
+                    </button>
+                  </div>
+
+                  {/* Mode Selector */}
                   <div style={{ display: 'flex', gap: '0.3rem', background: 'rgba(0,0,0,0.35)', padding: '3px', borderRadius: '7px' }}>
                     <button
                       type="button"
                       onClick={() => setBarcodeMode('scan')}
                       style={{
-                        padding: '0.25rem 0.65rem',
-                        fontSize: '0.72rem',
+                        padding: '0.22rem 0.6rem',
+                        fontSize: '0.7rem',
                         fontWeight: 700,
                         borderRadius: '5px',
                         border: 'none',
@@ -2212,19 +2280,20 @@ export default function InventoryManager({
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      📦 Box has Barcode
+                      📦 Box has Code
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setBarcodeMode('generate');
-                        if (!formData.barcode || !formData.barcode.startsWith('ALZ-')) {
-                          setFormData(prev => ({ ...prev, barcode: `ALZ-${Date.now().toString().slice(-6)}` }));
+                        if (!formData.barcode || (!formData.barcode.startsWith('ALZ-') && !formData.barcode.startsWith('ALZ-QR-'))) {
+                          const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                          setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
                         }
                       }}
                       style={{
-                        padding: '0.25rem 0.65rem',
-                        fontSize: '0.72rem',
+                        padding: '0.22rem 0.6rem',
+                        fontSize: '0.7rem',
                         fontWeight: 700,
                         borderRadius: '5px',
                         border: 'none',
@@ -2244,7 +2313,7 @@ export default function InventoryManager({
                     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                       <input
                         type="text"
-                        placeholder="Scan or type barcode from box (e.g. 8903888001263)"
+                        placeholder="Scan or type Barcode / QR Code from box (or leave empty)"
                         value={formData.barcode}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -2260,7 +2329,7 @@ export default function InventoryManager({
                           }
                         }}
                         className="input-field"
-                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', flex: 1 }}
                       />
                       <button
                         type="button"
@@ -2270,8 +2339,8 @@ export default function InventoryManager({
                         }}
                         className="btn-primary"
                         style={{ 
-                          padding: '0.42rem 0.85rem', 
-                          fontSize: '0.76rem', 
+                          padding: '0.42rem 0.8rem', 
+                          fontSize: '0.74rem', 
                           whiteSpace: 'nowrap', 
                           display: 'flex', 
                           alignItems: 'center', 
@@ -2282,15 +2351,36 @@ export default function InventoryManager({
                           borderRadius: '6px',
                           fontWeight: 700
                         }}
-                        title="Scan box barcode using phone camera or webcam without barcode reader"
+                        title="Scan box barcode or QR code using phone camera"
                       >
                         <Camera size={14} color="#FFFFFF" />
                         <span style={{ color: '#FFFFFF' }}>Mobile/Cam Scan</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
+                        className="btn-secondary"
+                        style={{
+                          padding: '0.42rem 0.65rem',
+                          fontSize: '0.74rem',
+                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          color: '#EF4444',
+                          borderColor: 'rgba(239, 68, 68, 0.35)'
+                        }}
+                        title="Delete code (stores as empty in database)"
+                      >
+                        <Trash2 size={13} color="#EF4444" />
+                        <span>Delete Code</span>
+                      </button>
                     </div>
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        📱 Point phone camera at box barcode (no handheld scanner machine needed!)
+                      <span style={{ fontSize: '0.68rem', color: formData.barcode ? 'var(--text-muted)' : '#EF4444', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        {formData.barcode ? '📱 Point phone camera or type code from box' : '⚠️ No Barcode / QR Code assigned. Will be stored as empty in database.'}
                       </span>
                       {formData.barcode && onPrintBarcodeSheet && (
                         <button
@@ -2298,6 +2388,7 @@ export default function InventoryManager({
                           onClick={() => onPrintBarcodeSheet({
                             title: formData.name || 'Product',
                             barcode: formData.barcode,
+                            codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
                             price: formData.sellPrice || 0,
                             mrp: formData.mrp || formData.sellPrice || 0,
                             copies: 1,
@@ -2314,31 +2405,56 @@ export default function InventoryManager({
                   </div>
                 ) : (
                   <div>
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
                       <input
                         type="text"
+                        placeholder="No Code (Deleted / None)"
                         value={formData.barcode}
                         onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
                         className="input-field"
-                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--accent-primary)', fontSize: '0.9rem' }}
+                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: formData.barcode ? 'var(--accent-primary)' : 'var(--text-muted)', fontSize: '0.9rem', flex: 1, minWidth: '180px' }}
                       />
                       <button
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, barcode: `ALZ-${Date.now().toString().slice(-6)}` }))}
+                        onClick={() => {
+                          const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                          setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
+                        }}
                         className="btn-secondary"
                         style={{ padding: '0.42rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                        title="Generate a fresh unique barcode"
+                        title="Generate a fresh unique code"
                       >
                         <RefreshCw size={13} />
                         <span>New Code</span>
                       </button>
 
-                      {onPrintBarcodeSheet && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
+                        className="btn-secondary"
+                        style={{
+                          padding: '0.42rem 0.65rem',
+                          fontSize: '0.75rem',
+                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          color: '#EF4444',
+                          borderColor: 'rgba(239, 68, 68, 0.35)'
+                        }}
+                        title="Delete code (stores as empty in database)"
+                      >
+                        <Trash2 size={13} color="#EF4444" />
+                        <span>Delete Code</span>
+                      </button>
+
+                      {formData.barcode && onPrintBarcodeSheet && (
                         <button
                           type="button"
                           onClick={() => onPrintBarcodeSheet({
                             title: formData.name || 'New Item',
-                            barcode: formData.barcode || `ALZ-${Date.now().toString().slice(-6)}`,
+                            barcode: formData.barcode,
+                            codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
                             price: formData.sellPrice || 0,
                             mrp: formData.mrp || formData.sellPrice || 0,
                             copies: 1,
@@ -2354,13 +2470,28 @@ export default function InventoryManager({
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.7rem', color: '#10B981', fontWeight: 600 }}>
-                        ✓ Unique code attached to product. Print 50x25mm label to paste on packaging!
+                      <span style={{ fontSize: '0.7rem', color: formData.barcode ? '#10B981' : '#EF4444', fontWeight: 600 }}>
+                        {formData.barcode ? (
+                          `✓ ${formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode'} attached to product. Print 50x25mm label to paste!`
+                        ) : (
+                          '⚠️ Code deleted/empty. Stored as empty in database.'
+                        )}
                       </span>
                       <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                         Thermal 50x25mm / A4 Sheet
                       </span>
                     </div>
+
+                    {/* Live Code Visual Preview */}
+                    {formData.barcode && (
+                      <div style={{ marginTop: '0.5rem', background: '#FFFFFF', padding: '0.45rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #E2E8F0' }}>
+                        <div 
+                          dangerouslySetInnerHTML={{ 
+                            __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 52, true) 
+                          }} 
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2546,8 +2677,8 @@ export default function InventoryManager({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <Barcode size={18} color="var(--accent-primary)" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Product Barcode Label</h3>
+                <QrCode size={18} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Product Barcode / QR Label</h3>
               </div>
               <button onClick={() => setQuickBarcodeItem(null)} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
                 <X size={15} />
@@ -2572,10 +2703,16 @@ export default function InventoryManager({
                 {quickBarcodeItem.name}
               </div>
 
-              {/* Barcode SVG Rendering */}
+              {/* Barcode / QR SVG Rendering */}
               <div 
                 dangerouslySetInnerHTML={{ 
-                  __html: renderBarcodeSvg(quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`, 220, 52, true) 
+                  __html: renderCodeSvg(
+                    quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`, 
+                    quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode'), 
+                    220, 
+                    60, 
+                    true
+                  ) 
                 }}
                 style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
               />
@@ -2612,6 +2749,7 @@ export default function InventoryManager({
                     onPrintBarcodeSheet({
                       title: quickBarcodeItem.name,
                       barcode: quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`,
+                      codeFormat: quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode'),
                       price: quickBarcodeItem.sellPrice,
                       mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
                       copies: 1,
