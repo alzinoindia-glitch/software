@@ -532,7 +532,7 @@ export default function InventoryManager({
       imagesMeta = editingItem?.images || null;
     }
 
-    const imeisArray = formData.imeisText
+    const imeisArray = (formData.imeisText || '')
       .split('\n')
       .map(s => s.trim())
       .filter(Boolean);
@@ -2425,20 +2425,6 @@ export default function InventoryManager({
                   onChange={(e) => setFormData(prev => ({ ...prev, imei2: e.target.value }))}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
-                />
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
-                  Additional / Batch IMEIs (1 per line)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="358249... (paste multiple IMEIs if multiple units)"
-                  value={formData.imeisText}
-                  onChange={(e) => setFormData({ ...formData, imeisText: e.target.value })}
-                  className="input-field"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}
                 />
               </div>
 
