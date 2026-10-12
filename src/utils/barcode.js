@@ -77,18 +77,25 @@ export function renderBarcodeSvg(value = "", width = 240, height = 70, showText 
 export function renderQrSvg(value = "", size = 110) {
   if (!value) value = "ALZINO-000";
   const str = String(value).trim();
-  let svg = "";
   try {
-    QRCode.toString(str, { type: 'svg', margin: 1, width: size }, (err, string) => {
-      if (!err && string) svg = string;
-    });
+    // Build synchronously. toString's callback runs after this function returns,
+    // which left printed labels with an empty QR placeholder.
+    const qr = QRCode.create(str, { errorCorrectionLevel: 'M' });
+    const quietZone = 4;
+    const viewSize = qr.modules.size + quietZone * 2;
+    const modules = [];
+    for (let row = 0; row < qr.modules.size; row++) {
+      for (let col = 0; col < qr.modules.size; col++) {
+        if (qr.modules.get(row, col)) {
+          modules.push(`M${col + quietZone},${row + quietZone}h1v1h-1z`);
+        }
+      }
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewSize} ${viewSize}" width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="Product QR code"><rect width="${viewSize}" height="${viewSize}" fill="#fff"/><path d="${modules.join('')}" fill="#000"/></svg>`;
   } catch (err) {
     console.warn('QR SVG render error:', err);
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}"><rect width="100" height="100" fill="#fff"/><text x="50" y="50" text-anchor="middle" font-size="8">QR unavailable</text></svg>`;
   }
-  if (!svg) {
-    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><text x="50%" y="50%" text-anchor="middle" font-size="10">${str}</text></svg>`;
-  }
-  return svg;
 }
 
 /**

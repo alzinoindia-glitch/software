@@ -466,6 +466,11 @@ input, select, textarea {
     margin: 8mm;
   }
 
+  @page product-label {
+    size: 50mm 25mm;
+    margin: 0;
+  }
+
   body * {
     visibility: hidden !important;
   }
@@ -509,6 +514,54 @@ input, select, textarea {
     width: 100% !important;
     max-width: 100% !important;
     overflow: visible !important;
+  }
+
+  .print-container.print-barcode-single {
+    page: product-label;
+    width: 50mm !important;
+    height: 25mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .print-barcode-single .product-sticker-single {
+    width: 50mm !important;
+    height: 25mm !important;
+    min-height: 0 !important;
+    max-height: 25mm !important;
+    padding: 1mm !important;
+  }
+
+  .print-barcode-single .product-sticker-code {
+    flex: 0 0 11mm !important;
+    height: 11mm !important;
+    margin: 0.25mm 0 !important;
+  }
+
+  .print-barcode-single .product-sticker-code > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    gap: 1mm !important;
+  }
+
+  .print-barcode-single .product-sticker-code svg {
+    display: block !important;
+    max-width: 100% !important;
+    max-height: 11mm !important;
+    width: auto !important;
+    height: 11mm !important;
+    flex-shrink: 1 !important;
+  }
+
+  .print-barcode-single .product-sticker-shop,
+  .print-barcode-single .product-sticker-title,
+  .print-barcode-single .product-sticker-price {
+    color: #000 !important;
+    overflow: hidden !important;
   }
 
   .invoice-a4-sheet {

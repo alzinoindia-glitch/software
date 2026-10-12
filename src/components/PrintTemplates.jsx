@@ -35,6 +35,7 @@ export default function PrintTemplates({
   if (!printData) return null;
 
   const isInvoiceBill = Boolean(printData.invoiceNo || printData.items);
+  const isSingleBarcodeLabel = printMode === 'barcodes' && (printData.copies === 1 || printData.format === 'single');
 
   return (
     <div className="print-modal-container" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -154,7 +155,7 @@ export default function PrintTemplates({
       </div>
 
       {/* Actual Printable Document Container */}
-      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}${printMode === 'barcodes' ? ` print-barcode${isSingleBarcodeLabel ? ' print-barcode-single' : '-sheet'}` : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
         
         {/* ========================================================== */}
         {/* MODE 1A: 3-INCH (80mm) THERMAL POS RECEIPT                 */}
@@ -1111,9 +1112,9 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {(activeFormat === 'barcodes' || printMode === 'barcodes') && (
           printData.copies === 1 || printData.format === 'single' ? (
-            <div style={{ width: '50mm', minHeight: '28mm', padding: '2.5mm', boxSizing: 'border-box', textAlign: 'center', background: '#FFF' }}>
-              <div style={{ fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px' }}>{shopConfig.name} • BODHAN</div>
-              <div style={{ fontSize: '8.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '1px 0' }}>
+            <div className="product-sticker-single" style={{ width: '50mm', height: '25mm', padding: '1mm', boxSizing: 'border-box', textAlign: 'center', background: '#FFF', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}>
+              <div className="product-sticker-shop" style={{ fontSize: '7px', lineHeight: 1.05, fontWeight: 900, letterSpacing: '0.25px' }}>{shopConfig.name} • BODHAN</div>
+              <div className="product-sticker-title" style={{ fontSize: '7px', lineHeight: 1.05, fontWeight: 700, overflow: 'hidden', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                 {printData.title}
               </div>
               {(() => {
@@ -1125,15 +1126,15 @@ export default function PrintTemplates({
                   : printData.barcode;
 
                 return (
-                  <div 
-                    style={{ margin: '1.5mm 0' }}
+                  <div className="product-sticker-code"
+                    style={{ width: '100%', height: '11mm', margin: '0.5mm 0', overflow: 'hidden' }}
                     dangerouslySetInnerHTML={{ 
                       __html: renderCodeSvg(effectiveCode, effectiveFormat, 160, 48, true) 
                     }} 
                   />
                 );
               })()}
-              <div style={{ fontSize: '10.5px', fontWeight: 900 }}>
+              <div className="product-sticker-price" style={{ fontSize: '9px', lineHeight: 1, fontWeight: 900 }}>
                 ₹{Number(printData.price || 0).toLocaleString()} {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7.5px', color: '#666', marginLeft: '4px' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
               </div>
             </div>
