@@ -66,6 +66,7 @@ export default function RepairLab({
   const [selectedIssues, setSelectedIssues] = useState([]);
   const [customIssue, setCustomIssue] = useState('');
   const [estimatedCost, setEstimatedCost] = useState('');
+  const [costInformedAfterChecking, setCostInformedAfterChecking] = useState(false);
   const [advancePaid, setAdvancePaid] = useState('0');
   // Persistent Custom Technicians Manager (Starts completely empty with no pre-assigned technicians)
   const getStoredTechnicians = () => {
@@ -121,17 +122,17 @@ export default function RepairLab({
 
   const handleCreateJob = (e) => {
     e.preventDefault();
-    if (!customerName || !customerMobile || !deviceModel || !estimatedCost) {
-      alert("Please fill customer name, mobile, device model, and estimated cost.");
+    if (!customerName || !customerMobile || !deviceModel || (!costInformedAfterChecking && !estimatedCost)) {
+      alert("Please fill customer name, mobile, device model, and estimated cost (or select 'Informed after checking').");
       return;
     }
 
     const finalIssues = [...selectedIssues];
     if (customIssue.trim()) finalIssues.push(customIssue.trim());
 
-    const est = parseFloat(estimatedCost);
+    const est = costInformedAfterChecking ? 0 : (parseFloat(estimatedCost) || 0);
     const adv = parseFloat(advancePaid) || 0;
-    const balance = Math.max(0, est - adv);
+    const balance = costInformedAfterChecking ? 0 : Math.max(0, est - adv);
 
     const jobId = `ALZ-REP-${String(repairJobs.length + 1024)}`;
     const today = new Date().toISOString().split('T')[0];
@@ -145,8 +146,11 @@ export default function RepairLab({
       color: color.trim(),
       screenLock: screenLock.trim(),
       issues: finalIssues.length > 0 ? finalIssues : ['General Servicing'],
-      technicianNotes: 'Device received at bench. Initial check completed.',
+      technicianNotes: costInformedAfterChecking 
+        ? 'Device received at bench. Estimated cost to be informed after checking.' 
+        : 'Device received at bench. Initial check completed.',
       estimatedCost: est,
+      costInformedAfterChecking: Boolean(costInformedAfterChecking),
       advancePaid: adv,
       balanceDue: balance,
       status: 'Received',
@@ -200,6 +204,7 @@ export default function RepairLab({
     setDeviceModel('');
     setColor('');
     setEstimatedCost('');
+    setCostInformedAfterChecking(false);
     setAdvancePaid('0');
     setSelectedIssues([]);
     setCustomIssue('');
@@ -210,6 +215,29 @@ export default function RepairLab({
 
     // Trigger Print of Repair Token
     onPrintRepairSlip(newJob);
+  };
+
+  const handleUpdateCostAfterChecking = (job) => {
+    const entered = prompt(`Enter confirmed estimated repair cost for ${job.deviceModel} (Customer: ${job.customerName}):`, job.estimatedCost > 0 ? String(job.estimatedCost) : '');
+    if (entered !== null && entered.trim() !== '') {
+      const newCost = parseFloat(entered);
+      if (!isNaN(newCost) && newCost >= 0) {
+        const newBalance = Math.max(0, newCost - (job.advancePaid || 0));
+        setRepairJobs(prev => prev.map(j => {
+          if (j.jobId === job.jobId) {
+            return {
+              ...j,
+              estimatedCost: newCost,
+              costInformedAfterChecking: false,
+              balanceDue: newBalance,
+              technicianNotes: `${j.technicianNotes || ''} [Cost informed after checking: ₹${newCost}]`.trim()
+            };
+          }
+          return j;
+        }));
+        showToast(`✓ Estimated cost ₹${newCost} updated for ${job.jobId}!`);
+      }
+    }
   };
 
   // =========================================================================
@@ -746,19 +774,42 @@ export default function RepairLab({
 
               {/* Financial & Actions */}
               <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Est: ₹{job.estimatedCost}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--status-green)', marginLeft: '0.5rem' }}>Adv: ₹{job.advancePaid}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.35rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {job.costInformedAfterChecking ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCostAfterChecking(job)}
+                        style={{ 
+                          fontSize: '0.72rem', 
+                          fontWeight: 700,
+                          color: '#D97706',
+                          background: 'rgba(217, 119, 6, 0.1)',
+                          border: '1px dashed #D97706',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Click to enter agreed cost once device has been checked by technician"
+                      >
+                        🔍 Informed after checking (Set ₹)
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Est: ₹{job.estimatedCost}</span>
+                    )}
+                    <span style={{ fontSize: '0.75rem', color: 'var(--status-green)' }}>Adv: ₹{job.advancePaid}</span>
                   </div>
                   <div>
                     <span style={{ 
                       fontFamily: 'var(--font-mono)', 
                       fontWeight: 700, 
                       fontSize: '0.9rem',
-                      color: job.balanceDue > 0 ? 'var(--status-red)' : 'var(--status-green)'
+                      color: job.costInformedAfterChecking ? '#D97706' : (job.balanceDue > 0 ? 'var(--status-red)' : 'var(--status-green)')
                     }}>
-                      Due: ₹{job.balanceDue}
+                      {job.costInformedAfterChecking ? 'Due: After check' : `Due: ₹${job.balanceDue}`}
                     </span>
                   </div>
                 </div>
@@ -1475,16 +1526,50 @@ export default function RepairLab({
             {/* Financial Estimates */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '0.85rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Estimated Cost (₹) *</label>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+                  Estimated Cost (₹) *
+                </label>
                 <input
                   type="number"
-                  placeholder="e.g. 1800"
-                  value={estimatedCost}
-                  onChange={(e) => setEstimatedCost(e.target.value)}
-                  required
+                  placeholder={costInformedAfterChecking ? "Informed after checking" : "e.g. 1800"}
+                  value={costInformedAfterChecking ? '' : estimatedCost}
+                  onChange={(e) => {
+                    setEstimatedCost(e.target.value);
+                    if (costInformedAfterChecking) setCostInformedAfterChecking(false);
+                  }}
+                  disabled={costInformedAfterChecking}
+                  required={!costInformedAfterChecking}
                   className="input-field"
-                  style={{ fontWeight: 700 }}
+                  style={{ 
+                    fontWeight: 700, 
+                    opacity: costInformedAfterChecking ? 0.6 : 1,
+                    background: costInformedAfterChecking ? 'rgba(0,0,0,0.06)' : undefined 
+                  }}
                 />
+
+                {/* Option to select "Informed after checking" */}
+                <label style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.35rem', 
+                  marginTop: '0.35rem', 
+                  cursor: 'pointer', 
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  color: costInformedAfterChecking ? '#D97706' : 'var(--text-secondary)'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={costInformedAfterChecking}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setCostInformedAfterChecking(checked);
+                      if (checked) setEstimatedCost('');
+                    }}
+                    style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                  />
+                  <span>🔍 Informed after checking</span>
+                </label>
               </div>
 
               <div>

@@ -1079,15 +1079,15 @@ export default function PrintTemplates({
             <div style={{ borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm', fontSize: '11px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>ESTIMATED COST:</span>
-                <span>₹{printData.estimatedCost}</span>
+                <span>{printData.costInformedAfterChecking ? 'Informed after checking' : `₹${printData.estimatedCost || 0}`}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>ADVANCE RECEIVED:</span>
-                <span>₹{printData.advancePaid}</span>
+                <span>₹{printData.advancePaid || 0}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
                 <span>BALANCE DUE:</span>
-                <span>₹{printData.balanceDue}</span>
+                <span>{printData.costInformedAfterChecking ? 'Informed after checking' : `₹${printData.balanceDue || 0}`}</span>
               </div>
             </div>
 

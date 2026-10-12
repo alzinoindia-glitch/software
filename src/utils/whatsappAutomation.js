@@ -96,16 +96,23 @@ export function generateWhatsAppRepairText(job, shopConfig = {}, statusType = 'r
   const shopPhone = shopConfig.phone || '98490 82741';
 
   if (statusType === 'completed') {
+    const totalText = job.billedAt ? `₹${Number(job.billedAt).toLocaleString('en-IN')}` : (job.costInformedAfterChecking ? 'Informed after checking' : `₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}`);
+    const balanceText = job.balanceDue !== undefined ? `₹${Number(job.balanceDue || 0).toLocaleString('en-IN')}` : (job.costInformedAfterChecking ? 'Informed after checking' : `₹${Number((job.estimatedCost || 0) - (job.advancePaid || 0)).toLocaleString('en-IN')}`);
+
     return `✅ *DEVICE READY FOR PICKUP • ${shopName.toUpperCase()} REPAIR LAB*\n\n` +
       `Hello ${job.customerName},\n` +
       `Your device *${job.deviceModel}* is fully repaired and tested!\n\n` +
       `🔧 *Job Token:* ${job.jobId}\n` +
-      `💵 *Total Amount:* ₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}\n` +
+      `💵 *Total Amount:* ${totalText}\n` +
       `💳 *Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n` +
-      `👉 *Balance to Pay:* ₹${Number((job.estimatedCost || 0) - (job.advancePaid || 0)).toLocaleString('en-IN')}\n\n` +
+      `👉 *Balance to Pay:* ${balanceText}\n\n` +
       `📍 Please collect your device from ${shopConfig.address || 'Station Road, Bodhan'}.\n` +
       `📞 Questions? Call us at ${shopPhone}.`;
   }
+
+  const estCostText = job.costInformedAfterChecking 
+    ? 'Informed after checking' 
+    : `₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}`;
 
   return `🔬 *DEVICE RECEIVED FOR SERVICE • ${shopName.toUpperCase()} REPAIR LAB*\n\n` +
     `Hello ${job.customerName},\n` +
@@ -113,7 +120,7 @@ export function generateWhatsAppRepairText(job, shopConfig = {}, statusType = 'r
     `📋 *Job Token:* ${job.jobId}\n` +
     `📅 *Date:* ${job.date}\n` +
     `⚠️ *Reported Issues:* ${(job.issues || []).join(', ')}\n` +
-    `💰 *Estimated Cost:* ₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}\n` +
+    `💰 *Estimated Cost:* ${estCostText}\n` +
     `💳 *Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n\n` +
     `We use 100% genuine spares. We will notify you via WhatsApp as soon as your device is ready!\n` +
     `📞 Support: ${shopPhone}`;
