@@ -207,6 +207,7 @@ export default function CustomerStorefront({
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
+  const [isMobileCategoriesOpen, setIsMobileCategoriesOpen] = useState(false);
   const [publicCatalog, setPublicCatalog] = useState([]);
 
   useEffect(() => {
@@ -2335,7 +2336,7 @@ export default function CustomerStorefront({
         <button type="button" onClick={() => { setSelectedCategory('all'); setSearchTerm(''); document.querySelector('.storefront-catalog-section')?.scrollIntoView({ behavior: 'smooth' }); }} aria-label="Home and all products">
           <Home size={19} /><span>Home</span>
         </button>
-        <button type="button" onClick={() => document.getElementById('storefront-mobile-category')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} aria-label="Choose product category">
+        <button type="button" onClick={() => { setIsMobileMoreOpen(false); setIsMobileCategoriesOpen(true); }} aria-label="Choose product category" aria-expanded={isMobileCategoriesOpen}>
           <LayoutGrid size={19} /><span>Categories</span>
         </button>
         <button type="button" onClick={() => setIsStorefrontScannerOpen(true)} aria-label="Scan QR code">
@@ -2348,6 +2349,45 @@ export default function CustomerStorefront({
           <MoreHorizontal size={19} /><span>More</span>
         </button>
       </nav>
+      {isMobileCategoriesOpen && <div
+        role="presentation"
+        onClick={() => setIsMobileCategoriesOpen(false)}
+        style={{ position: 'fixed', inset: '0 0 62px', zIndex: 1201, display: 'flex', alignItems: 'flex-end', background: 'rgba(15, 23, 42, 0.38)' }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mobile-categories-title"
+          onClick={event => event.stopPropagation()}
+          style={{ width: '100%', maxHeight: 'min(70vh, 560px)', overflowY: 'auto', padding: '1rem 0.9rem max(1rem, env(safe-area-inset-bottom))', boxSizing: 'border-box', background: '#FFFFFF', borderRadius: '18px 18px 0 0', boxShadow: '0 -8px 30px rgba(15, 23, 42, 0.18)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: '0.85rem' }}>
+            <h2 id="mobile-categories-title" style={{ margin: 0, color: '#111827', fontSize: '1.05rem' }}>Choose a category</h2>
+            <button type="button" onClick={() => setIsMobileCategoriesOpen(false)} aria-label="Close categories" style={{ border: 0, borderRadius: 999, width: 36, height: 36, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151' }}><X size={19} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.55rem' }}>
+            {categoriesList.map(category => {
+              const Icon = category.icon;
+              const isActive = selectedCategory === category.id;
+              return <button
+                key={category.id}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setSelectedCategory(category.id);
+                  setIsMobileCategoriesOpen(false);
+                  window.setTimeout(() => document.querySelector('.storefront-catalog-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                }}
+                style={{ minHeight: 58, padding: '0.65rem 0.7rem', display: 'flex', alignItems: 'center', gap: '0.55rem', textAlign: 'left', border: `1px solid ${isActive ? '#0C5B43' : '#E5E7EB'}`, borderRadius: 12, background: isActive ? '#E8F3EE' : '#FFFFFF', color: isActive ? '#0C5B43' : '#263238', fontWeight: 750, fontSize: '0.78rem', lineHeight: 1.2, cursor: 'pointer' }}
+              >
+                <Icon size={19} aria-hidden="true" style={{ flex: '0 0 auto', color: '#0C5B43' }} />
+                <span style={{ flex: 1 }}>{category.label}</span>
+                {categoryCounts[category.id] !== undefined && <span style={{ flex: '0 0 auto', borderRadius: 999, padding: '0.12rem 0.38rem', background: isActive ? '#D0E8DC' : '#F3F4F6', color: '#52606D', fontSize: '0.67rem' }}>{categoryCounts[category.id]}</span>}
+              </button>;
+            })}
+          </div>
+        </section>
+      </div>}
       {isMobileMoreOpen && <div className="storefront-mobile-more-menu" role="menu">
         <a role="menuitem" href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
         <a role="menuitem" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer"><Star size={17} /> Rate us</a>
