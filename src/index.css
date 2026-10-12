@@ -108,6 +108,13 @@ header {
   box-sizing: border-box !important;
 }
 
+.header-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.25rem 1.25rem;
+}
+
 .header-content-inner {
   width: 100% !important;
   max-width: 100% !important;
@@ -664,6 +671,10 @@ input, select, textarea {
 @media (max-width: 768px) {
   .header-content-inner {
     padding: 0.4rem 0.65rem !important;
+  }
+
+  .header-menu-row {
+    padding: 0.25rem 0.65rem !important;
   }
 
   .app-module-container {

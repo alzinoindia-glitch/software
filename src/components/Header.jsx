@@ -230,40 +230,33 @@ export default function Header({
               <Search size={16} color="#A9BC5C" />
             </button>
 
-            {/* 3 Lines Hamburger Main Menu Button (On the Right!) */}
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="btn-secondary main-menu-btn"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                padding: '0.42rem 0.75rem',
-                border: menuOpen ? '1px solid #A9BC5C' : '1px solid rgba(210, 222, 216, 0.22)',
-                background: menuOpen ? '#A9BC5C' : 'rgba(241, 239, 229, 0.08)',
-                color: menuOpen ? '#0F251E' : '#F1EFE5',
-                cursor: 'pointer',
-                borderRadius: 'var(--radius-sm)',
-                transition: 'var(--transition-smooth)'
-              }}
-              title="Open Main Menu (Press M)"
-            >
-              <Menu size={18} color={menuOpen ? '#0F251E' : '#A9BC5C'} />
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
-                Menu
-              </span>
-              <kbd className="hide-on-mobile" style={{
-                background: menuOpen ? 'rgba(15, 37, 30, 0.2)' : 'rgba(241, 239, 229, 0.14)',
-                padding: '0.05rem 0.35rem',
-                borderRadius: '3px',
-                fontSize: '0.65rem',
-                fontFamily: 'var(--font-mono)',
-                color: menuOpen ? '#0F251E' : 'rgba(241, 239, 229, 0.8)'
-              }}>M</kbd>
-            </button>
           </div>
         </div>
       </header>
+
+      <div className="header-menu-row no-print">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="btn-secondary main-menu-btn"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            padding: '0.38rem 0.7rem',
+            border: menuOpen ? '1px solid #A9BC5C' : '1px solid #CBD5CF',
+            background: menuOpen ? '#A9BC5C' : '#FFFFFF',
+            color: '#0F251E',
+            cursor: 'pointer',
+            borderRadius: 'var(--radius-sm)',
+            transition: 'var(--transition-smooth)'
+          }}
+          title="Open Main Menu (Press M)"
+        >
+          <Menu size={18} color="#0F251E" />
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>Menu</span>
+          <kbd style={{ background: '#EEF2E8', padding: '0.05rem 0.35rem', borderRadius: '3px', fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: '#0F251E' }}>M</kbd>
+        </button>
+      </div>
 
       {/* Main Menu Slide-Over Drawer (3 Lines Menu) */}
       {menuOpen && (
