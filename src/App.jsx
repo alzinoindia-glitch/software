@@ -385,6 +385,9 @@ export default function App() {
       } else if (e.key === 'F2') {
         e.preventDefault();
         setActiveTab('pos');
+      } else if (e.key === 'F3') {
+        e.preventDefault();
+        setActiveTab('inventory');
       } else if (e.key === 'F4') {
         if (role === 'admin') {
           e.preventDefault();
@@ -681,7 +684,7 @@ export default function App() {
           <span>• Station Road, Bodhan, Telangana</span>
         </div>
         <div>
-          <span>Keyboard: <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F2: POS</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F4: Used Phone</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>⌘K: Search</kbd></span>
+          <span>Keyboard: <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F2: POS</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F3: Stock</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F4: Used Phone</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>⌘K: Search</kbd></span>
         </div>
       </footer>
 

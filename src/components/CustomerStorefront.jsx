@@ -50,7 +50,9 @@ import {
   Cable,
   RefreshCw,
   Camera,
-  QrCode
+  QrCode,
+  Home,
+  MoreHorizontal
 } from 'lucide-react';
 import ProductScanDetailsModal from './ProductScanDetailsModal';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
@@ -203,6 +205,7 @@ export default function CustomerStorefront({
   const [repairSearch, setRepairSearch] = useState('');
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
 
   // Quick Commerce Cart State (Blinkit / Zepto / Instamart style)
   const [cart, setCart] = useState({}); // { [productId]: quantity }
@@ -1032,7 +1035,7 @@ export default function CustomerStorefront({
       backgroundColor: '#F4F6F8',
       color: '#1A1C1E',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-      paddingBottom: cartCount > 0 ? '5rem' : '0'
+      paddingBottom: '5.25rem'
     }}>
 
       {/* ========================================================================= */}
@@ -1064,23 +1067,11 @@ export default function CustomerStorefront({
               style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
             >
               <AlzinoLogo height={28} textColor="#0C5B43" swooshColor="#EAB308" />
-              <span style={{
-                marginLeft: '0.2rem',
-                backgroundColor: '#E8F5E9',
-                color: '#1B5E20',
-                fontSize: '0.62rem',
-                fontWeight: 800,
-                padding: '0.1rem 0.35rem',
-                borderRadius: '3px',
-                textTransform: 'uppercase'
-              }}>
-                express
-              </span>
             </div>
           </div>
 
           {/* Quick-Commerce Omnibox Search Bar */}
-          <div style={{ flex: 1, maxWidth: '620px', position: 'relative' }}>
+          <div className="storefront-search-bar" style={{ flex: 1, maxWidth: '620px', position: 'relative' }}>
             <Search size={18} color="#9CA3AF" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
             <input 
               type="text"
@@ -1146,7 +1137,7 @@ export default function CustomerStorefront({
           </div>
 
           {/* Right: Quick Action Controls + Cart Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
+          <div className="storefront-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
             {/* Locate Us (Google Maps) */}
             <a 
               href={shopConfig.mapsUrl || "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7"}
@@ -1281,7 +1272,14 @@ export default function CustomerStorefront({
               display: block !important;
             }
           }
+          .storefront-mobile-category-select, .storefront-mobile-bottom-nav, .storefront-mobile-more-menu { display: none; }
           @media (max-width: 768px) {
+            .storefront-search-bar, .storefront-header-actions { display: none !important; }
+            .storefront-mobile-category-select { display: block !important; width: 100%; margin-bottom: 0.75rem; padding: 0.7rem 0.8rem; border: 1px solid #D1D5DB; border-radius: 10px; background: #FFFFFF; color: #1F2937; font-size: 0.9rem; font-weight: 700; }
+            .storefront-category-pills { display: none !important; }
+            .storefront-mobile-bottom-nav { display: flex !important; }
+            .storefront-mobile-more-menu { display: block; }
+            .storefront-cart-cta { bottom: 70px !important; }
             .storefront-catalog-section {
               padding: 0 0.5rem !important;
               margin: 1.25rem auto 2.5rem !important;
@@ -1526,8 +1524,12 @@ export default function CustomerStorefront({
       {/* 3. PRODUCT CATALOG GRID WITH QUICK-COMMERCE CATEGORY PILLS */}
       {/* ========================================================================= */}
       <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
+        {/* Mobile category dropdown */}
+        <select className="storefront-mobile-category-select" aria-label="Filter products by category" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} id="storefront-mobile-category">
+          {categoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}{categoryCounts[cat.id] !== undefined ? ' (' + categoryCounts[cat.id] + ')' : ''}</option>)}
+        </select>
         {/* Category Filter Pills (Placed Above Product Listing) */}
-        <div style={{
+        <div className="storefront-category-pills" style={{
           marginBottom: '1.25rem',
           overflowX: 'auto',
           whiteSpace: 'nowrap',
@@ -2534,7 +2536,7 @@ export default function CustomerStorefront({
       {/* 7. FLOATING QUICK-COMMERCE BOTTOM CART BAR (BLINKIT / ZEPTO STYLE) */}
       {/* ========================================================================= */}
       {cartCount > 0 && (
-        <div style={{
+        <div className="storefront-cart-cta" style={{
           position: 'fixed',
           bottom: '1rem',
           left: '1rem',
@@ -2622,6 +2624,30 @@ export default function CustomerStorefront({
           description="Point camera at the QR code sticker on the phone box to inspect full specifications, available colours & terms"
         />
       )}
+
+      <style>{'.storefront-mobile-bottom-nav{position:fixed;inset:auto 0 0;min-height:62px;z-index:1200;align-items:stretch;justify-content:space-around;gap:0;padding:.25rem .15rem max(.25rem,env(safe-area-inset-bottom));background:#fff;border-top:1px solid #E5E7EB;box-shadow:0 -4px 18px rgba(15,23,42,.12)}.storefront-mobile-bottom-nav button{position:relative;flex:1;min-width:0;border:0;background:transparent;color:#52606D;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18rem;font-size:.62rem;font-weight:700}.storefront-mobile-bottom-nav button:active{color:#0C5B43}.storefront-mobile-more-menu{position:fixed;z-index:1201;bottom:68px;right:.5rem;width:min(220px,calc(100vw - 1rem));padding:.4rem;background:#fff;border:1px solid #E5E7EB;border-radius:12px;box-shadow:0 8px 28px rgba(15,23,42,.18)}.storefront-mobile-more-menu a{display:flex;align-items:center;gap:.6rem;padding:.7rem;color:#1F2937;text-decoration:none;font-size:.86rem;font-weight:700}'} </style>
+      <nav className="storefront-mobile-bottom-nav" aria-label="Mobile storefront navigation">
+        <button type="button" onClick={() => { setSelectedCategory('all'); setSearchTerm(''); document.querySelector('.storefront-catalog-section')?.scrollIntoView({ behavior: 'smooth' }); }} aria-label="Home and all products">
+          <Home size={19} /><span>Home</span>
+        </button>
+        <button type="button" onClick={() => document.getElementById('storefront-mobile-category')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} aria-label="Choose product category">
+          <LayoutGrid size={19} /><span>Categories</span>
+        </button>
+        <button type="button" onClick={() => setIsStorefrontScannerOpen(true)} aria-label="Scan QR code">
+          <Camera size={19} /><span>Scan</span>
+        </button>
+        <button type="button" onClick={() => setIsCartOpen(true)} aria-label="Open cart">
+          <ShoppingCart size={19} /><span>Cart</span>
+        </button>
+        <button type="button" onClick={() => setIsMobileMoreOpen((open) => !open)} aria-label="More store options" aria-expanded={isMobileMoreOpen}>
+          <MoreHorizontal size={19} /><span>More</span>
+        </button>
+      </nav>
+      {isMobileMoreOpen && <div className="storefront-mobile-more-menu" role="menu">
+        <a role="menuitem" href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
+        <a role="menuitem" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer"><Star size={17} /> Rate us</a>
+        <a role="menuitem" href={'tel:' + (shopConfig.phone || '9121212292').replace(/[^0-9]/g, '')}><Phone size={17} /> Call desk</a>
+      </div>}
 
       {/* ========================================================================= */}
       {/* 8. REFINED CLEAN FOOTER WITH DISCREET STAFF ACCESS */}

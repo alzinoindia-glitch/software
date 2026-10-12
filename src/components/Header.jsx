@@ -45,6 +45,34 @@ export default function Header({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Lock the page behind the drawer while keeping its own menu list scrollable.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const html = document.documentElement;
+    const previous = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+      htmlOverflow: html.style.overflow,
+    };
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = '-' + scrollY + 'px';
+    body.style.width = '100%';
+    html.style.overflow = 'hidden';
+    return () => {
+      body.style.overflow = previous.bodyOverflow;
+      body.style.position = previous.bodyPosition;
+      body.style.top = previous.bodyTop;
+      body.style.width = previous.bodyWidth;
+      html.style.overflow = previous.htmlOverflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [menuOpen]);
+
   // Close menu on ESC key or toggle on M key
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -62,7 +90,7 @@ export default function Header({
   const allNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hotkey: 'F1' },
     { id: 'pos', label: 'POS Billing', icon: ShoppingCart, hotkey: 'F2' },
-    { id: 'inventory', label: 'Stock & IMEIs', icon: Package },
+    { id: 'inventory', label: 'Stock & IMEIs', icon: Package, hotkey: 'F3' },
     { id: 'used-phones', label: 'Used or Refurbished Mobiles', icon: Smartphone, hotkey: 'F4' },
     { id: 'repairs', label: 'Repairs', icon: Wrench, hotkey: 'F5' },
     { id: 'invoices', label: 'Invoices', icon: FileText },
@@ -295,7 +323,7 @@ export default function Header({
         <div 
           className="drawer-overlay no-print" 
           onClick={() => setMenuOpen(false)}
-          style={{ zIndex: 1100 }}
+          style={{ zIndex: 1100, overflow: 'hidden', overscrollBehavior: 'contain' }}
         >
           <div 
             className="main-menu-drawer animate-fade-in"
