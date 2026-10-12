@@ -233,7 +233,7 @@ export function exportYearlyArchiveToSsd({ invoices = [], customers = [], invent
       archiveVersion: '2.0',
       storageType: 'ALZINO_LOCAL_SSD_DATABASE',
       shop: shopConfig.name || 'ALZINO Mobile & Electronics',
-      location: shopConfig.address || 'Station Road, Bodhan, Telangana',
+      location: shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185',
       yearLabel,
       exportedAt: new Date().toISOString(),
       totalInvoices: invoices.length,

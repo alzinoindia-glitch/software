@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import ExecutiveDashboard from './components/ExecutiveDashboard';
 import PosBilling from './components/PosBilling';
@@ -56,7 +56,7 @@ export function parseRoute() {
   if (host === 'alzino.shop' || host.endsWith('.alzino.shop')) {
     if (path.startsWith('/admin')) {
       const sub = path.replace(/^\/admin\/?/, '').trim();
-      const tab = (sub === 'customers' || sub === 'khata') ? 'customers' : (sub || 'dashboard');
+      const tab = sub || 'dashboard';
       return { portal: 'admin', role: 'admin', tab };
     }
     if (path.startsWith('/cashier')) {
@@ -69,7 +69,7 @@ export function parseRoute() {
   // 2. Direct /admin or /admin/customers path
   if (path.startsWith('/admin')) {
     const sub = path.replace(/^\/admin\/?/, '').trim();
-    const tab = (sub === 'customers' || sub === 'khata') ? 'customers' : (sub || 'dashboard');
+    const tab = sub || 'dashboard';
     return { portal: 'admin', role: 'admin', tab };
   }
 
@@ -102,6 +102,7 @@ export default function App() {
   const [shopConfig, setShopConfig] = useState(() => {
     const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
     const updated = { ...cfg };
+    updated.address = 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185';
     // Update store contact & WhatsApp enquiry number to client's 9121212292
     if (!updated.whatsappNumber || updated.whatsappNumber.includes('98490') || updated.phone?.includes('98490')) {
       updated.phone = '+91 91212 12292';
@@ -109,11 +110,14 @@ export default function App() {
       updated.whatsappUrl = 'https://wa.me/919121212292';
     }
     // Update Google Maps location link to official short link
-    if (!updated.mapsUrl || updated.mapsUrl.includes('Station+Road+Bodhan')) {
-      updated.mapsUrl = 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7';
-    }
+    updated.mapsUrl = 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185';
     return updated;
   });
+
+  useEffect(() => {
+    const officialAddress = 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185';
+    if (shopConfig.address !== officialAddress) setShopConfig(previous => ({ ...previous, address: officialAddress }));
+  }, [shopConfig.address]);
 
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
   const [usedPurchases, setUsedPurchases] = useState(() => getStorageData('USED_PURCHASES', initialUsedPurchases));
@@ -136,7 +140,7 @@ export default function App() {
 
   // Synchronize Tab and URL Path
   const handleSelectTab = (tabId) => {
-    const normTab = tabId === 'khata' ? 'customers' : tabId;
+    const normTab = tabId;
     setActiveTab(normTab);
     if (portal === 'admin') {
       const url = normTab === 'dashboard' ? '/admin' : `/admin/${normTab}`;
@@ -397,7 +401,7 @@ export default function App() {
     setIsAdminAuthModalOpen(true);
   };
 
-  const handleAdminPinSuccess = () => {
+  const handleAdminPinSuccess = useCallback(() => {
     setCloudHydrated(false);
     setRole('admin');
     setPortal('admin');
@@ -405,7 +409,7 @@ export default function App() {
     setActiveTab(targetTab);
     window.history.pushState(null, '', targetTab === 'dashboard' ? '/admin' : `/admin/${targetTab}`);
     setIsAdminAuthModalOpen(false);
-  };
+  }, [initialRoute.portal, initialRoute.tab]);
 
   const handleCashierPinSubmit = (event) => {
     event.preventDefault();
@@ -526,6 +530,27 @@ export default function App() {
   // Badge Counts
   const lowStockCount = inventory.filter(i => i.stock <= i.lowStockThreshold).length;
   const pendingRepairsCount = repairJobs.filter(j => j.status !== 'Delivered').length;
+
+  // Keep the protected admin workspace out of the rendered tree until both
+  // the invited account and its authenticator factor have been verified.
+  if (portal === 'admin' && isAdminAuthModalOpen) {
+    return <PinAccessModal isOpen role="admin" onSuccess={handleAdminPinSuccess} shopName={shopConfig.name || 'ALZINO'} />;
+  }
+  if (portal === 'cashier' && isCashierPinOpen) {
+    return (
+      <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
+        <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cashier-pin-title" style={{ maxWidth: 360, width: '92%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14 }}>
+          <h2 id="cashier-pin-title" style={{ marginTop: 0 }}>Cashier PIN</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Enter the 4-digit cashier PIN to open the counter.</p>
+          {cashierPinError && <p role="alert" style={{ color: 'var(--status-red)' }}>{cashierPinError}</p>}
+          <form onSubmit={handleCashierPinSubmit} style={{ display: 'grid', gap: 12 }}>
+            <input autoFocus aria-label="Cashier PIN" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" required value={cashierPin} onChange={event => setCashierPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="input-field" />
+            <button className="btn-primary" type="submit" disabled={cashierPin.length !== 4}>Unlock cashier</button>
+          </form>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -668,6 +693,8 @@ export default function App() {
 
         {(activeTab === 'khata' || activeTab === 'customers') && role === 'admin' && (
           <CustomerKhata
+            key={activeTab}
+            initialView={activeTab === 'khata' ? 'khata' : 'customers'}
             customers={customers}
             setCustomers={setCustomers}
             invoices={invoices}
@@ -679,8 +706,10 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'expenses' && role === 'admin' && (
+        {(activeTab === 'expenses' || activeTab === 'suppliers') && role === 'admin' && (
           <ExpenseSupplier
+            key={activeTab}
+            initialSubTab={activeTab === 'suppliers' ? 'suppliers' : 'expenses'}
             expenses={expenses}
             setExpenses={setExpenses}
             suppliers={suppliers}
@@ -746,7 +775,7 @@ export default function App() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, fontFamily: 'var(--font-heading)' }}>{shopConfig.name} ERP</span>
-          <span>• Station Road, Bodhan, Telangana</span>
+          <span>• Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185</span>
         </div>
         <div>
           <span>Keyboard: <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F2: POS</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F3: Stock</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>F4: Used Phone</kbd> <kbd style={{ background: 'var(--border-color)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>⌘K: Search</kbd></span>
@@ -799,21 +828,8 @@ export default function App() {
         role="admin"
         onClose={portal === 'admin' ? undefined : () => setIsAdminAuthModalOpen(false)}
         onSuccess={handleAdminPinSuccess}
+        shopName={shopConfig.name || 'ALZINO'}
       />
-
-      {isCashierPinOpen && (
-        <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
-          <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cashier-pin-title" style={{ maxWidth: 360, width: '92%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14 }}>
-            <h2 id="cashier-pin-title" style={{ marginTop: 0 }}>Cashier PIN</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>Enter the 4-digit cashier PIN to open the counter.</p>
-            {cashierPinError && <p role="alert" style={{ color: 'var(--status-red)' }}>{cashierPinError}</p>}
-            <form onSubmit={handleCashierPinSubmit} style={{ display: 'grid', gap: 12 }}>
-              <input autoFocus aria-label="Cashier PIN" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" required value={cashierPin} onChange={event => setCashierPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="input-field" />
-              <button className="btn-primary" type="submit" disabled={cashierPin.length !== 4}>Unlock cashier</button>
-            </form>
-          </section>
-        </div>
-      )}
 
       {/* Global Product QR Scan Specifications, Colours & Terms Modal */}
       {scannedProductModal && (

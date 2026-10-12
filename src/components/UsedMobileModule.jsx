@@ -217,8 +217,8 @@ export default function UsedMobileModule({
   // =========================================================================
   const handleInwardSubmit = async (e) => {
     e.preventDefault();
-    if (!sellerName || !mobile || !imei1 || !buyPrice || !model) {
-      alert("Please fill in Seller Name, Mobile, Model, IMEI 1 and Buy Price.");
+    if (!sellerName || !mobile || !imei1 || !imei2 || !buyPrice || !model) {
+      alert("Please fill in Seller Name, Mobile, Model, both IMEI numbers and Buy Price.");
       return;
     }
 
@@ -1234,13 +1234,14 @@ export default function UsedMobileModule({
 
             <div>
               <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Secondary IMEI 2 (Optional)
+                Secondary IMEI 2 (SIM 2 / eSIM) *
               </label>
               <input
                 type="text"
                 placeholder="IMEI 2"
                 value={imei2}
                 onChange={(e) => setImei2(e.target.value)}
+                required
                 className="input-field"
                 style={{ fontFamily: 'var(--font-mono)' }}
               />

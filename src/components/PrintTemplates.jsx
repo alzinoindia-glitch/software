@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl } from '../utils/productTerms';
+import AlzinoLogo from './AlzinoLogo';
 
 // Number to Words converter for Indian Rupee
 function numberToWords(num) {
@@ -30,7 +31,6 @@ export default function PrintTemplates({
     if (printMode === 'thermal-58') return 'thermal-58';
     return printMode || 'thermal';
   });
-  const [copies, setCopies] = useState(shopConfig?.normalPrintCopies || 1);
 
   if (!printData) return null;
 
@@ -106,21 +106,6 @@ export default function PrintTemplates({
           </div>
         )}
 
-        {/* Copies selector for A4 normal printer */}
-        {activeFormat === 'a4' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem' }}>
-            <span style={{ color: '#AAA' }}>Copies:</span>
-            <select
-              value={copies}
-              onChange={(e) => setCopies(Number(e.target.value))}
-              style={{ background: '#222', color: '#FFF', border: '1px solid #444', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.78rem' }}
-            >
-              <option value={1}>1 Copy (Original for Buyer)</option>
-              <option value={2}>2 Copies (Original + Shop Duplicate)</option>
-            </select>
-          </div>
-        )}
-
         <button
           onClick={() => window.print()}
           style={{
@@ -165,20 +150,8 @@ export default function PrintTemplates({
             
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '3mm', marginBottom: '3mm' }}>
-              <img
-                src={shopConfig.logo || "/alzino-logo.png"}
-                alt="ALZINO"
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  margin: '0 auto 2mm auto',
-                  filter: 'grayscale(100%) contrast(140%)'
-                }}
-              />
-              <div style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '1px' }}>{shopConfig.name}</div>
+              <AlzinoLogo height={25} textColor="#0F251E" swooshColor="#C99A20" style={{ margin: '0 auto 2mm' }} />
+              {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <div style={{ fontSize: '13px', fontWeight: 'bold' }}>{shopConfig.name}</div>}
               <div style={{ fontSize: '10px' }}>{shopConfig.tagline}</div>
               <div style={{ fontSize: '10px' }}>{shopConfig.address}</div>
               <div style={{ fontSize: '10px' }}>Tel: {shopConfig.phone}</div>
@@ -371,36 +344,6 @@ export default function PrintTemplates({
               )}
             </div>
 
-            {/* UPI QR for counter receipt */}
-            {(() => {
-              if (printData.hidePaymentQr) return null;
-              const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
-                ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
-                : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));
-
-              if (qrAmount <= 0) {
-                return (
-                  <div style={{ textAlign: 'center', marginTop: '2.5mm', padding: '1.5mm 0', borderTop: '1px dashed #000', fontSize: '9px', fontWeight: 'bold' }}>
-                    ✓ ALL CHARGES FULLY PAID
-                  </div>
-                );
-              }
-
-              return (
-                <div style={{ textAlign: 'center', marginTop: '3mm', padding: '2mm 0', borderTop: '1px dashed #000' }}>
-                  <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '1mm' }}>
-                    SCAN TO PAY ₹{qrAmount.toLocaleString()} VIA ANY UPI APP
-                  </div>
-                  <img 
-                    src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, qrAmount, printData.invoiceNo)} 
-                    alt="UPI QR"
-                    style={{ width: '32mm', height: '32mm', margin: '0 auto', display: 'block', objectFit: 'contain' }}
-                  />
-                  <div style={{ fontSize: '8px', marginTop: '1mm' }}>{shopConfig.upiId}</div>
-                </div>
-              );
-            })()}
-
             {/* Custom Notes */}
             {printData.notes && (
               <div style={{ borderTop: '1px dashed #000', paddingTop: '1.5mm', marginTop: '1.5mm', fontSize: '9px', fontStyle: 'italic', textAlign: 'center' }}>
@@ -426,20 +369,8 @@ export default function PrintTemplates({
             
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
-              <img
-                src={shopConfig.logo || "/alzino-logo.png"}
-                alt="ALZINO"
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  margin: '0 auto 1.5mm auto',
-                  filter: 'grayscale(100%) contrast(140%)'
-                }}
-              />
-              <div style={{ fontSize: '15px', fontWeight: 'bold' }}>{shopConfig.name}</div>
+              <AlzinoLogo height={20} textColor="#0F251E" swooshColor="#C99A20" style={{ margin: '0 auto 1.5mm' }} />
+              {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <div style={{ fontSize: '11px', fontWeight: 'bold' }}>{shopConfig.name}</div>}
               <div style={{ fontSize: '8.5px' }}>{shopConfig.tagline}</div>
               <div style={{ fontSize: '8px' }}>{shopConfig.address}</div>
               <div style={{ fontSize: '8.5px' }}>Tel: {shopConfig.phone}</div>
@@ -533,34 +464,6 @@ export default function PrintTemplates({
               )}
             </div>
 
-            {/* QR */}
-            {(() => {
-              if (printData.hidePaymentQr) return null;
-              const qrAmount = (printData.advancePaid > 0 && printData.khataDue === 0)
-                ? Number(printData.balanceCollectedNow ?? Math.max(0, printData.grandTotal - printData.advancePaid))
-                : (printData.khataDue > 0 ? Number(printData.khataDue) : Number(printData.grandTotal));
-
-              if (qrAmount <= 0) {
-                return (
-                  <div style={{ textAlign: 'center', marginTop: '1.5mm', padding: '1mm 0', borderTop: '1px dashed #000', fontSize: '8px', fontWeight: 'bold' }}>
-                    ✓ ALL CHARGES FULLY PAID
-                  </div>
-                );
-              }
-
-              return (
-                <div style={{ textAlign: 'center', marginTop: '2mm', padding: '1mm 0', borderTop: '1px dashed #000' }}>
-                  <div style={{ fontSize: '7.5px', fontWeight: 'bold', marginBottom: '1px' }}>PAY ₹{qrAmount.toLocaleString()} VIA UPI</div>
-                  <img 
-                    src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, qrAmount, printData.invoiceNo)} 
-                    alt="UPI QR"
-                    style={{ width: '26mm', height: '26mm', margin: '0 auto', display: 'block' }}
-                  />
-                  <div style={{ fontSize: '7px', marginTop: '1px' }}>{shopConfig.upiId}</div>
-                </div>
-              );
-            })()}
-
             {/* Footer */}
             <div style={{ textAlign: 'center', fontSize: '7.5px', marginTop: '2mm', borderTop: '1px dashed #000', paddingTop: '1.5mm' }}>
               <div>THANK YOU! VISIT AGAIN</div>
@@ -575,40 +478,26 @@ export default function PrintTemplates({
         {/* ========================================================== */}
         {activeFormat === 'a4' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8mm' }}>
-            {[1, ...(copies === 2 ? [2] : [])].map((copyNum) => (
+            {[1].map((copyNum) => (
               <div className="invoice-a4-sheet"
                 key={copyNum} 
                 style={{ 
                   width: '210mm', 
-                  minHeight: '297mm', 
+                  minHeight: 0,
                   padding: '12mm', 
                   fontFamily: "'Plus Jakarta Sans', sans-serif", 
                   fontSize: '12px', 
                   color: '#111', 
                   boxSizing: 'border-box',
-                  pageBreakBefore: copyNum === 2 ? 'always' : 'auto'
+                  pageBreakBefore: 'auto'
                 }}
               >
                 {/* Tax Invoice Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '6mm', marginBottom: '6mm' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <img
-                      src={shopConfig.logo || "/alzino-logo.png"}
-                      alt="ALZINO"
-                      style={{
-                        width: '68px',
-                        height: '68px',
-                        borderRadius: '50%',
-                        objectFit: 'cover',
-                        border: '2px solid #3B60C5',
-                        boxShadow: '0 2px 8px rgba(59,96,197,0.15)',
-                        flexShrink: 0
-                      }}
-                    />
+                    <AlzinoLogo height={40} textColor="#0F251E" swooshColor="#C99A20" style={{ flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontSize: '26px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
-                        {shopConfig.name}
-                      </div>
+                      {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em', lineHeight: 1.1 }}>{shopConfig.name}</div>}
                       <div style={{ fontSize: '11px', fontWeight: 600, color: '#444', marginTop: '2px' }}>{shopConfig.tagline}</div>
                       <div style={{ fontSize: '11px', color: '#555', marginTop: '2px', maxWidth: '380px' }}>{shopConfig.address}</div>
                       <div style={{ fontSize: '11px', color: '#333', marginTop: '2px' }}>
@@ -769,23 +658,6 @@ export default function PrintTemplates({
                       </div>
                     )}
 
-                    <div style={{ padding: '3mm', background: '#F8F9FA', border: '1px solid #E5E5E5', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '11px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 700, color: '#3B60C5', marginBottom: '2px' }}>BANK DETAILS FOR NEFT/RTGS:</div>
-                        <div><strong>Bank:</strong> {shopConfig.bankName}</div>
-                        <div><strong>Account No:</strong> {shopConfig.accountNo}</div>
-                        <div><strong>IFSC Code:</strong> {shopConfig.ifsc}</div>
-                        <div><strong>UPI ID:</strong> {shopConfig.upiId}</div>
-                      </div>
-                      <div style={{ textAlign: 'center', marginLeft: '3mm' }}>
-                        <img 
-                          src={shopConfig.qrCodeImage || getUpiQrUrl(shopConfig.upiId, shopConfig.name, printData.grandTotal, printData.invoiceNo)} 
-                          alt="UPI QR"
-                          style={{ width: '22mm', height: '22mm', objectFit: 'contain', display: 'block', margin: '0 auto', border: '1px solid #E5E5E5', padding: '1mm', background: '#FFF' }}
-                        />
-                        <div style={{ fontSize: '7.5px', fontWeight: 800, marginTop: '1px' }}>SCAN & PAY</div>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Totals Summary */}
@@ -905,22 +777,9 @@ export default function PrintTemplates({
             {/* Clean Store Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '4mm', marginBottom: '5mm' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <img
-                  src={shopConfig.logo || "/alzino-logo.png"}
-                  alt="ALZINO"
-                  style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '50%',
-                    objectFit: 'cover',
-                    border: '1.5px solid #3B60C5',
-                    flexShrink: 0
-                  }}
-                />
+                <AlzinoLogo height={34} textColor="#0F251E" swooshColor="#C99A20" style={{ flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-                    {shopConfig.name}
-                  </div>
+                  {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.02em', lineHeight: 1.1 }}>{shopConfig.name}</div>}
                   <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
                     {shopConfig.address}
                   </div>
@@ -1047,20 +906,8 @@ export default function PrintTemplates({
           <div style={{ width: '78mm', padding: '3mm', fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.3 }}>
             
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
-              <img
-                src={shopConfig.logo || "/alzino-logo.png"}
-                alt="ALZINO"
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  margin: '0 auto 1.5mm auto',
-                  filter: 'grayscale(100%) contrast(140%)'
-                }}
-              />
-              <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{shopConfig.name} REPAIR LAB</div>
+              <AlzinoLogo height={23} textColor="#0F251E" swooshColor="#C99A20" style={{ margin: '0 auto 1.5mm' }} />
+              <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' ? `${shopConfig.name} ` : ''}REPAIR LAB</div>
               <div style={{ fontSize: '10px' }}>Bodhan, Telangana • Ph: {shopConfig.phone}</div>
               <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '2mm' }}>JOB TOKEN: {printData.jobId}</div>
             </div>
@@ -1197,27 +1044,14 @@ export default function PrintTemplates({
             {/* Header / Shop Banner */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #0F251E', paddingBottom: '10px', marginBottom: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <img
-                  src={shopConfig.logo || "/alzino-logo.png"}
-                  alt="ALZINO"
-                  style={{
-                    width: '60px',
-                    height: '60px',
-                    borderRadius: '50%',
-                    objectFit: 'cover',
-                    border: '2px solid #0F251E',
-                    flexShrink: 0
-                  }}
-                />
+                <AlzinoLogo height={36} textColor="#0F251E" swooshColor="#C99A20" style={{ flexShrink: 0 }} />
                 <div>
-                  <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 900, color: '#0F251E', letterSpacing: '-0.5px' }}>
-                    {shopConfig.name || 'ALZINO'}
-                  </h1>
+                  {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#0F251E', letterSpacing: '-0.5px' }}>{shopConfig.name}</h1>}
                   <div style={{ fontSize: '11px', color: '#63756E', fontWeight: 600, marginTop: '2px' }}>
                     {shopConfig.tagline || 'Mobile Sales • Service • Accessories'}
                   </div>
                   <div style={{ fontSize: '11px', color: '#152620', marginTop: '2px' }}>
-                    {shopConfig.address || 'Station Road, Bodhan, Nizamabad Dist, Telangana - 503185'}
+                    {shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}
                   </div>
                   <div style={{ fontSize: '11px', marginTop: '2px' }}>
                     <strong>Phone:</strong> {shopConfig.phone || '+91 98490 00000'} | <strong>GSTIN:</strong> {shopConfig.gstin || '36ABCDE1234F1Z5'}
@@ -1363,7 +1197,7 @@ export default function PrintTemplates({
             {/* Header */}
             <div style={{ textAlign: 'center', borderBottom: '1px dashed #000', paddingBottom: '3mm', marginBottom: '3mm' }}>
               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{shopConfig.name || 'ALZINO'}</div>
-              <div style={{ fontSize: '10px' }}>{shopConfig.address || 'Station Road, Bodhan'}</div>
+              <div style={{ fontSize: '10px' }}>{shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}</div>
               <div style={{ fontSize: '10px' }}>Tel: {shopConfig.phone || '+91 98490 00000'}</div>
               <div style={{ fontSize: '12px', fontWeight: 'bold', margin: '3mm 0 1mm 0' }}>
                 *** DAY-END CASH DRAWER Z-REPORT ***

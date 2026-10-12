@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 export default function ExpenseSupplier({ 
+  initialSubTab = 'expenses',
   expenses, 
   setExpenses, 
   suppliers, 
@@ -21,7 +22,7 @@ export default function ExpenseSupplier({
   setInventory, 
   role 
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('expenses'); // expenses | suppliers
+  const [activeSubTab, setActiveSubTab] = useState(initialSubTab); // expenses | suppliers
   
   // Expense form state
   const [showExpenseModal, setShowExpenseModal] = useState(false);

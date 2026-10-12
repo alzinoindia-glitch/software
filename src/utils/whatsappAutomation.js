@@ -7,7 +7,7 @@
 export function generateWhatsAppInvoiceText(invoice, shopConfig = {}) {
   const shopName = shopConfig.name || 'ALZINO';
   const shopPhone = shopConfig.phone || '98490 82741';
-  const shopAddress = shopConfig.address || 'Station Road, Bodhan, Telangana';
+  const shopAddress = shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185';
   const gstin = shopConfig.gstin || '';
 
   const isNonGst = Boolean(invoice.isNonGst);
@@ -106,7 +106,7 @@ export function generateWhatsAppRepairText(job, shopConfig = {}, statusType = 'r
       `💵 *Total Amount:* ${totalText}\n` +
       `💳 *Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n` +
       `👉 *Balance to Pay:* ${balanceText}\n\n` +
-      `📍 Please collect your device from ${shopConfig.address || 'Station Road, Bodhan'}.\n` +
+      `📍 Please collect your device from ${shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}.\n` +
       `📞 Questions? Call us at ${shopPhone}.`;
   }
 
@@ -152,7 +152,7 @@ export function generateWhatsAppKhataReminderText(customer, shopConfig = {}) {
     `💰 *Outstanding Balance:* ₹${balance}\n\n` +
     `You can clear your balance via UPI directly using the ID below:\n` +
     `📱 *UPI ID:* ${upiId}\n\n` +
-    `Or visit our showroom at ${shopConfig.address || 'Station Road, Bodhan'}.\n` +
+    `Or visit our showroom at ${shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}.\n` +
     `Thank you for your business! 🙏`;
 }
 

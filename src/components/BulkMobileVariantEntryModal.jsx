@@ -79,7 +79,10 @@ export default function BulkMobileVariantEntryModal({
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomSubcategory, setIsCustomSubcategory] = useState(false);
   const availableBrands = useMemo(() => getAvailableBrandsForCategory(modelDetails.category, inventory), [modelDetails.category, inventory]);
-  const availableCategories = useMemo(() => getAvailableCategories(inventory), [inventory]);
+  const availableCategories = useMemo(
+    () => getAvailableCategories(inventory).filter(category => category !== 'Used Mobiles'),
+    [inventory]
+  );
   const availableSubcategories = useMemo(() => getAvailableSubcategories(modelDetails.category, inventory), [modelDetails.category, inventory]);
 
   // Fast Model Auto-Suggestions
@@ -434,6 +437,11 @@ export default function BulkMobileVariantEntryModal({
   const handleSaveAll = async (e) => {
     if (e) e.preventDefault();
 
+    if (modelDetails.category === 'Used Mobiles') {
+      alert('Add used phones through the Used Phones section so purchase and IMEI records stay linked.');
+      return;
+    }
+
     if (!modelDetails.model.trim()) {
       alert('Please enter a product name or model.');
       return;
@@ -445,6 +453,13 @@ export default function BulkMobileVariantEntryModal({
     if (totalStockCount <= 0) {
       alert('Please add at least 1 unit quantity.');
       return;
+    }
+    if (['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)) {
+      const missingImei = units.find(unit => !unit.imei1?.trim() || !unit.imei2?.trim());
+      if (missingImei) {
+        alert(`Enter both IMEI 1 (SIM 1) and IMEI 2 (SIM 2 / eSIM) for every mobile unit. Check unit ${missingImei.unitNo}.`);
+        return;
+      }
     }
 
     const brandName = modelDetails.brand.trim() || 'Universal';
@@ -707,6 +722,18 @@ export default function BulkMobileVariantEntryModal({
   const handleImportExcelRows = () => {
     if (excelRows.length === 0) {
       alert('No rows found to import.');
+      return;
+    }
+    if (excelRows.some(row => row.category === 'Used Mobiles')) {
+      alert('Used phones must be entered through the Used Phones section. Remove Used Mobiles rows from this import.');
+      return;
+    }
+    const incompletePhoneRow = excelRows.find(row =>
+      ['New Mobiles', 'Used Mobiles'].includes(row.category) &&
+      (!row.imei1 || !row.imei2 || row.quantity !== 1)
+    );
+    if (incompletePhoneRow) {
+      alert(`Mobile import row ${incompletePhoneRow.rowNo} must include both IMEI numbers and have quantity 1. Add one row per physical phone.`);
       return;
     }
     if (excelErrors.length > 0) {
@@ -1487,12 +1514,13 @@ export default function BulkMobileVariantEntryModal({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '0.5rem'
+                        gap: '0.5rem',
+                        flexWrap: 'wrap'
                       }}
                     >
                       {/* Left: Swatch + Variant info */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: '1 1 auto' }}>
-                        <label title="Click to adjust color shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: '1 1 100%' }}>
+                        <label aria-label={`Choose ${variant.color} shade`} title="Click to adjust color shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
                           <span style={{ 
                             width: '20px', 
                             height: '20px', 
@@ -1509,16 +1537,14 @@ export default function BulkMobileVariantEntryModal({
                             style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
                           />
                         </label>
-                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                           <div 
                             title={variant.color}
                             style={{ 
                               fontWeight: 800, 
                               fontSize: '0.8rem', 
-                              whiteSpace: 'nowrap', 
-                              textOverflow: 'ellipsis', 
-                              overflow: 'hidden',
-                              maxWidth: '120px',
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
                               lineHeight: 1.25,
                               color: 'var(--text-primary)'
                             }}
@@ -1802,7 +1828,8 @@ export default function BulkMobileVariantEntryModal({
                       className="input-field"
                       style={{ fontSize: '0.78rem', paddingRight: '2.5rem' }}
                     />
-                    <label 
+                    <label
+                      aria-label="Choose custom colour shade"
                       title="Custom colour shade" 
                       style={{ 
                         position: 'absolute', 
@@ -2010,10 +2037,10 @@ export default function BulkMobileVariantEntryModal({
                               style={{ width: '26px', height: '26px', borderRadius: '4px', objectFit: 'cover', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', flexShrink: 0 }}
                             />
                           )}
-                          <div style={{ overflow: 'hidden' }}>
+                          <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                               <span style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: unit.colorHex || getProductColorHex(unit.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                                 {unit.color}
                               </span>
                             </div>
@@ -2027,7 +2054,7 @@ export default function BulkMobileVariantEntryModal({
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
                             <label style={{ fontSize: '0.66rem', fontWeight: 700, color: '#10B981' }}>
-                              IMEI 1 (SIM 1) *
+                              IMEI 1 (SIM 1){['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
                             </label>
                             <button
                               type="button"
@@ -2046,6 +2073,7 @@ export default function BulkMobileVariantEntryModal({
                             value={unit.imei1}
                             onChange={(e) => handleUnitChange(idx, 'imei1', e.target.value)}
                             onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei1')}
+                            required={['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)}
                             className="input-field"
                             style={{ 
                               padding: '0.28rem 0.5rem', 
@@ -2060,7 +2088,7 @@ export default function BulkMobileVariantEntryModal({
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
                             <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                              IMEI 2 (Optional)
+                              IMEI 2 (SIM 2 / eSIM){['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
                             </label>
                             <button
                               type="button"
@@ -2079,6 +2107,7 @@ export default function BulkMobileVariantEntryModal({
                             value={unit.imei2}
                             onChange={(e) => handleUnitChange(idx, 'imei2', e.target.value)}
                             onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei2')}
+                            required={['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)}
                             className="input-field"
                             style={{ padding: '0.28rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)' }}
                           />

@@ -43,6 +43,7 @@ export default function Header({
   onNavigatePortal = () => {}
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [customerPortalOpen, setCustomerPortalOpen] = useState(['customers', 'suppliers', 'khata'].includes(activeTab));
   const [copiedPortalPath, setCopiedPortalPath] = useState('');
   const [copyPortalError, setCopyPortalError] = useState(false);
 
@@ -96,7 +97,7 @@ export default function Header({
     { id: 'repairs', label: 'Repairs', icon: Wrench, hotkey: 'F5' },
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'barcodes', label: 'Barcodes', icon: Barcode },
-    { id: 'customers', label: 'Customers', icon: Users },
+    { id: 'customer-portal', label: 'Customer Portal', icon: Users },
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'reports', label: 'Analytics', icon: TrendingUp },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -368,12 +369,13 @@ export default function Header({
 
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.id;
+                const isPortalGroup = item.id === 'customer-portal';
+                const isActive = isPortalGroup ? ['customers', 'suppliers', 'khata'].includes(activeTab) : activeTab === item.id;
 
                 return (
+                  <React.Fragment key={item.id}>
                   <button
-                    key={item.id}
-                    onClick={() => handleSelectTab(item.id)}
+                    onClick={() => isPortalGroup ? setCustomerPortalOpen(value => !value) : handleSelectTab(item.id)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -447,9 +449,17 @@ export default function Header({
                         </span>
                       )}
 
-                      <ChevronRight size={13} color={isActive ? '#0F251E' : '#A9BC5C'} opacity={isActive ? 0.9 : 0.4} />
+                      <ChevronRight size={13} color={isActive ? '#0F251E' : '#A9BC5C'} opacity={isActive ? 0.9 : 0.4} style={isPortalGroup && customerPortalOpen ? { transform: 'rotate(90deg)' } : undefined} />
                     </div>
                   </button>
+                  {isPortalGroup && customerPortalOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', margin: '0.1rem 0 0.35rem 1.1rem', paddingLeft: '0.65rem', borderLeft: '1px solid rgba(169,188,92,0.35)' }}>
+                      {[['customers', 'Customers'], ['suppliers', 'Suppliers'], ['khata', 'Khata']].map(([id, label]) => (
+                        <button key={id} onClick={() => handleSelectTab(id)} style={{ textAlign: 'left', padding: '0.48rem 0.7rem', border: 0, borderRadius: 'var(--radius-sm)', background: activeTab === id || (id === 'khata' && activeTab === 'customers') ? 'rgba(169,188,92,0.18)' : 'transparent', color: '#F1EFE5', cursor: 'pointer', fontSize: '0.82rem' }}>{label}</button>
+                      ))}
+                    </div>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </div>

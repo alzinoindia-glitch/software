@@ -36,6 +36,7 @@ import { getUpiQrUrl } from '../utils/barcode';
 import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
 
 export default function CustomerKhata({ 
+  initialView = 'customers',
   customers = [], 
   setCustomers = () => {}, 
   invoices = [],
@@ -46,7 +47,7 @@ export default function CustomerKhata({
   onPrintRepairSlip = () => {}
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all'); // all | both | sales | repairs | due
+  const [typeFilter, setTypeFilter] = useState(initialView === 'khata' ? 'due' : 'all'); // all | both | sales | repairs | due
   const [viewLayout, setViewLayout] = useState('table'); // table | cards
   const [showAddModal, setShowAddModal] = useState(false);
   

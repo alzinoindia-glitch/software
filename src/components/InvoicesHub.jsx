@@ -246,6 +246,8 @@ export default function InvoicesHub({
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #0f172a; width: 100%; max-width: 820px; margin: 0 auto; background: #fff; }
     .header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
     .title { font-size: 26px; font-weight: 800; color: #0f172a; margin: 0; letter-spacing: -0.02em; }
+    .alzino-wordmark { display: flex; align-items: center; gap: 2px; color: #0F251E; font-size: 26px; line-height: 1; font-weight: 900; letter-spacing: -0.04em; margin-bottom: 5px; }
+    .alzino-wordmark svg { width: 28px; height: 28px; flex: 0 0 auto; }
     .meta { font-size: 12px; color: #475569; margin-top: 3px; }
     .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #e0e7ff; color: #3730a3; margin-top: 4px; }
     table { width: 100%; border-collapse: collapse; margin: 16px 0; table-layout: fixed; }
@@ -275,9 +277,10 @@ export default function InvoicesHub({
 <body>
   <div class="header">
     <div>
-      <h1 class="title">${shopConfig?.name || 'ALZINO'}</h1>
+      <div class="alzino-wordmark" aria-label="ALZINO"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="#0F251E" d="M15.8 2.2 2.5 28.5h5.7l3.9-7.7h7.4l3.9 7.7h5.7L15.8 2.2Zm0 9 2.3 5.3h-4.6l2.3-5.3Z"/><path fill="#C99A20" d="M4.2 24.2C8.6 20.8 15.2 13.8 29.8 9.2 21.4 13.2 14.8 19.4 6.8 26.5c-1 .9-2-.3-2.6-2.3Z"/></svg><span>LZINO</span></div>
+      ${shopConfig?.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' ? `<h1 class="title">${shopConfig.name}</h1>` : ''}
       <div class="meta">${shopConfig?.tagline || 'Smart Mobiles • Used Devices • Electronics • Repairing Lab'}</div>
-      <div class="meta">${shopConfig?.address || 'Station Road, Bodhan, Telangana - 503185'}</div>
+      <div class="meta">${shopConfig?.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}</div>
       <div class="meta">Ph: ${shopConfig?.phone || '+91 91212 12292'} ${shopConfig?.gstin ? `| GSTIN: ${shopConfig.gstin}` : ''}</div>
     </div>
     <div style="text-align: right;">

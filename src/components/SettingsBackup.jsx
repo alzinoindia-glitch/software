@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   Database, 
   Download, 
@@ -13,6 +13,9 @@ import {
   Star,
   QrCode
 } from 'lucide-react';
+import { buildSsdArchive, openSsdArchive, saveSsdArchive } from '../utils/localArchive';
+import { purgeArchivedCloudRecords } from '../utils/cloudSyncService';
+import { compressImageFile } from '../utils/productImageStore';
 
 const parseInvoiceTerms = (value) => {
   const normalized = String(value || '').replace(/\.\s+(?=\d+\.\s)/g, '.\n');
@@ -40,6 +43,9 @@ export default function SettingsBackup({
   setExpenses, 
   invoices, 
   setInvoices, 
+  warrantyClaims = [],
+  setWarrantyClaims,
+  role = 'admin',
 }) {
   const [formData, setFormData] = useState(() => {
     const initialAccounts = (shopConfig.upiAccounts && shopConfig.upiAccounts.length > 0)
@@ -60,6 +66,8 @@ export default function SettingsBackup({
       thermalRollWidth: shopConfig.thermalRollWidth || '80mm',
       autoPrintOnCheckout: shopConfig.autoPrintOnCheckout !== false,
       normalPrintCopies: shopConfig.normalPrintCopies || 1,
+      oldStockReminderMonths: shopConfig.oldStockReminderMonths || 3,
+      oldStockReminderCustomMonths: shopConfig.oldStockReminderCustomMonths || 6,
       barcodeScannerBeep: shopConfig.barcodeScannerBeep !== false,
       barcodeScannerAutoAdd: shopConfig.barcodeScannerAutoAdd !== false,
       storageMode: shopConfig.storageMode || 'ssd-local',
@@ -70,6 +78,106 @@ export default function SettingsBackup({
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [termsList, setTermsList] = useState(() => parseInvoiceTerms(shopConfig.termsConditions));
+  const [archiveCutoff, setArchiveCutoff] = useState(() => {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - 1);
+    return date.toISOString().slice(0, 10);
+  });
+  const [archivePassword, setArchivePassword] = useState('');
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveMessage, setArchiveMessage] = useState('');
+  const [attachedArchive, setAttachedArchive] = useState(null);
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveDomain, setArchiveDomain] = useState('all');
+  const [deletePhrase, setDeletePhrase] = useState('');
+
+  const handleCreateSsdArchive = async () => {
+    if (archivePassword.length < 12) {
+      setArchiveMessage('Set an archive password of at least 12 characters and keep it safe.');
+      return;
+    }
+    setArchiveBusy(true);
+    setArchiveMessage('Collecting cloud records and product photos…');
+    try {
+      const result = await buildSsdArchive({ cutoff: archiveCutoff, password: archivePassword });
+      const dateLabel = new Date().toISOString().slice(0, 10);
+      await saveSsdArchive(result.file, `ALZINO_ARCHIVE_${dateLabel}.alzino.json`);
+      setArchiveMessage(`Archive saved. It includes ${Object.values(result.recordCounts).reduce((sum, count) => sum + count, 0)} records and ${Object.values(result.purgeCounts).reduce((sum, count) => sum + count, 0)} old closed records eligible for cloud cleanup. Attach the saved file below to verify it before deletion.`);
+    } catch (error) {
+      if (error?.name !== 'AbortError') setArchiveMessage(error.message || 'Could not create archive.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const handleAttachArchive = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (archivePassword.length < 12) {
+      setArchiveMessage('Enter the archive password before attaching the SSD archive.');
+      return;
+    }
+    setArchiveBusy(true);
+    try {
+      const archive = await openSsdArchive(file, archivePassword);
+      setAttachedArchive({ archive, fileName: file.name });
+      setDeletePhrase('');
+      setArchiveMessage('Archive decrypted and checked. You can search its records. Cloud deletion is enabled only for old, closed transactions in this verified file.');
+    } catch (error) {
+      setArchiveMessage(error.message || 'Could not open this archive.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const handleDetachArchive = () => {
+    setAttachedArchive(null);
+    setArchiveSearch('');
+    setDeletePhrase('');
+    setArchiveMessage('Archive detached from this browser session.');
+  };
+
+  const handlePurgeArchivedData = async () => {
+    if (!attachedArchive || deletePhrase !== 'DELETE') return;
+    if (!window.confirm('Permanently remove the eligible archived records from the shop cloud database? The attached SSD archive is the recovery copy.')) return;
+    setArchiveBusy(true);
+    setArchiveMessage('Checking the cloud snapshot and removing archived records…');
+    try {
+      const { archive } = attachedArchive;
+      const result = await purgeArchivedCloudRecords(archive.organizationId, archive.cutoff, archive.domains, archive.purgePlan);
+      if (!result.success) throw new Error(result.reason || 'Cloud cleanup failed.');
+      const updated = result.updatedDomains || {};
+      if (updated.invoices) setInvoices?.(updated.invoices);
+      if (updated.expenses) setExpenses?.(updated.expenses);
+      if (updated.repairJobs) setRepairJobs?.(updated.repairJobs);
+      if (updated.usedPurchases) setUsedPurchases?.(updated.usedPurchases);
+      if (updated.warrantyClaims) setWarrantyClaims?.(updated.warrantyClaims);
+      const count = Object.values(archive.purgePlan || {}).reduce((sum, ids) => sum + ids.length, 0);
+      setArchiveMessage(`Removed ${count} archived closed records from the cloud database. The attached SSD archive remains available until detached.`);
+      setAttachedArchive(null);
+      setDeletePhrase('');
+    } catch (error) {
+      setArchiveMessage(error.message || 'Cloud cleanup failed. Keep the archive file and try again after resolving the issue.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const attachedRecords = useMemo(() => {
+    if (!attachedArchive?.archive) return [];
+    const rows = [];
+    for (const [domain, snapshot] of Object.entries(attachedArchive.archive.domains || {})) {
+      if (archiveDomain !== 'all' && archiveDomain !== domain) continue;
+      (Array.isArray(snapshot?.payload) ? snapshot.payload : []).forEach((record, index) => {
+        const text = [record?.name, record?.productName, record?.model, record?.customerName, record?.supplierName, record?.invoiceNo, record?.jobId, record?.phone, record?.customerMobile, record?.date, record?.status].filter(Boolean).join(' ');
+        if (!archiveSearch || text.toLowerCase().includes(archiveSearch.toLowerCase())) {
+          rows.push({ domain, record, key: `${domain}-${record?.id || record?.invoiceNo || record?.jobId || index}`, text });
+        }
+      });
+    }
+    return rows.slice(0, 250);
+  }, [attachedArchive, archiveDomain, archiveSearch]);
 
   const handleTermChange = (index, value) => {
     setTermsList(previous => previous.map((term, termIndex) => termIndex === index ? value : term));
@@ -85,7 +193,7 @@ export default function SettingsBackup({
   };
 
   // Multi-Bank UPI & QR Code Management Handlers
-  const handleQrImageUpload = (e, accountId = null) => {
+  const handleQrImageUpload = async (e, accountId = null) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -94,9 +202,10 @@ export default function SettingsBackup({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64Data = event.target.result;
+    try {
+      // Keep one compact, legible standee image in shop settings instead of
+      // persisting a phone-sized original (often several MB) as base64.
+      const base64Data = await compressImageFile(file, 900, 0.84);
       setFormData(prev => {
         const accounts = (prev.upiAccounts || []).map(acc => {
           if (acc.id === accountId) {
@@ -112,8 +221,9 @@ export default function SettingsBackup({
           qrCodeImage: defaultAcc ? defaultAcc.qrCodeImage : base64Data
         };
       });
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      alert(error.message || 'Could not process this QR image. Please try another image.');
+    }
   };
 
   const handleRemoveQrImage = (accountId) => {
@@ -209,7 +319,9 @@ export default function SettingsBackup({
     const updated = {
       ...formData,
       upiId: defaultAcc ? defaultAcc.upiId : formData.upiId,
-      qrCodeImage: defaultAcc ? defaultAcc.qrCodeImage : (formData.qrCodeImage || null),
+      // The account owns its QR image. Keeping a root-level duplicate wastes
+      // database space because the whole shopConfig is synced as JSON.
+      qrCodeImage: null,
       bankName: defaultAcc ? defaultAcc.bankName : formData.bankName,
       termsConditions: termsList.map(term => term.trim()).filter(Boolean).map((term, index) => `${index + 1}. ${term}`).join('\n')
     };
@@ -298,25 +410,12 @@ export default function SettingsBackup({
         {/* Left: Shop Details Form */}
         <form onSubmit={handleSaveProfile} className="illoca-card settings-shop-profile-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#FBF7ED', borderColor: '#E8DFC7' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-            <img
-              src={formData.logo || "/alzino-logo.png"}
-              alt="Store Logo"
-              style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '50%',
-                objectFit: 'cover',
-                border: '2px solid var(--accent-primary)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                flexShrink: 0
-              }}
-            />
             <div>
               <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                 <Building size={18} color="var(--accent-primary)" />
                 <span>ALZINO Shop Profile & Invoice Header</span>
               </h3>
-              <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-muted)' }}>Official badge logo active across browser tab, POS headers, and customer invoices</p>
+              <p style={{ margin: 0, fontSize: '0.73rem', color: 'var(--text-muted)' }}>Store information used on invoices and receipts</p>
             </div>
           </div>
 
@@ -360,8 +459,8 @@ export default function SettingsBackup({
               <input
                 type="text"
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 required
+                readOnly
                 className="input-field"
               />
             </div>
@@ -636,6 +735,20 @@ export default function SettingsBackup({
                 ))}
               </div>
             </div>
+
+            <div style={{ gridColumn: '1 / -1', padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-primary)' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Old stock reminder</label>
+              <p style={{ margin: '0 0 0.55rem', color: 'var(--text-secondary)', fontSize: '0.73rem' }}>Show in-stock products on the dashboard once they have been held for this long.</p>
+              <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select className="input-field" value={formData.oldStockReminderMonths === 'custom' ? 'custom' : String(formData.oldStockReminderMonths)} onChange={e => setFormData({ ...formData, oldStockReminderMonths: e.target.value === 'custom' ? 'custom' : Number(e.target.value) })} style={{ width: 'auto', minWidth: '150px' }}>
+                  <option value="3">3 months</option>
+                  <option value="12">1 year</option>
+                  <option value="custom">Custom</option>
+                </select>
+                {formData.oldStockReminderMonths === 'custom' && <input className="input-field" type="number" min="1" max="120" value={formData.oldStockReminderCustomMonths} onChange={e => setFormData({ ...formData, oldStockReminderCustomMonths: Math.max(1, Number(e.target.value) || 1) })} aria-label="Custom old stock reminder months" style={{ width: '150px' }} />}
+                {formData.oldStockReminderMonths === 'custom' && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>months</span>}
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
@@ -685,6 +798,71 @@ export default function SettingsBackup({
               </label>
             </div>
           </div>
+
+          <section className="illoca-card" style={{ padding: '1.25rem', borderTop: '3px solid var(--accent-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.45rem' }}>
+              <Database size={18} color="var(--accent-primary)" />
+              <h3 style={{ fontSize: '1.05rem', margin: 0 }}>SSD Archive & Cloud Cleanup</h3>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45, margin: '0 0 0.8rem' }}>
+              Create an encrypted archive of the cloud records and product photos, save it to the SSD, then attach that file here to search it. Only old, closed transactions can be removed. Current stock, shop settings, customers, suppliers, and records with balances due stay in the cloud.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', marginBottom: '0.7rem' }}>
+              <label style={{ fontSize: '0.74rem', fontWeight: 700 }}>Archive records before
+                <input className="input-field" type="date" value={archiveCutoff} onChange={e => setArchiveCutoff(e.target.value)} style={{ display: 'block', marginTop: '0.3rem', width: '100%' }} />
+              </label>
+              <label style={{ fontSize: '0.74rem', fontWeight: 700 }}>Archive password (12+ characters)
+                <input className="input-field" type="password" autoComplete="new-password" value={archivePassword} onChange={e => setArchivePassword(e.target.value)} placeholder="Create a password and store it safely" style={{ display: 'block', marginTop: '0.3rem', width: '100%' }} />
+              </label>
+            </div>
+            <button type="button" className="btn-primary" disabled={archiveBusy || role !== 'admin'} onClick={handleCreateSsdArchive} style={{ width: '100%', justifyContent: 'center', padding: '0.7rem' }}>
+              <Download size={16} /> {archiveBusy ? 'Working…' : 'Create encrypted archive on SSD'}
+            </button>
+            <label className="btn-secondary" style={{ width: '100%', justifyContent: 'center', padding: '0.7rem', marginTop: '0.5rem', cursor: 'pointer', boxSizing: 'border-box' }}>
+              <Upload size={16} /> Attach / verify an archive file
+              <input type="file" accept=".json,.alzino.json,application/json" onChange={handleAttachArchive} disabled={archiveBusy} style={{ display: 'none' }} />
+            </label>
+            {archiveMessage && <div role="status" style={{ marginTop: '0.65rem', padding: '0.65rem', borderRadius: '8px', background: 'var(--surface-secondary)', color: 'var(--text-primary)', fontSize: '0.75rem', lineHeight: 1.4 }}>{archiveMessage}</div>}
+
+            {attachedArchive && <div style={{ marginTop: '0.85rem', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.75rem', background: 'var(--surface-primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.8rem', overflowWrap: 'anywhere' }}>Attached: {attachedArchive.fileName}</strong>
+                <button type="button" className="btn-outline" onClick={handleDetachArchive} disabled={archiveBusy} style={{ padding: '0.35rem 0.55rem' }}>Detach</button>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+                Created {new Date(attachedArchive.archive.createdAt).toLocaleString()} · {Object.values(attachedArchive.archive.recordCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0)} records · {Object.keys(attachedArchive.archive.assets || {}).length} photos
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '0.5rem', marginTop: '0.65rem' }}>
+                <input className="input-field" value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)} placeholder="Search attached archive" aria-label="Search attached archive" />
+                <select className="input-field" value={archiveDomain} onChange={e => setArchiveDomain(e.target.value)} aria-label="Archive record type">
+                  <option value="all">All record types</option>
+                  {Object.keys(attachedArchive.archive.domains || {}).map(domain => <option key={domain} value={domain}>{domain}</option>)}
+                </select>
+              </div>
+              <div style={{ maxHeight: '260px', overflow: 'auto', marginTop: '0.55rem', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                {attachedRecords.length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' }}>
+                  <thead><tr style={{ position: 'sticky', top: 0, background: 'var(--surface-secondary)', textAlign: 'left' }}><th style={{ padding: '0.45rem' }}>Type</th><th style={{ padding: '0.45rem' }}>Record</th><th style={{ padding: '0.45rem' }}>Date</th></tr></thead>
+                  <tbody>{attachedRecords.map(({ domain, record, key, text }) => <tr key={key} style={{ borderTop: '1px solid var(--border-color)' }}><td style={{ padding: '0.45rem', whiteSpace: 'nowrap' }}>{domain}</td><td style={{ padding: '0.45rem' }}>{text || 'Archived record'}</td><td style={{ padding: '0.45rem', whiteSpace: 'nowrap' }}>{record?.date || record?.createdAt || '—'}</td></tr>)}</tbody>
+                </table> : <p style={{ padding: '0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>No matching records in the attached archive.</p>}
+              </div>
+              {Object.entries(attachedArchive.archive.assets || {}).slice(0, 8).map(([assetKey, imageUrl]) => (
+                <div key={assetKey} style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.2rem', margin: '0.45rem 0.45rem 0 0', fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                  <img src={imageUrl} alt={`Archived product photo ${assetKey}`} loading="lazy" style={{ width: '72px', height: '72px', objectFit: 'contain', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'white' }} />
+                  <span>{assetKey}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: '0.7rem', padding: '0.7rem', border: '1px solid var(--status-red)', borderRadius: '8px' }}>
+                <strong style={{ fontSize: '0.77rem', color: 'var(--status-red)' }}>Permanent cloud cleanup</strong>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', margin: '0.3rem 0 0.5rem' }}>
+                  {Object.entries(attachedArchive.archive.purgePlan || {}).map(([domain, ids]) => `${domain}: ${ids.length}`).join(' · ') || 'No eligible old closed transactions are in this archive.'} · The cloud snapshot must still match the archive exactly.
+                </p>
+                <input className="input-field" value={deletePhrase} onChange={e => setDeletePhrase(e.target.value)} placeholder="Type DELETE to enable cleanup" aria-label="Type DELETE to confirm archive cleanup" />
+                <button type="button" className="btn-danger" disabled={archiveBusy || deletePhrase !== 'DELETE' || !Object.keys(attachedArchive.archive.purgePlan || {}).length || role !== 'admin'} onClick={handlePurgeArchivedData} style={{ width: '100%', justifyContent: 'center', marginTop: '0.45rem', padding: '0.65rem' }}>
+                  <Trash2 size={15} /> Permanently delete archived closed records from cloud
+                </button>
+              </div>
+            </div>}
+          </section>
         </div>
 
       </div>

@@ -27,6 +27,16 @@ const pendingCloudWrites = new Map();
 const conflictedDomains = new Set();
 const scopeKey = (orgId, key) => `${orgId}:${KEY_TO_DOMAIN[key]}`;
 const serializePayload = payload => JSON.stringify(payload ?? []);
+// A default UPI QR is already stored on its account record. Older settings
+// duplicated the same (potentially large) base64 image at the shop-config
+// root as well. Keep compatibility for legacy configs without that account,
+// but canonicalize synced configs to a single copy.
+const compactCloudPayload = (key, payload) => {
+  if (key !== 'SHOP_CONFIG' || !payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const defaultAccount = (payload.upiAccounts || []).find(account => account?.isDefault) || payload.upiAccounts?.[0];
+  if (!defaultAccount?.qrCodeImage || payload.qrCodeImage !== defaultAccount.qrCodeImage) return payload;
+  return { ...payload, qrCodeImage: null };
+};
 const knownDomainsStorageKey = orgId => `ALZINO_ERP_CLOUD_DOMAINS_${orgId}`;
 
 const getKnownCloudDomains = orgId => {
@@ -62,6 +72,83 @@ export const getActiveOrgId = async (client = getSupabaseClient()) => {
 
   if (error || !profile?.is_active || !profile.organization_id) return null;
   return profile.organization_id;
+};
+
+// Remove only rows that were included in a verified local archive. A domain is
+// updated only if its cloud version still matches the archived snapshot.
+export const purgeArchivedCloudRecords = async (archiveOrganizationId, archiveCutoff, archiveDomains, purgePlan) => {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured()) return { success: false, reason: 'Supabase is not configured.' };
+  const orgId = await getActiveOrgId(client);
+  if (!orgId) return { success: false, reason: 'Sign in with an authorized shop account to archive cloud data.' };
+  const { data: { user } } = await client.auth.getUser();
+  const { data: profile, error: profileError } = await client.from('profiles').select('role, is_active').eq('id', user?.id).maybeSingle();
+  if (profileError || !profile?.is_active || profile.role !== 'admin') return { success: false, reason: 'Only an active admin account can permanently remove archived records.' };
+  if (String(archiveOrganizationId) !== String(orgId)) return { success: false, reason: 'This archive belongs to a different shop and cannot be used to delete this shop’s data.' };
+
+  const domainNames = Object.keys(purgePlan || {});
+  const allowedDomains = new Set(['invoices', 'expenses', 'repairJobs', 'usedPurchases', 'warrantyClaims']);
+  if (domainNames.some(domain => !allowedDomains.has(domain))) return { success: false, reason: 'Archive cleanup includes a protected record type.' };
+  const expected = archiveDomains || {};
+  const currentRows = {};
+  for (const domain of domainNames) {
+    const key = DOMAIN_TO_KEY[domain];
+    const archivedRow = expected[domain];
+    if (!key || !archivedRow || !Array.isArray(archivedRow.payload)) {
+      return { success: false, reason: `Archive is missing a valid ${domain} snapshot.` };
+    }
+    const { data, error } = await client.from(STORE_STATE_TABLE)
+      .select('payload, version')
+      .eq('organization_id', orgId)
+      .eq('domain', domain)
+      .maybeSingle();
+    if (error) return { success: false, reason: error.message };
+    if (!data || Number(data.version || 0) !== Number(archivedRow.version || 0) ||
+        serializePayload(data.payload) !== serializePayload(archivedRow.payload)) {
+      return { success: false, reason: `${domain} changed after this archive was made. Create a fresh archive before deleting cloud records.` };
+    }
+    const requestedIds = new Set((purgePlan[domain] || []).map(String));
+    const validIds = new Set(data.payload.filter(record => {
+      const rawDate = record?.date || record?.createdAt || record?.created_at || record?.invoiceDate || record?.purchaseDate;
+      const timestamp = rawDate ? Date.parse(rawDate) : NaN;
+      const id = record?.id ?? record?.invoiceNo ?? record?.jobId ?? record?.voucherNo ?? record?.claimId;
+      const status = String(record?.paymentStatus || '').toLowerCase();
+      const settled = !status.includes('due') && !status.includes('unpaid') && !status.includes('pending') && Number(record?.balanceDue || record?.balance || 0) <= 0 && Number(record?.khataDue || 0) <= 0;
+      let domainEligible = domain === 'expenses' || domain === 'usedPurchases';
+      if (domain === 'invoices') domainEligible = settled;
+      if (domain === 'repairJobs') domainEligible = record?.status === 'Delivered' && Number(record?.balanceDue || 0) <= 0;
+      if (domain === 'warrantyClaims') domainEligible = ['closed', 'resolved', 'completed'].includes(String(record?.status || '').toLowerCase());
+      return id != null && Number.isFinite(timestamp) && timestamp < new Date(`${archiveCutoff}T00:00:00`).getTime() && domainEligible;
+    }).map(record => String(record?.id ?? record?.invoiceNo ?? record?.jobId ?? record?.voucherNo ?? record?.claimId)));
+    if ([...requestedIds].some(id => !validIds.has(id))) return { success: false, reason: `The ${domain} cleanup list contains records outside the selected date or closure rules.` };
+    currentRows[domain] = { key, row: data };
+  }
+
+  const updatedDomains = {};
+  for (const domain of domainNames) {
+    const { key, row } = currentRows[domain];
+    const ids = new Set((purgePlan[domain] || []).map(String));
+    const nextPayload = row.payload.filter(record => !ids.has(String(record?.id ?? record?.invoiceNo ?? record?.jobId ?? record?.voucherNo ?? record?.claimId ?? '')));
+    if (nextPayload.length === row.payload.length) {
+      updatedDomains[domain] = nextPayload;
+      continue;
+    }
+    const { data, error } = await client.from(STORE_STATE_TABLE)
+      .update({ payload: nextPayload, updated_at: new Date().toISOString() })
+      .eq('organization_id', orgId)
+      .eq('domain', domain)
+      .eq('version', row.version)
+      .select('version')
+      .maybeSingle();
+    if (error || !data) return { success: false, reason: error?.message || `${domain} changed during deletion. Some earlier archive domains may already be cleared; keep this SSD archive safe.` };
+    const scope = scopeKey(orgId, key);
+    versionByScope.set(scope, Number(data.version || Number(row.version) + 1));
+    lastCloudPayloads.set(scope, serializePayload(nextPayload));
+    pendingCloudWrites.delete(key);
+    if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+    updatedDomains[domain] = nextPayload;
+  }
+  return { success: true, updatedDomains };
 };
 
 export const syncPublishedCatalog = (inventory = []) => {
@@ -145,7 +232,8 @@ export const pushCollectionToCloud = (key, data) => {
   if (!isSupabaseConfigured() || !KEY_TO_DOMAIN[key]) return;
   if (conflictedDomains.has(key)) return;
   if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
-  const serialized = serializePayload(data);
+  const cloudData = compactCloudPayload(key, data);
+  const serialized = serializePayload(cloudData);
   const domain = KEY_TO_DOMAIN[key];
   const knownScope = [...versionByScope.keys()].find(scope => scope.endsWith(`:${domain}`));
   if (knownScope && lastCloudPayloads.get(knownScope) === serialized) {
@@ -155,7 +243,7 @@ export const pushCollectionToCloud = (key, data) => {
   const previousPending = pendingCloudWrites.get(key);
   const pending = {
     serialized,
-    data,
+    data: cloudData,
     baseVersion: previousPending?.baseVersion ?? (knownScope ? versionByScope.get(knownScope) : undefined)
   };
   pendingCloudWrites.set(key, pending);
@@ -204,7 +292,7 @@ export const pushCollectionToCloud = (key, data) => {
         const result = await client.from(STORE_STATE_TABLE).insert({
           organization_id: orgId,
           domain: KEY_TO_DOMAIN[key],
-          payload: data ?? [],
+          payload: cloudData ?? [],
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null
         }).select('version').maybeSingle();
@@ -212,7 +300,7 @@ export const pushCollectionToCloud = (key, data) => {
         savedVersion = result.data?.version;
       } else {
         const result = await client.from(STORE_STATE_TABLE).update({
-          payload: data ?? [],
+          payload: cloudData ?? [],
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null
         })
@@ -239,7 +327,7 @@ export const pushCollectionToCloud = (key, data) => {
         if (latestError) throw latestError;
         const latestPayload = latest?.payload ?? [];
         const latestVersion = Number(latest?.version || 0);
-        const latestLocal = pendingCloudWrites.get(key)?.data ?? data ?? [];
+        const latestLocal = pendingCloudWrites.get(key)?.data ?? cloudData ?? [];
         const conflictKey = `ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`;
         try { localStorage.setItem(conflictKey, JSON.stringify({ payload: latestLocal, savedAt: new Date().toISOString() })); } catch {}
         versionByScope.set(scope, latestVersion);
@@ -372,7 +460,7 @@ export const pushAllToCloud = async (stateObj = {}) => {
     .map(([key, domain]) => ({
       organization_id: orgId,
       domain,
-      payload: stateObj[key] ?? [],
+      payload: compactCloudPayload(key, stateObj[key]) ?? [],
       updated_at: new Date().toISOString(),
       updated_by: user?.id ?? null
     }));

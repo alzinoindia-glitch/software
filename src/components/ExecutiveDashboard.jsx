@@ -128,6 +128,8 @@ export default function ExecutiveDashboard({
     () => inventory.map(item => ({ ...item, computedAgingDays: getAgingDays(item) })),
     [inventory]
   );
+  const oldStockReminderMonths = Number(shopConfig.oldStockReminderMonths === 'custom' ? shopConfig.oldStockReminderCustomMonths : shopConfig.oldStockReminderMonths) || 3;
+  const oldStockReminderDays = oldStockReminderMonths === 12 ? 365 : oldStockReminderMonths * 30;
 
   const agingStockItems = useMemo(() => {
     return agedInventory.filter(item => {
@@ -135,9 +137,9 @@ export default function ExecutiveDashboard({
       if (agingFilter === '30') return item.computedAgingDays >= 30 && item.computedAgingDays < 60;
       if (agingFilter === '60') return item.computedAgingDays >= 60 && item.computedAgingDays < 90;
       if (agingFilter === '90') return item.computedAgingDays >= 90;
-      return item.computedAgingDays >= 30; // 'all' shows anything >= 30 days
+      return item.computedAgingDays >= oldStockReminderDays;
     }).sort((a, b) => b.computedAgingDays - a.computedAgingDays);
-  }, [agedInventory, agingFilter]);
+  }, [agedInventory, agingFilter, oldStockReminderDays]);
 
   const inStockAged = agedInventory.filter(i => Number(i.stock) > 0);
   const deadStockCount90 = inStockAged.filter(i => i.computedAgingDays >= 90).length;
@@ -290,7 +292,7 @@ export default function ExecutiveDashboard({
               </span>
             </div>
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Station Road, Bodhan • Today: {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+              Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185 • Today: {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
           </div>
         </div>

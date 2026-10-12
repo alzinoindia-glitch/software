@@ -566,12 +566,12 @@ input, select, textarea {
 
   .invoice-a4-sheet {
     page: invoice-a4;
-    width: 210mm !important;
+    width: 100% !important;
     min-height: 0 !important;
     height: auto !important;
-    padding: 6mm !important;
-    font-size: 10px !important;
-    zoom: 0.92;
+    padding: 0 !important;
+    font-size: 9px !important;
+    zoom: 1;
     break-inside: avoid-page;
     page-break-inside: avoid;
   }

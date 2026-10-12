@@ -709,7 +709,7 @@ export default function MarketPriceCompareModal({
           color: 'var(--text-secondary)'
         }}>
           <div>
-            <span>ALZINO Bodhan Intelligence Engine</span> • <span>Station Road</span>
+            <span>ALZINO Bodhan Intelligence Engine</span> • <span>Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185</span>
           </div>
           <button onClick={onClose} className="btn-secondary" style={{ padding: '0.45rem 1.25rem' }}>
             Close Window

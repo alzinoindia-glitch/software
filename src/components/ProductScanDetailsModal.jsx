@@ -45,19 +45,19 @@ export default function ProductScanDetailsModal({
   shopConfig = {},
   role = 'customer'
 }) {
-  if (!isOpen || !product) return null;
-
   // Find all color variants of this model across inventory
   const availableColors = useMemo(() => {
+    if (!product) return [];
     return findAvailableColorsForProduct(product, inventory);
   }, [product, inventory]);
 
   // Selected color variant in the modal (defaults to current product's color)
   const [selectedColorKey, setSelectedColorKey] = useState(() => {
-    return (product.color || availableColors[0]?.color || '').toLowerCase();
+    return (product?.color || '').toLowerCase();
   });
 
   const activeVariant = useMemo(() => {
+    if (!product) return null;
     const found = availableColors.find(c => c.color.toLowerCase() === selectedColorKey.toLowerCase());
     return found || availableColors[0] || {
       color: product.color || 'Standard',
@@ -73,8 +73,10 @@ export default function ProductScanDetailsModal({
 
   // Parse terms and conditions
   const termsList = useMemo(() => {
-    return normalizeProductTerms(product.termsAndConditions || product.terms);
+    return product ? normalizeProductTerms(product.termsAndConditions || product.terms) : [];
   }, [product]);
+
+  if (!isOpen || !product) return null;
 
   const effectivePrice = Number(activeVariant.sellPrice || product.sellPrice || 0);
   const effectiveMrp = Number(activeVariant.mrp || product.mrp || effectivePrice);
@@ -763,7 +765,7 @@ export default function ProductScanDetailsModal({
             }}>
               <ShieldCheck size={18} color="#059669" style={{ flexShrink: 0 }} />
               <div>
-                <strong>100% Verified ALZINO Guarantee:</strong> For all warranty assistance, bring your original invoice to our store at Station Road, Bodhan. Direct Helpline: <strong>+91 91212 12292</strong>.
+                <strong>100% Verified ALZINO Guarantee:</strong> For all warranty assistance, bring your original invoice to our store at Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185. Direct Helpline: <strong>+91 91212 12292</strong>.
               </div>
             </div>
           </div>

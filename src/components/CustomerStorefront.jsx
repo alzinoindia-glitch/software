@@ -8,7 +8,8 @@ import {
   ShieldCheck, 
   Sparkles, 
   CheckCircle2, 
-  Navigation, 
+  Navigation,
+  MapPin,
   Layers, 
   Award, 
   Tag, 
@@ -683,7 +684,7 @@ export default function CustomerStorefront({
       if (customerPhone.trim()) message += `📱 *Phone:* ${customerPhone.trim()}\n\n`;
     }
 
-    message += `Please confirm stock availability and best counter deal for me at your Station Road, Bodhan showroom. Thank you! 🙏`;
+    message += `Please confirm stock availability and best counter deal for me at your Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185 showroom. Thank you! 🙏`;
 
     const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -715,7 +716,7 @@ export default function CustomerStorefront({
       `💰 *Special Online Price:* ${priceFormatted}${mrpFormatted}${discountText}` +
       `${warrantyText}` +
       `${stockText}\n\n` +
-      `Please let me know if this is available for instant pickup/delivery at Station Road, Bodhan. Thank you!`;
+      `Please let me know if this is available for instant pickup/delivery at Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185. Thank you!`;
 
     const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -832,7 +833,7 @@ export default function CustomerStorefront({
           <div className="storefront-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
             {/* Locate Us (Google Maps) */}
             <a 
-              href={shopConfig.mapsUrl || "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7"}
+              href={shopConfig.mapsUrl || "https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185"}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1300,7 +1301,7 @@ export default function CustomerStorefront({
                'Fresh In-Store Showroom Inventory'}
             </h2>
             <span style={{ fontSize: '0.78rem', color: '#6B7280' }}>
-              {filteredProducts.length} items available right now at Station Road, Bodhan
+              {filteredProducts.length} items available right now at Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185
             </span>
           </div>
 
@@ -2097,7 +2098,7 @@ export default function CustomerStorefront({
         </section>
       </div>}
       {isMobileMoreOpen && <div className="storefront-mobile-more-menu" role="menu">
-        <a role="menuitem" href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
+        <a role="menuitem" href={shopConfig.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
         <a role="menuitem" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer"><Star size={17} /> Rate us</a>
         <a role="menuitem" href={'tel:' + (shopConfig.phone || '9121212292').replace(/[^0-9]/g, '')}><Phone size={17} /> Call desk</a>
       </div>}
@@ -2129,7 +2130,7 @@ export default function CustomerStorefront({
               <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1F2937' }}>
                 Official Sales, Service & Accessories
               </div>
-              <div>{shopConfig.address || 'Station Road, Bodhan, Telangana - 503185'} • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
+              <div>{shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'} • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
             </div>
           </div>
           <nav className="storefront-footer-social-links" aria-label="ALZINO social and store links">
@@ -2139,10 +2140,10 @@ export default function CustomerStorefront({
             <a href={shopConfig.instagramUrl || 'https://instagram.com/alzino.bodhan'} target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">
               <InstagramIcon size={19} color="#BE185D" />
             </a>
-            <a href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
-              <Navigation size={19} color="#B45309" />
+            <a href={shopConfig.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
+              <MapPin size={19} color="#B45309" />
             </a>
-            <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Rate ALZINO" title="Rate ALZINO">
+            <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review ALZINO" title="Review ALZINO">
               <Star size={19} color="#D97706" fill="#F59E0B" />
             </a>
           </nav>
@@ -2155,7 +2156,7 @@ export default function CustomerStorefront({
           fontSize: '0.72rem',
           color: '#9CA3AF'
         }}>
-          © {new Date().getFullYear()} {shopConfig.name || 'ALZINO'}. All Rights Reserved. Superfast Showroom Delivery &amp; Counter Pickup across Bodhan.
+          © {new Date().getFullYear()} {shopConfig.name || 'ALZINO'}. All Rights Reserved.
         </div>
       </footer>
 

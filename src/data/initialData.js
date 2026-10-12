@@ -4,7 +4,7 @@ export const defaultShopConfig = {
   name: "ALZINO",
   logo: "/alzino-logo.png",
   tagline: "Smart Mobiles • Used Devices • Electronics • Repairing Lab",
-  address: "Station Road, Near Old Bus Stand, Bodhan, Telangana - 503185",
+  address: "Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185",
   phone: "+91 91212 12292",
   altPhone: "+91 98490 82741",
   email: "alzino.bodhan@gmail.com",
@@ -31,7 +31,9 @@ export const defaultShopConfig = {
   defaultPrinter: "thermal-80mm", // 'thermal-80mm' | 'thermal-58mm' | 'normal-a4'
   thermalRollWidth: "80mm", // '80mm' | '58mm'
   autoPrintOnCheckout: true,
-  normalPrintCopies: 1, // 1 | 2 (Original + Shop Duplicate)
+  normalPrintCopies: 1,
+  oldStockReminderMonths: 3,
+  oldStockReminderCustomMonths: 6,
   barcodeScannerBeep: true,
   barcodeScannerAutoAdd: true,
   // SSD Hardware Storage Settings
@@ -43,7 +45,7 @@ export const defaultShopConfig = {
   instagramUrl: "https://instagram.com/alzino.bodhan",
   whatsappNumber: "+91 91212 12292",
   whatsappUrl: "https://wa.me/919121212292",
-  mapsUrl: "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7",
+  mapsUrl: "https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185",
   reviewUrl: "https://g.page/r/CWxRHXGDCdZ7EBM/review",
   storeTimings: "Monday – Sunday: 9:30 AM to 10:00 PM",
   landmark: "Opposite State Bank of India, 200m from Railway Station",

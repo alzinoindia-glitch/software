@@ -185,6 +185,16 @@ export default function InventoryManager({
     return getAvailableCategories(inventory);
   }, [inventory, taxonomyVer]);
 
+  const productEntryCategories = useMemo(() => {
+    const categoriesForEntry = availableCategories.filter(category => category !== 'Used Mobiles');
+    // Keep an existing used phone's category visible while editing legacy stock,
+    // but never offer it for a new generic stock entry.
+    if (editingItem?.category === 'Used Mobiles' && !categoriesForEntry.includes('Used Mobiles')) {
+      categoriesForEntry.push('Used Mobiles');
+    }
+    return categoriesForEntry;
+  }, [availableCategories, editingItem]);
+
   const categories = useMemo(() => {
     return ['All', ...availableCategories];
   }, [availableCategories]);
@@ -396,7 +406,8 @@ export default function InventoryManager({
     setIsCustomStorage(false);
     setIsCustomRam(false);
     setBarcodeMode('generate');
-    const defaultCat = availableCategories.includes('New Mobiles') ? 'New Mobiles' : (availableCategories[0] || 'New Mobiles');
+    const categoriesForEntry = availableCategories.filter(category => category !== 'Used Mobiles');
+    const defaultCat = categoriesForEntry.includes('New Mobiles') ? 'New Mobiles' : (categoriesForEntry[0] || 'New Mobiles');
     const validBrands = getAvailableBrandsForCategory(defaultCat, inventory);
     const defaultBrand = validBrands.includes('Samsung') ? 'Samsung' : (validBrands[0] || 'Universal');
     setFormData({
@@ -568,6 +579,14 @@ export default function InventoryManager({
   const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.sellPrice) return;
+    if (!editingItem && formData.category === 'Used Mobiles') {
+      alert('Add used phones through the Used Phones section so purchase and IMEI records stay linked.');
+      return;
+    }
+    if (['New Mobiles', 'Used Mobiles'].includes(formData.category) && (!formData.imei1?.trim() || !formData.imei2?.trim())) {
+      alert('Please enter both IMEI 1 (SIM 1) and IMEI 2 (SIM 2 / eSIM) for mobile phones.');
+      return;
+    }
 
     // Persist front/back photos to the on-device image store (not localStorage)
     const productId = editingItem ? editingItem.id : `PROD-${Date.now()}`;
@@ -1772,7 +1791,7 @@ export default function InventoryManager({
                   }}
                   className="input-field"
                 >
-                  {availableCategories.map(cat => (
+                  {productEntryCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                   <option value="Other">Other (Add Custom)</option>
@@ -2087,8 +2106,22 @@ export default function InventoryManager({
               <div style={{ gridColumn: 'span 2', position: 'relative' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
                   <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                    Product Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
+                    Product Name *
                   </label>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setNameSuggestionIndex(-1);
+                      setShowNameSuggestions(current => !current && productNameSuggestions.length > 0);
+                    }}
+                    disabled={productNameSuggestions.length === 0}
+                    title={productNameSuggestions.length ? 'Show matching product name suggestions' : 'Type at least 2 characters to see name suggestions'}
+                    style={{ padding: '0.18rem 0.45rem', fontSize: '0.64rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                  >
+                    <Sparkles size={11} /> Name Suggestions
+                  </button>
                 </div>
                 <input
                   type="text"
@@ -2096,9 +2129,7 @@ export default function InventoryManager({
                   value={formData.name}
                   onChange={(e) => {
                     setFormData({ ...formData, name: e.target.value });
-                    setShowNameSuggestions(true);
                   }}
-                  onFocus={() => setShowNameSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowNameSuggestions(false), 250)}
                   onKeyDown={(e) => {
                     if (!showNameSuggestions || productNameSuggestions.length === 0) return;
@@ -2617,7 +2648,7 @@ export default function InventoryManager({
               {/* IMEI 1 & IMEI 2 with Camera Scanner */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1)</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){['New Mobiles', 'Used Mobiles'].includes(formData.category) ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -2635,6 +2666,7 @@ export default function InventoryManager({
                   placeholder="15-digit IMEI 1"
                   value={formData.imei1 || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, imei1: e.target.value }))}
+                  required={['New Mobiles', 'Used Mobiles'].includes(formData.category)}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
@@ -2642,7 +2674,7 @@ export default function InventoryManager({
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM)</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){['New Mobiles', 'Used Mobiles'].includes(formData.category) ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -2657,9 +2689,10 @@ export default function InventoryManager({
                 </div>
                 <input
                   type="text"
-                  placeholder="15-digit IMEI 2 (optional)"
+                  placeholder={['New Mobiles', 'Used Mobiles'].includes(formData.category) ? '15-digit IMEI 2 (required)' : '15-digit IMEI 2'}
                   value={formData.imei2 || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, imei2: e.target.value }))}
+                  required={['New Mobiles', 'Used Mobiles'].includes(formData.category)}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
