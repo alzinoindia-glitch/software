@@ -1131,7 +1131,7 @@ export default function CustomerStorefront({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
             {/* Locate Us (Google Maps) */}
             <a 
-              href={shopConfig.mapsUrl || "https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185"}
+              href={shopConfig.mapsUrl || "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7"}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -2135,7 +2135,7 @@ export default function CustomerStorefront({
               <strong>Hours:</strong> {shopConfig.storeTimings || '9:30 AM – 10:00 PM (All 7 Days)'}
             </div>
             <a
-              href={shopConfig.mapsUrl || 'https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185'}
+              href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -2213,7 +2213,7 @@ export default function CustomerStorefront({
               </a>
 
               <a
-                href={shopConfig.mapsUrl || 'https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185'}
+                href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{

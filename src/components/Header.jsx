@@ -187,7 +187,7 @@ export default function Header({
 
             {/* Locate Us Button (Google Maps) */}
             <a
-              href="https://maps.google.com/?q=Station+Road+Bodhan+Telangana+503185"
+              href={shopConfig?.mapsUrl || "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7"}
               target="_blank"
               rel="noopener noreferrer"
               style={{

@@ -102,6 +102,10 @@ export default function App() {
       updated.whatsappNumber = '+91 91212 12292';
       updated.whatsappUrl = 'https://wa.me/919121212292';
     }
+    // Update Google Maps location link to official short link
+    if (!updated.mapsUrl || updated.mapsUrl.includes('Station+Road+Bodhan')) {
+      updated.mapsUrl = 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7';
+    }
     return updated;
   });
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
