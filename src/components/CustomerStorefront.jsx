@@ -73,7 +73,7 @@ const WhatsAppIcon = ({ size = 16, color = "currentColor" }) => (
 );
 
 export function getRealProductImage(product) {
-  if (product?.image && typeof product.image === 'string' && product.image.startsWith('http')) {
+  if (product?.image && typeof product.image === 'string' && (product.image.startsWith('http') || product.image.startsWith('data:image/') || product.image.startsWith('blob:'))) {
     return product.image;
   }
   const name = (product?.name || '').toLowerCase();
@@ -657,23 +657,34 @@ export default function CustomerStorefront({
   const liveProducts = useMemo(() => {
     const list = [];
     const seenNames = new Set();
+    const seenVouchers = new Set();
+    const seenImeis = new Set();
 
     // 1. Add active inventory items
     if (inventory && inventory.length > 0) {
       inventory.forEach(item => {
         const cleanName = (item.name || '').replace(/^sSamsung/i, 'Samsung');
         seenNames.add(cleanName.toLowerCase());
+        if (item.kycRef) seenVouchers.add(item.kycRef);
+        if (item.imeis && Array.isArray(item.imeis)) item.imeis.forEach(im => seenImeis.add(im));
+        if (item.imei1) seenImeis.add(item.imei1);
 
-        const isAppliance = item.category === 'Home Appliances' || 
+        const isUsedMobile = item.category === 'Used Mobiles' || 
+                             item.type === 'refurbished' || 
+                             cleanName.toLowerCase().startsWith('used ') || 
+                             cleanName.toLowerCase().includes('refurbished') ||
+                             cleanName.toLowerCase().includes('pre-owned');
+
+        const isAppliance = !isUsedMobile && (item.category === 'Home Appliances' || 
                             (cleanName && (cleanName.toLowerCase().includes('tv') || 
                                            cleanName.toLowerCase().includes('ac') || 
                                            cleanName.toLowerCase().includes('cooler') || 
                                            cleanName.toLowerCase().includes('washing machine') || 
-                                           cleanName.toLowerCase().includes('fridge')));
+                                           cleanName.toLowerCase().includes('fridge'))));
 
-        const isAccessory = item.category === 'Mobile Accessories' && 
+        const isAccessory = !isUsedMobile && (item.category === 'Mobile Accessories' && 
                             !cleanName.toLowerCase().includes('galaxy') && 
-                            !cleanName.toLowerCase().includes('iphone');
+                            !cleanName.toLowerCase().includes('iphone'));
 
         const department = isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles');
         const agingDays = getAgingDays(item);
@@ -682,51 +693,62 @@ export default function CustomerStorefront({
         const sellPrice = item.sellPrice || 0;
         const discount = regularPrice > sellPrice ? Math.round(((regularPrice - sellPrice) / regularPrice) * 100) : 0;
 
-        let condition = 'In-Store Stock';
-        if (hasOffer) {
-          condition = cleanBadgeText(item.offer.label || `Special Deal (${item.offer.pct}% Off)`);
-        } else if (agingDays >= 60) {
-          condition = `Clearance Deal (${discount}% Off)`;
-        } else if (discount > 5) {
-          condition = `${discount}% OFF Deal`;
+        let condition = isUsedMobile
+          ? (item.condition || 'Certified Refurbished (15-Day Testing Warranty)')
+          : 'In-Store Stock';
+        if (!isUsedMobile) {
+          if (hasOffer) {
+            condition = cleanBadgeText(item.offer.label || `Special Deal (${item.offer.pct}% Off)`);
+          } else if (agingDays >= 60) {
+            condition = `Clearance Deal (${discount}% Off)`;
+          } else if (discount > 5) {
+            condition = `${discount}% OFF Deal`;
+          }
         }
+
+        const itemType = isUsedMobile ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'));
 
         list.push({
           id: item.id,
           name: cleanName,
-          category: item.category || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles')),
+          category: isUsedMobile ? 'Used Mobiles' : (item.category || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles'))),
           department,
-          brand: item.brand || cleanName.split(' ')[0] || 'Samsung',
+          brand: item.brand || cleanName.split(' ')[0] || (isUsedMobile ? 'Refurbished' : 'Samsung'),
           price: sellPrice,
           mrp: regularPrice,
           discountPct: discount,
           stock: Number(item.stock) || 0,
           condition,
-          warranty: item.warranty || '1 Year Official Manufacturer Warranty',
-          rack: item.rack || 'R-01',
-          bin: item.bin || 'B-01',
-          deliveryTime: isAppliance ? 'Same-Day Bodhan' : '15-30 Mins',
-          specs: item.description || 'Genuine Bodhan In-Store Stock • Official GST Bill',
-          image: null,
+          warranty: item.warranty || (isUsedMobile ? '15 Days ALZINO Testing Warranty' : '1 Year Official Manufacturer Warranty'),
+          rack: item.rack || (isUsedMobile ? 'R-02' : 'R-01'),
+          bin: item.bin || (isUsedMobile ? 'B-04' : 'B-01'),
+          deliveryTime: isAppliance ? 'Same-Day Bodhan' : 'Instant Counter Pickup / Delivery',
+          specs: item.description || (isUsedMobile ? (item.condition || 'Tested 24-Point Diagnostic QC Check') : 'Genuine Bodhan In-Store Stock • Official GST Bill'),
+          image: item.image || item.frontImage || null,
           images: item.images || null,
-          type: isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new')
+          type: itemType
         });
       });
     }
 
-    // 2. Add refurbished purchases if in-stock
+    // 2. Add refurbished purchases if in-stock and not already in inventory
     if (usedPurchases && usedPurchases.length > 0) {
       usedPurchases.forEach(item => {
-        if (item.status !== 'Sold') {
-          const buyP = Number(item.purchasePrice || 0);
-          const sellP = Number(item.expectedSellingPrice || buyP * 1.25);
-          const mrpVal = Number(sellP * 1.35);
+        if (item.status !== 'Sold' && item.status !== 'Archived') {
+          if (item.voucherNo && seenVouchers.has(item.voucherNo)) return;
+          if (item.imei1 && seenImeis.has(item.imei1)) return;
+          if (item.id && inventory.some(i => i.id === item.id)) return;
+
+          const buyP = Number(item.buyPrice || item.purchasePrice || 0);
+          const sellP = Number(item.sellPrice || item.targetSellPrice || item.expectedSellingPrice || (buyP > 0 ? Math.round(buyP * 1.18) : 0));
+          const mrpVal = Number(item.mrp || (sellP > 0 ? Math.round(sellP * 1.1) : 0));
           const disc = mrpVal > sellP ? Math.round(((mrpVal - sellP) / mrpVal) * 100) : 0;
-          const uName = `${item.brand || ''} ${item.model || ''} (${item.storage || ''} ${item.color || ''})`.trim();
+          const uColor = item.color ? ` (${item.color})` : '';
+          const uName = item.name || `Used ${item.brand || ''} ${item.model || ''}${uColor}`.trim();
           seenNames.add(uName.toLowerCase());
 
           list.push({
-            id: item.id || `USED-${Math.random()}`,
+            id: item.id || `USED-${item.voucherNo || Math.random()}`,
             name: uName,
             category: 'Used Mobiles',
             department: 'mobiles',
@@ -735,14 +757,15 @@ export default function CustomerStorefront({
             mrp: mrpVal,
             discountPct: disc,
             stock: 1,
-            condition: `Certified ${item.conditionGrade || 'Grade A+'} (${disc}% Off)`,
+            condition: item.condition || `Certified Grade A+ (${disc}% Off)`,
             batteryHealth: item.batteryHealth ? `${item.batteryHealth}%` : '90%+',
-            warranty: '6 Months ALZINO Hardware Warranty',
-            rack: 'R-02',
-            bin: 'B-04',
-            deliveryTime: '15-30 Mins',
-            specs: `IMEI: ${item.imei1 ? item.imei1.slice(0, 8) + '...' : 'Verified'} • Tested 24-Point QC Check`,
-            image: null,
+            warranty: item.warranty || '15 Days ALZINO Testing Warranty',
+            rack: item.rack || 'R-02',
+            bin: item.bin || 'B-04',
+            deliveryTime: 'Same-Day Bodhan',
+            specs: `IMEI: ${item.imei1 ? item.imei1.slice(0, 8) + '...' : 'Verified'} • Tested 24-Point Diagnostic Check`,
+            image: item.image || (item.deviceImages && item.deviceImages[0]) || null,
+            images: item.images || null,
             type: 'refurbished'
           });
         }

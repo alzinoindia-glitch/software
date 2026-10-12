@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
 import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
+import { saveProductImage } from '../utils/productImageStore';
 
 export default function UsedMobileModule({ 
   usedPurchases = [], 
@@ -197,7 +198,7 @@ export default function UsedMobileModule({
   // =========================================================================
   // SUBMIT INWARD USED PHONE (BUY FROM CUSTOMER)
   // =========================================================================
-  const handleInwardSubmit = (e) => {
+  const handleInwardSubmit = async (e) => {
     e.preventDefault();
     if (!sellerName || !mobile || !imei1 || !buyPrice || !model) {
       alert("Please fill in Seller Name, Mobile, Model, IMEI 1 and Buy Price.");
@@ -212,8 +213,20 @@ export default function UsedMobileModule({
     }
     const cleanBuy = parseFloat(buyPrice);
     const calculatedSell = targetSellPrice ? parseFloat(targetSellPrice) : Math.round(cleanBuy * 1.18);
+    const prodId = `PROD-USED-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+
+    const frontImg = (deviceImages && deviceImages[0]) || null;
+    const backImg = (deviceImages && deviceImages[1]) || null;
+
+    if (frontImg) {
+      try { await saveProductImage(prodId, 'front', frontImg); } catch (e) {}
+    }
+    if (backImg) {
+      try { await saveProductImage(prodId, 'back', backImg); } catch (e) {}
+    }
 
     const newPurchase = {
+      id: prodId,
       voucherNo,
       date: today,
       sellerName: sellerName.trim(),
@@ -224,24 +237,33 @@ export default function UsedMobileModule({
       address: address.trim() || 'Bodhan, Telangana',
       brand: effectiveBrand,
       model: model.trim(),
-      color: color.trim(),
+      color: color.trim() || 'Standard',
       imei1: imei1.trim(),
       imei2: imei2.trim(),
       condition: `${condition} (Battery: ${batteryHealth}%)`,
+      batteryHealth: batteryHealth,
       buyPrice: cleanBuy,
+      purchasePrice: cleanBuy,
+      sellPrice: calculatedSell,
+      targetSellPrice: calculatedSell,
+      expectedSellingPrice: calculatedSell,
       paymentMode,
       documentAttached: docAttached || Boolean(idImage) || Boolean(billImage),
       idImage: idImage || null,
       billImage: billImage || null,
       deviceImages: deviceImages || [],
+      image: frontImg || null,
       addedToInventory: true,
+      status: 'In Stock',
+      warranty: '15 Days ALZINO Testing Warranty'
     };
 
     // Add this device directly to Inventory under "Used Mobiles"
     const newInventoryItem = {
-      id: `PROD-USED-${Date.now().toString().slice(-4)}`,
+      id: prodId,
       category: 'Used Mobiles',
       brand: effectiveBrand,
+      model: model.trim(),
       name: `Used ${effectiveBrand} ${model.trim()} (${color || 'Standard'})`,
       hsn: '851712',
       gstRate: 18,
@@ -252,10 +274,19 @@ export default function UsedMobileModule({
       lowStockThreshold: 1,
       barcode: `ALZ-USED-${imei1.slice(-6)}`,
       imeis: imei2 ? [imei1.trim(), imei2.trim()] : [imei1.trim()],
+      imei1: imei1.trim(),
+      imei2: imei2 ? imei2.trim() : '',
       condition: `${condition} (Battery: ${batteryHealth}%)`,
       kycRef: voucherNo,
       warranty: '15 Days ALZINO Testing Warranty',
       status: 'Active',
+      color: color.trim() || 'Standard',
+      department: 'mobiles',
+      type: 'refurbished',
+      image: frontImg || backImg || null,
+      images: (frontImg || backImg) ? { front: Boolean(frontImg), back: Boolean(backImg), v: Date.now() } : undefined,
+      description: `Certified Pre-Owned ${effectiveBrand} ${model.trim()} with ${condition} (Battery Health: ${batteryHealth}%). Tested 24-point diagnostic QC check with 15-day ALZINO testing warranty.`,
+      addedAt: new Date().toISOString()
     };
 
     setInventory(prev => [newInventoryItem, ...prev]);
