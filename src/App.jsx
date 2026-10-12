@@ -235,6 +235,28 @@ export default function App() {
     setWarrantyClaims(prev => purgeDemoRecords(prev));
   }, []);
 
+  // Listen for storage events across tabs/windows on the same device
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (!e.key || !e.newValue) return;
+      try {
+        if (e.key === 'ALZINO_ERP_INVENTORY') setInventory(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_INVOICES') setInvoices(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_CUSTOMERS') setCustomers(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_REPAIR_JOBS') setRepairJobs(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_USED_PURCHASES') setUsedPurchases(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_SUPPLIERS') setSuppliers(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_EXPENSES') setExpenses(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_WARRANTY_CLAIMS') setWarrantyClaims(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_SHOP_CONFIG') setShopConfig(JSON.parse(e.newValue));
+      } catch (err) {
+        console.warn('Cross-tab sync error:', err);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Enforce Cashier Access Control: Cashier can access 'pos', 'repairs', 'inventory', 'barcodes'
   useEffect(() => {
     if (role === 'cashier' && !['pos', 'repairs', 'inventory', 'barcodes'].includes(activeTab)) {
