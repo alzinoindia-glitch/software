@@ -1,27 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 
+export const DEFAULT_SUPABASE_URL = 'https://iaugdtkalwjcwnjadony.supabase.co';
+
 // Retrieve credentials from .env or localStorage config
 export const getSupabaseCredentials = () => {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL;
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (envUrl && envKey) {
-    return { url: envUrl.trim(), anonKey: envKey.trim() };
-  }
 
   try {
     const customConfig = localStorage.getItem('ALZINO_ERP_SUPABASE_CONFIG');
     if (customConfig) {
       const parsed = JSON.parse(customConfig);
-      if (parsed.url && parsed.anonKey) {
-        return { url: parsed.url.trim(), anonKey: parsed.anonKey.trim() };
-      }
+      return {
+        url: (parsed.url || envUrl || DEFAULT_SUPABASE_URL).trim(),
+        anonKey: (parsed.anonKey || envKey || '').trim()
+      };
     }
   } catch (e) {
     console.debug('Error reading local supabase config:', e);
   }
 
-  return { url: '', anonKey: '' };
+  if (envKey) {
+    return { url: (envUrl || DEFAULT_SUPABASE_URL).trim(), anonKey: envKey.trim() };
+  }
+
+  return { url: DEFAULT_SUPABASE_URL, anonKey: '' };
 };
 
 export const isSupabaseConfigured = () => {
