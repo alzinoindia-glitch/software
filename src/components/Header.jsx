@@ -609,7 +609,7 @@ export default function Header({
               gap: '0.65rem'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '1rem' }}>{role === 'admin' ? '👑' : '👤'}</span>
+                {role === 'cashier' && <span style={{ fontSize: '1rem' }}>👤</span>}
                 <div>
                   <div style={{ fontWeight: 800, fontSize: '0.82rem', color: '#F1EFE5' }}>
                     {role === 'admin' ? 'Admin Portal' : 'Cashier Counter'}
