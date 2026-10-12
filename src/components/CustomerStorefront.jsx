@@ -55,6 +55,7 @@ import {
 import ProductScanDetailsModal from './ProductScanDetailsModal';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { findProductFromScan } from '../utils/productTerms';
+import AlzinoLogo from './AlzinoLogo';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1044,36 +1045,19 @@ export default function CustomerStorefront({
               onClick={() => { setSelectedCategory('all'); setSearchTerm(''); }}
               style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
             >
-              <img
-                src="/alzino-logo.png"
-                alt="ALZINO"
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '2px solid #0C5B43',
-                  boxShadow: '0 2px 8px rgba(12, 91, 67, 0.25)',
-                  flexShrink: 0
-                }}
-              />
-              <div>
-                <span style={{ fontSize: '1.35rem', fontWeight: 900, letterSpacing: '-0.03em', color: '#0C5B43' }}>
-                  {shopConfig.name || 'ALZINO'}
-                </span>
-                <span style={{
-                  marginLeft: '0.35rem',
-                  backgroundColor: '#E8F5E9',
-                  color: '#1B5E20',
-                  fontSize: '0.62rem',
-                  fontWeight: 800,
-                  padding: '0.1rem 0.35rem',
-                  borderRadius: '3px',
-                  textTransform: 'uppercase'
-                }}>
-                  express
-                </span>
-              </div>
+              <AlzinoLogo height={28} textColor="#0C5B43" swooshColor="#EAB308" />
+              <span style={{
+                marginLeft: '0.2rem',
+                backgroundColor: '#E8F5E9',
+                color: '#1B5E20',
+                fontSize: '0.62rem',
+                fontWeight: 800,
+                padding: '0.1rem 0.35rem',
+                borderRadius: '3px',
+                textTransform: 'uppercase'
+              }}>
+                express
+              </span>
             </div>
           </div>
 
@@ -2666,14 +2650,10 @@ export default function CustomerStorefront({
           borderBottom: '1px solid #F3F4F6'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-            <img 
-              src="/alzino-logo.png" 
-              alt="ALZINO" 
-              style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid #E5E7EB' }} 
-            />
+            <AlzinoLogo height={32} textColor="#0C5B43" swooshColor="#EAB308" />
             <div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43', marginBottom: '0.2rem' }}>
-                {shopConfig.name || 'ALZINO'} Express
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1F2937' }}>
+                Official Sales, Service & Accessories
               </div>
               <div>Station Road, Bodhan, Telangana - 503185 • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
             </div>

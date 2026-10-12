@@ -25,6 +25,7 @@ import {
   MapPin,
   Star
 } from 'lucide-react';
+import AlzinoLogo from './AlzinoLogo';
 
 export default function Header({ 
   activeTab, 
@@ -100,43 +101,23 @@ export default function Header({
         boxSizing: 'border-box'
       }}>
         <div className="header-content-inner">
-          {/* Left: Brand Logo & Shop Name */}
+          {/* Left: Unified Brand Logo & Portal Badge */}
           <div 
-            style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', flexShrink: 0 }}
             onClick={() => setActiveTab('dashboard')}
             title="Go to Dashboard (F1)"
           >
-            <img
-              src="/alzino-logo.png"
-              alt="ALZINO"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                objectFit: 'cover',
-                border: '1.5px solid rgba(255,255,255,0.25)',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                flexShrink: 0
-              }}
-            />
-            <span style={{ 
-              fontFamily: 'var(--font-heading)', 
-              fontWeight: 800, 
-              fontSize: '1.12rem', 
-              letterSpacing: '-0.03em',
-              color: '#F1EFE5'
-            }}>
-              {shopConfig.name}
-            </span>
+            <AlzinoLogo height={24} textColor="#FFFFFF" swooshColor="#FACC15" />
             <span style={{
               background: role === 'admin' ? 'rgba(169, 188, 92, 0.2)' : 'rgba(234, 179, 8, 0.2)',
               color: role === 'admin' ? '#A9BC5C' : '#FEF08A',
               border: role === 'admin' ? '1px solid rgba(169, 188, 92, 0.4)' : '1px solid rgba(234, 179, 8, 0.4)',
-              padding: '0.1rem 0.45rem',
-              borderRadius: '4px',
+              padding: '0.12rem 0.5rem',
+              borderRadius: '6px',
               fontSize: '0.68rem',
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)'
+              fontWeight: 800,
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.02em'
             }}>
               {role === 'admin' ? '/admin' : '/cashier'}
             </span>
@@ -330,26 +311,19 @@ export default function Header({
               background: '#0F251E',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <div style={{
-                  width: '32px',
-                  height: '32px',
-                  background: '#A9BC5C',
-                  color: '#0F251E',
-                  borderRadius: 'var(--radius-sm)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                <AlzinoLogo height={22} textColor="#FFFFFF" swooshColor="#FACC15" />
+                <span style={{
+                  background: role === 'admin' ? 'rgba(169, 188, 92, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                  color: role === 'admin' ? '#A9BC5C' : '#FEF08A',
+                  border: role === 'admin' ? '1px solid rgba(169, 188, 92, 0.4)' : '1px solid rgba(234, 179, 8, 0.4)',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '5px',
+                  fontSize: '0.65rem',
                   fontWeight: 800,
-                  fontFamily: 'var(--font-heading)',
-                  fontSize: '1.05rem',
+                  fontFamily: 'var(--font-mono)'
                 }}>
-                  A
-                </div>
-                <div>
-                  <div style={{ fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: '1.05rem', color: '#F1EFE5' }}>
-                    {shopConfig.name}
-                  </div>
-                </div>
+                  {role === 'admin' ? '/admin' : '/cashier'}
+                </span>
               </div>
 
               <button
