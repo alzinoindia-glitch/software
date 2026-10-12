@@ -239,18 +239,37 @@ export default function InvoicesHub({
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Invoice - ${inv.invoiceNo}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 32px; color: #0f172a; max-width: 820px; margin: 0 auto; background: #fff; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #0f172a; width: 100%; max-width: 820px; margin: 0 auto; background: #fff; }
     .header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
     .title { font-size: 26px; font-weight: 800; color: #0f172a; margin: 0; letter-spacing: -0.02em; }
     .meta { font-size: 12px; color: #475569; margin-top: 3px; }
     .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; background: #e0e7ff; color: #3730a3; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; table-layout: fixed; }
+    td { overflow-wrap: anywhere; }
     th { background: #f8fafc; text-align: left; padding: 10px 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; border-bottom: 2px solid #cbd5e1; color: #334155; }
-    .summary-box { float: right; width: 300px; margin-top: 10px; font-size: 14px; }
+    .summary-box { float: right; width: min(300px, 100%); margin-top: 10px; font-size: 14px; }
     .summary-row { display: flex; justify-content: space-between; padding: 5px 0; color: #334155; }
     .total-row { border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; font-weight: 800; font-size: 17px; padding: 8px 0; margin-top: 6px; color: #0f172a; }
+    @media screen and (max-width: 600px) {
+      body { padding: 16px; }
+      .header { flex-wrap: wrap; gap: 12px; }
+      .header > div { min-width: 0; max-width: 100%; }
+      .title { font-size: 22px; overflow-wrap: anywhere; }
+      table { font-size: 11px; }
+      th, td { padding: 5px 3px !important; }
+      .summary-box { width: 100%; }
+    }
+    @page { size: A4; margin: 8mm; }
+    @media print {
+      body { width: 100%; max-width: none; padding: 3mm; zoom: .92; }
+      .header, table, tr, .summary-box, .total-row { break-inside: avoid-page; page-break-inside: avoid; }
+      table { font-size: 9px; margin: 3mm 0; }
+      th, td { padding: 4px !important; }
+    }
   </style>
 </head>
 <body>

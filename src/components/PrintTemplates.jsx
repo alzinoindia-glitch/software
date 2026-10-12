@@ -154,7 +154,7 @@ export default function PrintTemplates({
       </div>
 
       {/* Actual Printable Document Container */}
-      <div className="print-container" style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
         
         {/* ========================================================== */}
         {/* MODE 1A: 3-INCH (80mm) THERMAL POS RECEIPT                 */}
@@ -573,7 +573,7 @@ export default function PrintTemplates({
         {activeFormat === 'a4' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8mm' }}>
             {[1, ...(copies === 2 ? [2] : [])].map((copyNum) => (
-              <div 
+              <div className="invoice-a4-sheet"
                 key={copyNum} 
                 style={{ 
                   width: '210mm', 

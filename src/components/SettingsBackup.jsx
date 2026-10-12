@@ -14,7 +14,8 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  QrCode
 } from 'lucide-react';
 import { 
   getSupabaseCredentials, 
@@ -377,11 +378,11 @@ export default function SettingsBackup({
   };
 
   return (
-    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+    <div className="settings-page" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       
       {/* Sleek Minimalist Title Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
+      <div className="settings-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="settings-title-group" style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Store Settings & Backup</h2>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
             Offline SQLite / Local Storage
@@ -396,7 +397,7 @@ export default function SettingsBackup({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr', gap: '1.25rem' }}>
+      <div className="settings-layout-grid">
         
         {/* Left: Shop Details Form */}
         <form onSubmit={handleSaveProfile} className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -423,7 +424,7 @@ export default function SettingsBackup({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+          <div className="settings-profile-grid">
             <div>
               <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Shop Business Name *</label>
               <input
