@@ -72,10 +72,6 @@ export default function DistributorInwardHub({
     return getProductSuggestions(model, inventory, 6);
   }, [model, inventory]);
 
-  // Paste / Text Parser state
-  const [pastedInvoiceText, setPastedInvoiceText] = useState('');
-  const [parsedItems, setParsedItems] = useState([]);
-
   // Focus ref for continuous scanner
   const scanInputRef = useRef(null);
 
@@ -262,42 +258,7 @@ export default function DistributorInwardHub({
     setScannedUnits(prev => prev.filter(u => u.id !== id));
   };
 
-  // Parse pasted distributor text / invoice
-  const handleParsePastedText = () => {
-    if (!pastedInvoiceText.trim()) return;
 
-    const lines = pastedInvoiceText.split('\n').map(l => l.trim()).filter(Boolean);
-    const extracted = [];
-
-    // Regex to find 15-digit IMEIs
-    const imeiRegex = /\b(\d{15})\b/g;
-
-    lines.forEach((line, idx) => {
-      const imeisFound = line.match(imeiRegex) || [];
-      const cleanLineWithoutImeis = line.replace(imeiRegex, '').replace(/[-/|,]/g, ' ').trim();
-
-      if (imeisFound.length > 0) {
-        extracted.push({
-          id: `PARSED-${idx}-${Date.now()}`,
-          name: cleanLineWithoutImeis || `${brand} ${model}`,
-          brand: brand,
-          imei1: imeisFound[0] || '',
-          imei2: imeisFound[1] || '',
-          buyPrice: parseFloat(buyPrice) || 0,
-          sellPrice: parseFloat(sellPrice) || 0,
-          qty: 1
-        });
-      }
-    });
-
-    if (extracted.length === 0) {
-      alert("No 15-digit IMEIs detected in the pasted text. Please paste text containing standard 15-digit serial numbers.");
-      return;
-    }
-
-    setParsedItems(extracted);
-    playDeviceBeep('success');
-  };
 
   // Commit Gun Scanned Units to Inventory in 1 Click
   const handleCommitGunInward = () => {
@@ -441,52 +402,6 @@ export default function DistributorInwardHub({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {/* Mode Switcher */}
-            <div style={{
-              display: 'flex',
-              background: 'rgba(15, 23, 42, 0.7)',
-              borderRadius: '8px',
-              padding: '3px',
-              border: '1px solid rgba(255, 255, 255, 0.12)'
-            }}>
-              <button
-                type="button"
-                onClick={() => setInwardMode('gun')}
-                style={{
-                  padding: '0.35rem 0.85rem',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: inwardMode === 'gun' ? 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)' : 'transparent',
-                  color: inwardMode === 'gun' ? '#FFFFFF' : '#94A3B8',
-                  boxShadow: inwardMode === 'gun' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                🔫 Continuous Gun Scan
-              </button>
-              <button
-                type="button"
-                onClick={() => setInwardMode('paste')}
-                style={{
-                  padding: '0.35rem 0.85rem',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: inwardMode === 'paste' ? 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)' : 'transparent',
-                  color: inwardMode === 'paste' ? '#FFFFFF' : '#94A3B8',
-                  boxShadow: inwardMode === 'paste' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                📋 Paste Invoice Text
-              </button>
-            </div>
-
             {/* High-Contrast Crisp Close Button */}
             <button
               type="button"
@@ -723,9 +638,8 @@ export default function DistributorInwardHub({
             </div>
           </div>
 
-          {/* MODE A: CONTINUOUS GUN SCANNER */}
-          {inwardMode === 'gun' && (
-            <div style={{
+          {/* CONTINUOUS GUN SCANNER */}
+          <div style={{
               padding: '1.1rem',
               borderRadius: '10px',
               border: '2px dashed #6366F1',
@@ -871,59 +785,7 @@ export default function DistributorInwardHub({
                 </div>
               )}
             </div>
-          )}
-
-          {/* MODE B: PASTE DISTRIBUTOR INVOICE TEXT */}
-          {inwardMode === 'paste' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                Paste the text, WhatsApp message, or invoice copy sent by your distributor. The AI scanner automatically detects all 15-digit serial numbers and models.
-              </div>
-              <textarea
-                rows={5}
-                value={pastedInvoiceText}
-                onChange={(e) => setPastedInvoiceText(e.target.value)}
-                placeholder="Paste distributor invoice text containing 15-digit IMEIs here..."
-                className="input-field"
-                style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', lineHeight: 1.4 }}
-              />
-              <button
-                type="button"
-                onClick={handleParsePastedText}
-                className="btn-secondary"
-                style={{ alignSelf: 'flex-start', padding: '0.4rem 0.85rem', fontSize: '0.75rem', fontWeight: 700 }}
-              >
-                ⚡ Parse IMEIs & Generate Items
-              </button>
-
-              {parsedItems.length > 0 && (
-                <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--surface-secondary)', textAlign: 'left' }}>
-                        <th style={{ padding: '0.35rem 0.5rem' }}>#</th>
-                        <th style={{ padding: '0.35rem 0.5rem' }}>Item</th>
-                        <th style={{ padding: '0.35rem 0.5rem' }}>IMEI 1</th>
-                        <th style={{ padding: '0.35rem 0.5rem' }}>IMEI 2</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsedItems.map((item, idx) => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '0.35rem 0.5rem', fontWeight: 800 }}>{idx + 1}</td>
-                          <td style={{ padding: '0.35rem 0.5rem' }}>{item.name}</td>
-                          <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono)' }}>{item.imei1}</td>
-                          <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'var(--font-mono)' }}>{item.imei2 || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
+          </div>
 
         {/* Footer Actions */}
         <div style={{

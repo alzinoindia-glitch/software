@@ -32,7 +32,6 @@ import { saveProductImage, getProductImage, deleteProductImages } from '../utils
 import { renderBarcodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
-import DistributorInwardHub from './DistributorInwardHub';
 import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
 import {
   BASE_CATEGORIES,
@@ -92,7 +91,6 @@ export default function InventoryManager({
   // Modals
   const [showModal, setShowModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
-  const [showDistributorInward, setShowDistributorInward] = useState(false);
   const [activeImeiViewerItem, setActiveImeiViewerItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
@@ -810,28 +808,6 @@ export default function InventoryManager({
                 title="Transfer Shelf"
               >
                 <ArrowRightLeft size={13} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowDistributorInward(true)}
-                className="btn-primary"
-                style={{
-                  padding: '0.35rem 0.85rem',
-                  fontSize: '0.76rem',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  background: 'linear-gradient(135deg, #6366F1, #4F46E5)',
-                  color: '#FFFFFF',
-                  fontWeight: 800,
-                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.35)'
-                }}
-                title="Continuous Gun Inward Scanner & Invoice Text OCR (20-50 Units in Seconds)"
-              >
-                <Zap size={14} />
-                <span>🔫 Gun Inward Hub</span>
               </button>
 
               <button
@@ -2637,17 +2613,6 @@ export default function InventoryManager({
           onClose={() => setShowBulkModal(false)}
           onSaveBatch={handleSaveBatchMobiles}
           onPrintBarcodeSheet={onPrintBarcodeSheet}
-        />
-      )}
-
-      {/* Distributor Continuous Gun Inward & Bill OCR Hub */}
-      {showDistributorInward && (
-        <DistributorInwardHub
-          isOpen={showDistributorInward}
-          onClose={() => setShowDistributorInward(false)}
-          inventory={inventory}
-          setInventory={setInventory}
-          shopConfig={shopConfig}
         />
       )}
 
