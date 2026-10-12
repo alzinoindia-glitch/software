@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Database, 
   Download, 
@@ -11,25 +11,17 @@ import {
   Landmark, 
   Image as ImageIcon, 
   Star,
-  Cloud,
-  CloudOff,
-  RefreshCw,
-  ExternalLink,
   QrCode
 } from 'lucide-react';
-import { 
-  getSupabaseCredentials, 
-  getSupabaseClient,
-  isSupabaseConfigured, 
-  saveSupabaseCredentials 
-} from '../utils/supabaseClient';
-import { 
-  pullAllFromCloud, 
-  pushAllToCloud,
-  getActiveOrgId,
-  purgeAllLegacyOfflineData
-} from '../utils/cloudSyncService';
-import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from '../utils/customTaxonomy';
+
+const parseInvoiceTerms = (value) => {
+  const normalized = String(value || '').replace(/\.\s+(?=\d+\.\s)/g, '.\n');
+  const terms = normalized
+    .split(/\r?\n+/)
+    .map(term => term.replace(/^\s*\d+\.\s*/, '').trim())
+    .filter(Boolean);
+  return terms.length ? terms : [''];
+};
 
 export default function SettingsBackup({ 
   shopConfig, 
@@ -48,11 +40,6 @@ export default function SettingsBackup({
   setExpenses, 
   invoices, 
   setInvoices, 
-  warrantyClaims,
-  setWarrantyClaims,
-  role, 
-  setRole,
-  onPrintInvoice 
 }) {
   const [formData, setFormData] = useState(() => {
     const initialAccounts = (shopConfig.upiAccounts && shopConfig.upiAccounts.length > 0)
@@ -82,6 +69,20 @@ export default function SettingsBackup({
     };
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [termsList, setTermsList] = useState(() => parseInvoiceTerms(shopConfig.termsConditions));
+
+  const handleTermChange = (index, value) => {
+    setTermsList(previous => previous.map((term, termIndex) => termIndex === index ? value : term));
+  };
+
+  const handleAddTerm = () => setTermsList(previous => [...previous, '']);
+
+  const handleRemoveTerm = (index) => {
+    setTermsList(previous => {
+      const next = previous.filter((_, termIndex) => termIndex !== index);
+      return next.length ? next : [''];
+    });
+  };
 
   // Multi-Bank UPI & QR Code Management Handlers
   const handleQrImageUpload = (e, accountId = null) => {
@@ -202,139 +203,6 @@ export default function SettingsBackup({
     });
   };
 
-  // Cloud Sync State & Handlers (Supabase)
-  const [cloudCreds, setCloudCreds] = useState(() => getSupabaseCredentials());
-  const [cloudConnected, setCloudConnected] = useState(false);
-  const [cloudStatusLoading, setCloudStatusLoading] = useState(true);
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
-  const [syncStatusMsg, setSyncStatusMsg] = useState('');
-
-  useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setCloudStatusLoading(false);
-      return undefined;
-    }
-    const client = getSupabaseClient();
-    let active = true;
-    const refresh = async () => {
-      const orgId = await getActiveOrgId(client);
-      if (active) {
-        setCloudConnected(Boolean(orgId));
-        setCloudStatusLoading(false);
-      }
-    };
-    refresh();
-    const { data: listener } = client.auth.onAuthStateChange(() => setTimeout(refresh, 0));
-    window.addEventListener('alzino-cloud-auth-ready', refresh);
-    return () => {
-      active = false;
-      listener.subscription.unsubscribe();
-      window.removeEventListener('alzino-cloud-auth-ready', refresh);
-    };
-  }, []);
-
-  const handleSaveCloudConfig = (e) => {
-    e.preventDefault();
-    if (!cloudCreds.url.trim() || !cloudCreds.anonKey.trim()) {
-      alert("Please enter both the Supabase Project URL and Public Anon Key.");
-      return;
-    }
-    saveSupabaseCredentials(cloudCreds.url, cloudCreds.anonKey);
-    setSyncStatusMsg('Connecting and syncing with Supabase...');
-    setIsSyncingCloud(true);
-    pullAllFromCloud({
-      INVENTORY: setInventory,
-      INVOICES: setInvoices,
-      CUSTOMERS: setCustomers,
-      REPAIR_JOBS: setRepairJobs,
-      USED_PURCHASES: setUsedPurchases,
-      SUPPLIERS: setSuppliers,
-      EXPENSES: setExpenses,
-      WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig,
-      CUSTOM_TAXONOMY: applyCustomTaxonomy,
-      CUSTOM_TECHNICIANS: applyCustomTechnicians
-    }).then(async res => {
-      setIsSyncingCloud(false);
-      const activeOrg = await getActiveOrgId(getSupabaseClient());
-      setCloudConnected(Boolean(activeOrg));
-      if (res.success && activeOrg) {
-        const empty = (res.count || 0) === 0;
-        setSyncStatusMsg(empty ? 'Shop account is ready. Cloud data is empty; push stock from the device that has it.' : `✓ Pulled ${res.count} collections from cloud.`);
-        alert(empty ? 'Supabase is ready, but there is no shop data in the cloud yet. On the device that has the stock, choose “Push Local Data to Cloud”.' : `✓ Signed in and pulled ${res.count} collections from the shop cloud.`);
-      } else {
-        setSyncStatusMsg(res.reason || res.error || 'Supabase keys are saved, but this account is not connected to a shop.');
-        alert(res.reason || res.error || 'Supabase keys are saved, but this device needs an active shop account session before cloud sync can run.');
-      }
-    });
-  };
-
-  const handleDisconnectCloud = async () => {
-    if (confirm("Sign out this device from the admin cloud account? Local data will remain on this device, but it will stop syncing until an admin signs in again.")) {
-      await getSupabaseClient()?.auth.signOut();
-      setCloudConnected(false);
-      setSyncStatusMsg('Signed out. Local PIN access remains available; cloud sync needs an active shop account session.');
-      window.location.assign('/cashier');
-    }
-  };
-
-  const handleManualPull = async () => {
-    setIsSyncingCloud(true);
-    setSyncStatusMsg('Pulling latest data from cloud...');
-    const res = await pullAllFromCloud({
-      INVENTORY: setInventory,
-      INVOICES: setInvoices,
-      CUSTOMERS: setCustomers,
-      REPAIR_JOBS: setRepairJobs,
-      USED_PURCHASES: setUsedPurchases,
-      SUPPLIERS: setSuppliers,
-      EXPENSES: setExpenses,
-      WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig,
-      CUSTOM_TAXONOMY: applyCustomTaxonomy,
-      CUSTOM_TECHNICIANS: applyCustomTechnicians
-    });
-    setIsSyncingCloud(false);
-    if (res.success) {
-      if ((res.count || 0) === 0) {
-        setSyncStatusMsg('Cloud data is empty. To preserve existing stock, push it from the device where you entered it.');
-        alert('The shop cloud has no saved collections yet. Go to the device with your inventory and choose “Push Local Data to Cloud”.');
-      } else {
-        alert(`✓ Pulled ${res.count} collections from the shop cloud.`);
-        setSyncStatusMsg(`✓ Pulled ${res.count} collections from cloud.`);
-      }
-    } else {
-      alert('Could not pull from cloud: ' + (res.error || res.reason || 'Unknown error'));
-      setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
-    }
-  };
-
-  const handleManualPush = async () => {
-    setIsSyncingCloud(true);
-    setSyncStatusMsg('Pushing local data to cloud...');
-    const res = await pushAllToCloud({
-      INVENTORY: inventory,
-      INVOICES: invoices,
-      CUSTOMERS: customers,
-      REPAIR_JOBS: repairJobs,
-      USED_PURCHASES: usedPurchases,
-      SUPPLIERS: suppliers,
-      EXPENSES: expenses,
-      WARRANTY_CLAIMS: warrantyClaims,
-      SHOP_CONFIG: shopConfig,
-      CUSTOM_TAXONOMY: getCustomTaxonomy(),
-      CUSTOM_TECHNICIANS: getCustomTechnicians()
-    });
-    setIsSyncingCloud(false);
-    if (res.success) {
-      alert(`✓ Uploaded shop data and ${res.imagesCount || 0} product photos. Authorized devices can now pull it.`);
-      setSyncStatusMsg(`✓ Uploaded shop data and ${res.imagesCount || 0} product photos to cloud.`);
-    } else {
-      alert('Could not push to cloud: ' + (res.error || res.reason || 'Check table schema'));
-      setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
-    }
-  };
-
   const handleSaveProfile = (e) => {
     e.preventDefault();
     const defaultAcc = (formData.upiAccounts || []).find(a => a.isDefault) || (formData.upiAccounts || [])[0];
@@ -342,7 +210,8 @@ export default function SettingsBackup({
       ...formData,
       upiId: defaultAcc ? defaultAcc.upiId : formData.upiId,
       qrCodeImage: defaultAcc ? defaultAcc.qrCodeImage : (formData.qrCodeImage || null),
-      bankName: defaultAcc ? defaultAcc.bankName : formData.bankName
+      bankName: defaultAcc ? defaultAcc.bankName : formData.bankName,
+      termsConditions: termsList.map(term => term.trim()).filter(Boolean).map((term, index) => `${index + 1}. ${term}`).join('\n')
     };
     setShopConfig(updated);
     setSaveSuccess(true);
@@ -403,27 +272,6 @@ export default function SettingsBackup({
     }
   };
 
-  // Clear Database / Fresh Clean Slate (Zero Demo Data & Purge Offline Test Records)
-  const handleClearAllData = async () => {
-    if (confirm("Are you sure you want to clear all offline test data? This will permanently wipe all test products, inventory, sales invoices, repair tokens, and customer records from LocalStorage, SSD IndexedDB, and Cloud Sync.")) {
-      const result = await purgeAllLegacyOfflineData({
-        setInventory,
-        setUsedPurchases,
-        setRepairJobs,
-        setCustomers,
-        setSuppliers,
-        setExpenses,
-        setInvoices,
-        setWarrantyClaims
-      });
-      if (result.cloudResult?.success) {
-        alert('Business records were cleared from this device and the connected shop cloud, including the published storefront catalog. Shop settings and access accounts were kept.');
-      } else {
-        const reason = result.cloudResult?.reason || result.cloudResult?.error || 'No active authorized shop cloud session is connected.';
-        alert(`Business records were cleared from this device. Cloud deletion was not confirmed: ${reason} Connect an authorized shop account and clear again to remove shared cloud records.`);
-      }
-    }
-  };
 
   return (
     <div className="settings-page" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -448,7 +296,7 @@ export default function SettingsBackup({
       <div className="settings-layout-grid">
         
         {/* Left: Shop Details Form */}
-        <form onSubmit={handleSaveProfile} className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form onSubmit={handleSaveProfile} className="illoca-card settings-shop-profile-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#FBF7ED', borderColor: '#E8DFC7' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <img
               src={formData.logo || "/alzino-logo.png"}
@@ -761,15 +609,32 @@ export default function SettingsBackup({
             </div>
 
 
-            <div style={{ gridColumn: 'span 2' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Invoice Terms & Conditions</label>
-              <textarea
-                rows={3}
-                value={formData.termsConditions}
-                onChange={(e) => setFormData({ ...formData, termsConditions: e.target.value })}
-                className="input-field"
-                style={{ fontSize: '0.8rem' }}
-              />
+            <div className="settings-terms-section" style={{ gridColumn: '1 / -1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700 }}>Invoice Terms & Conditions</label>
+                <button type="button" onClick={handleAddTerm} className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Plus size={14} /> Add term
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {termsList.map((term, index) => (
+                  <div key={`invoice-term-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span aria-hidden="true" style={{ minWidth: '1.4rem', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{index + 1}.</span>
+                    <input
+                      type="text"
+                      value={term}
+                      onChange={(event) => handleTermChange(index, event.target.value)}
+                      className="input-field"
+                      aria-label={`Invoice term ${index + 1}`}
+                      placeholder="Enter an invoice term or condition"
+                      style={{ flex: 1, minWidth: 0, fontSize: '0.8rem' }}
+                    />
+                    <button type="button" onClick={() => handleRemoveTerm(index)} className="btn-outline" aria-label={`Remove invoice term ${index + 1}`} title="Remove term" style={{ padding: '0.45rem', color: 'var(--status-red)', borderColor: 'var(--status-red)' }}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -781,116 +646,9 @@ export default function SettingsBackup({
           </div>
         </form>
 
-        {/* Right: Cloud Sync & Offline Backup */}
+        {/* Right: Offline Backup & Restore */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Cloud Sync (Multi-Device Login) Section */}
-          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: cloudConnected ? '4px solid var(--status-green)' : '4px solid var(--accent-primary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Cloud size={18} color={cloudConnected ? 'var(--status-green)' : 'var(--accent-primary)'} />
-                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cloud Sync &amp; Multi-Device Data</h3>
-              </div>
-              <span className="mono-tag" style={{
-                background: cloudConnected ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-primary)',
-                color: cloudConnected ? 'var(--status-green)' : 'var(--text-secondary)',
-                fontWeight: 800
-              }}>
-                {cloudStatusLoading ? 'Checking account…' : cloudConnected ? '🟢 Shop Cloud Connected' : isSupabaseConfigured() ? '🟡 Shop account session needed' : '⚪ Local Only'}
-              </span>
-            </div>
-
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              Admin access uses PIN 4488 and cashier access uses PIN 4848. Cloud data syncs on devices with an active shop account session. Without one, each device uses its own local data. To seed the cloud, push once from the device that currently holds the stock.
-            </p>
-
-            <form onSubmit={handleSaveCloudConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '0.75rem' }}>
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
-                  Supabase Project URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://your-project-id.supabase.co"
-                  value={cloudCreds.url}
-                  onChange={(e) => setCloudCreds({ ...cloudCreds, url: e.target.value })}
-                  className="input-field"
-                  style={{ fontSize: '0.8rem', padding: '0.45rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
-                  Supabase Publishable / Public Key
-                </label>
-                <input
-                  type="password"
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  value={cloudCreds.anonKey}
-                  onChange={(e) => setCloudCreds({ ...cloudCreds, anonKey: e.target.value })}
-                  className="input-field"
-                  style={{ fontSize: '0.8rem', padding: '0.45rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
-                <button
-                  type="submit"
-                  disabled={isSyncingCloud}
-                  className="btn-primary"
-                  style={{ flex: 1, padding: '0.45rem 0.85rem', fontSize: '0.78rem', justifyContent: 'center' }}
-                >
-                  <Save size={14} />
-                    <span>{cloudConnected ? 'Update Cloud Keys' : 'Save Cloud Keys'}</span>
-                </button>
-
-                {cloudConnected && (
-                  <button
-                    type="button"
-                    onClick={handleDisconnectCloud}
-                    className="btn-outline"
-                    style={{ padding: '0.45rem 0.75rem', fontSize: '0.75rem', color: 'var(--status-red)' }}
-                  >
-                    Sign out admin
-                  </button>
-                )}
-              </div>
-            </form>
-
-            {/* Manual Sync Actions */}
-            {cloudConnected && (
-              <div style={{ display: 'flex', gap: '0.5rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.65rem' }}>
-                <button
-                  type="button"
-                  onClick={handleManualPull}
-                  disabled={isSyncingCloud}
-                  className="btn-secondary"
-                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.75rem', justifyContent: 'center' }}
-                >
-                  <RefreshCw size={13} className={isSyncingCloud ? 'animate-spin' : ''} />
-                  <span>⬇️ Pull from Cloud</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleManualPush}
-                  disabled={isSyncingCloud}
-                  className="btn-secondary"
-                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.75rem', justifyContent: 'center' }}
-                >
-                  <Upload size={13} />
-                  <span>⬆️ Push Local to Cloud</span>
-                </button>
-              </div>
-            )}
-
-            {syncStatusMsg && (
-              <div style={{ fontSize: '0.73rem', marginTop: '0.5rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
-                {syncStatusMsg}
-              </div>
-            )}
-          </div>
-
           {/* Backup Section */}
           <div className="illoca-card" style={{ padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -899,7 +657,7 @@ export default function SettingsBackup({
             </div>
             
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              Your ALZINO database runs 100% locally on your shop computer with zero cloud dependency. Download a backup file regularly to keep a safe copy on a USB Pendrive or external drive.
+              Download a local backup regularly to keep a safe copy on a USB drive or external drive.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -927,26 +685,6 @@ export default function SettingsBackup({
               </label>
             </div>
           </div>
-
-
-          {/* Clear Store Database */}
-          <div className="illoca-card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--color-danger)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
-              <Trash2 size={18} color="var(--color-danger)" />
-              <h3 style={{ fontSize: '1.1rem' }}>Clear Store Database</h3>
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
-              Wipes all demo records and transactional data across inventory, billing counter, repair lab, and customer ledgers to start 100% fresh.
-            </p>
-            <button
-              onClick={handleClearAllData}
-              className="btn-outline"
-              style={{ fontSize: '0.85rem', color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
-            >
-              Clear All Data (Fresh Start)
-            </button>
-          </div>
-
         </div>
 
       </div>
