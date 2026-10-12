@@ -332,11 +332,13 @@ export default function CustomerStorefront({
     return text.replace(/[⚡🏷️🔥✨🎉●]/g, '').trim();
   };
 
-  // Use the shared public catalog for visitors on every device. If Supabase is
-  // not configured, fall back to this device's real Stock Hub inventory only.
+  // Merge the shared public catalog with this device's Stock Hub inventory.
+  // Local stock must remain visible immediately even when cloud publishing is
+  // not configured yet; ProductImageViewer resolves its photos from local
+  // IndexedDB when the catalog entry has image metadata.
   const liveProducts = useMemo(() => {
-    if (isSupabaseConfigured()) {
-      return publicCatalog.map(item => {
+    const cloudProducts = isSupabaseConfigured()
+      ? publicCatalog.map(item => {
         const category = item.category || 'New Mobiles';
         const isUsed = category === 'Used Mobiles';
         const isAppliance = category === 'Home Appliances';
@@ -361,12 +363,13 @@ export default function CustomerStorefront({
           image: item.image_url || null,
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };
-      });
-    }
+      })
+      : [];
 
     const list = [];
     const seenVouchers = new Set();
     const seenImeis = new Set();
+    const seenNames = new Set();
 
     // 1. Add active inventory items
     if (inventory && inventory.length > 0) {
@@ -453,7 +456,9 @@ export default function CustomerStorefront({
           const disc = mrpVal > sellP ? Math.round(((mrpVal - sellP) / mrpVal) * 100) : 0;
           const uColor = item.color ? ` (${item.color})` : '';
           const uName = item.name || `Used ${item.brand || ''} ${item.model || ''}${uColor}`.trim();
-          seenNames.add(uName.toLowerCase());
+          const normalizedName = uName.toLowerCase();
+          if (seenNames.has(normalizedName)) return;
+          seenNames.add(normalizedName);
 
           list.push({
             id: item.id || `USED-${item.voucherNo || Math.random()}`,
@@ -480,7 +485,8 @@ export default function CustomerStorefront({
       });
     }
 
-    return list;
+    const localIds = new Set(list.map(item => String(item.id)));
+    return [...list, ...cloudProducts.filter(item => !localIds.has(String(item.id)))];
   }, [inventory, usedPurchases, publicCatalog]);
 
   // Cart Quantities & Helpers
