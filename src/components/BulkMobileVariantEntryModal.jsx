@@ -114,6 +114,7 @@ export default function BulkMobileVariantEntryModal({
   // Camera scanner state
   const [activeScanUnitIndex, setActiveScanUnitIndex] = useState(null);
   const [activeScanField, setActiveScanField] = useState('imei1'); // 'imei1' | 'imei2' | 'barcode'
+  const scanTargetRef = useRef({ unitIndex: null, field: 'imei1' });
 
   // Excel Import state
   const [excelRows, setExcelRows] = useState([]);
@@ -230,6 +231,85 @@ export default function BulkMobileVariantEntryModal({
       }
       return copy;
     });
+  };
+
+  // Parse scanned barcode/QR payload into clean 15-digit IMEIs
+  const parseScannedImei = (rawText) => {
+    if (!rawText) return { imei1: '', imei2: '' };
+    const str = String(rawText).trim();
+
+    // 1. Check for multiple 14-16 digit numbers (e.g. from a box QR code with both IMEI 1 & IMEI 2)
+    const matches = str.match(/\b\d{14,16}\b/g) || str.match(/\d{15}/g);
+    if (matches && matches.length >= 2) {
+      return {
+        imei1: matches[0],
+        imei2: matches[1]
+      };
+    }
+    if (matches && matches.length === 1) {
+      return {
+        imei1: matches[0],
+        imei2: ''
+      };
+    }
+
+    // 2. Strip non-alphanumeric/punctuation (e.g. "IMEI: 86345605..." -> extract digits)
+    const digitsOnly = str.replace(/\D/g, '');
+    if (digitsOnly.length >= 14 && digitsOnly.length <= 16) {
+      return {
+        imei1: digitsOnly,
+        imei2: ''
+      };
+    }
+
+    // 3. Fallback to cleaned trimmed string
+    return {
+      imei1: str.replace(/[\r\n\t]/g, ' ').trim(),
+      imei2: ''
+    };
+  };
+
+  const handleStartCameraScan = (unitIdx, field) => {
+    scanTargetRef.current = { unitIndex: unitIdx, field };
+    setActiveScanUnitIndex(unitIdx);
+    setActiveScanField(field);
+  };
+
+  const handleCameraScanSuccess = (scannedCode) => {
+    const targetIdx = scanTargetRef.current.unitIndex !== null ? scanTargetRef.current.unitIndex : activeScanUnitIndex;
+    const targetField = scanTargetRef.current.field || activeScanField || 'imei1';
+
+    if (targetIdx === null || targetIdx === undefined) return;
+
+    const parsed = parseScannedImei(scannedCode);
+    const primaryVal = parsed.imei1 || (scannedCode || '').trim();
+
+    setUnits(prev => {
+      const copy = [...prev];
+      if (copy[targetIdx]) {
+        if (targetField === 'imei1') {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            imei1: primaryVal,
+            ...(parsed.imei2 ? { imei2: parsed.imei2 } : {})
+          };
+        } else if (targetField === 'imei2') {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            imei2: primaryVal 
+          };
+        } else {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            [targetField]: primaryVal 
+          };
+        }
+      }
+      return copy;
+    });
+
+    scanTargetRef.current = { unitIndex: null, field: 'imei1' };
+    setActiveScanUnitIndex(null);
   };
 
   // Auto-advance input on barcode scanner enter press
@@ -1603,10 +1683,7 @@ export default function BulkMobileVariantEntryModal({
                             </label>
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveScanUnitIndex(idx);
-                                setActiveScanField('imei1');
-                              }}
+                              onClick={() => handleStartCameraScan(idx, 'imei1')}
                               style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
                               title="Scan IMEI 1 with phone camera"
                             >
@@ -1639,10 +1716,7 @@ export default function BulkMobileVariantEntryModal({
                             </label>
                             <button
                               type="button"
-                              onClick={() => {
-                                setActiveScanUnitIndex(idx);
-                                setActiveScanField('imei2');
-                              }}
+                              onClick={() => handleStartCameraScan(idx, 'imei2')}
                               style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
                               title="Scan IMEI 2 with phone camera"
                             >
@@ -1989,15 +2063,13 @@ export default function BulkMobileVariantEntryModal({
       {activeScanUnitIndex !== null && (
         <CameraBarcodeScannerModal
           isOpen={true}
-          onClose={() => setActiveScanUnitIndex(null)}
-          onScan={(scannedCode) => {
-            handleUnitChange(activeScanUnitIndex, activeScanField, scannedCode);
+          onClose={() => {
+            scanTargetRef.current = { unitIndex: null, field: 'imei1' };
             setActiveScanUnitIndex(null);
           }}
-          onScanSuccess={(scannedCode) => {
-            handleUnitChange(activeScanUnitIndex, activeScanField, scannedCode);
-            setActiveScanUnitIndex(null);
-          }}
+          onScan={handleCameraScanSuccess}
+          title={activeScanField === 'imei2' ? `Scan IMEI 2 (SIM 2) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : `Scan IMEI 1 (SIM 1) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}`}
+          description="Point camera at the barcode or QR code on the phone box"
         />
       )}
 
