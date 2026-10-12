@@ -101,10 +101,10 @@ export default function BulkMobileVariantEntryModal({
     setModelSuggestionIndex(-1);
   };
 
-  // Colour Variants list: [{ id, color, hex, qty, image }]
+  // Colour Variants list: [{ id, color, hex, qty, frontImage, backImage, image }]
   const [colourVariants, setColourVariants] = useState([
-    { id: 'cv-1', color: 'Onyx Black', hex: '#1C1C1E', qty: 2, image: null },
-    { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2, image: null }
+    { id: 'cv-1', color: 'Onyx Black', hex: '#1C1C1E', qty: 2, frontImage: null, backImage: null, image: null },
+    { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2, frontImage: null, backImage: null, image: null }
   ]);
   const [newColorInput, setNewColorInput] = useState('');
   const [customColorHex, setCustomColorHex] = useState('#EC4899');
@@ -156,7 +156,9 @@ export default function BulkMobileVariantEntryModal({
             variantId: variant.id,
             color: colorName,
             colorHex: variant.hex || getProductColorHex(colorName),
-            image: variant.image || null,
+            image: variant.frontImage || variant.image || null,
+            frontImage: variant.frontImage || variant.image || null,
+            backImage: variant.backImage || null,
             unitNo: i,
             globalIndex,
             codeFormat: unitFormat,
@@ -182,7 +184,7 @@ export default function BulkMobileVariantEntryModal({
   const effectiveStorage = modelDetails.storage === 'Other' ? (modelDetails.customStorage || '') : modelDetails.storage;
 
   // Add a new colour to the variants list
-  const handleAddColor = (colorName, hex = null, image = null) => {
+  const handleAddColor = (colorName, hex = null, frontImage = null, backImage = null) => {
     if (!colorName.trim()) return;
     const exists = colourVariants.some(c => c.color.toLowerCase() === colorName.trim().toLowerCase());
     if (exists) {
@@ -192,7 +194,15 @@ export default function BulkMobileVariantEntryModal({
     const resolvedHex = hex || getProductColorHex(colorName, customColorHex || '#EC4899');
     setColourVariants(prev => [
       ...prev,
-      { id: `cv-${Date.now()}`, color: colorName.trim(), hex: resolvedHex, qty: 1, image: image || null }
+      { 
+        id: `cv-${Date.now()}`, 
+        color: colorName.trim(), 
+        hex: resolvedHex, 
+        qty: 1, 
+        frontImage: frontImage || null,
+        backImage: backImage || null,
+        image: frontImage || null 
+      }
     ]);
     setNewColorInput('');
     setCustomColorHex('#EC4899');
@@ -202,18 +212,32 @@ export default function BulkMobileVariantEntryModal({
     setColourVariants(prev => prev.map(c => c.id === id ? { ...c, hex: newHex } : c));
   };
 
-  const handleUpdateColorImage = async (id, file) => {
+  const handleUpdateColorImage = async (id, side, file) => {
     if (!file) return;
     try {
       const compressed = await compressImageFile(file, 720, 0.8);
-      setColourVariants(prev => prev.map(c => c.id === id ? { ...c, image: compressed } : c));
+      setColourVariants(prev => prev.map(c => {
+        if (c.id !== id) return c;
+        if (side === 'back') {
+          return { ...c, backImage: compressed };
+        } else {
+          return { ...c, frontImage: compressed, image: compressed };
+        }
+      }));
     } catch (err) {
       alert(err.message || 'Could not load photo');
     }
   };
 
-  const handleRemoveColorImage = (id) => {
-    setColourVariants(prev => prev.map(c => c.id === id ? { ...c, image: null } : c));
+  const handleRemoveColorImage = (id, side) => {
+    setColourVariants(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      if (side === 'back') {
+        return { ...c, backImage: null };
+      } else {
+        return { ...c, frontImage: null, image: null };
+      }
+    }));
   };
 
   const handleRemoveColor = (id) => {
@@ -448,11 +472,21 @@ export default function BulkMobileVariantEntryModal({
       const variantCodeFormat = variantUnits.find(u => u.barcode)?.codeFormat || codeFormat;
       const prodId = `PROD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-      if (variant.image) {
+      const frontImg = variant.frontImage || variant.image || null;
+      const backImg = variant.backImage || null;
+
+      if (frontImg) {
         try {
-          await saveProductImage(prodId, 'front', variant.image);
+          await saveProductImage(prodId, 'front', frontImg);
         } catch (err) {
-          console.warn('Could not save variant image to IndexedDB:', err);
+          console.warn('Could not save front image to IndexedDB:', err);
+        }
+      }
+      if (backImg) {
+        try {
+          await saveProductImage(prodId, 'back', backImg);
+        } catch (err) {
+          console.warn('Could not save back image to IndexedDB:', err);
         }
       }
 
@@ -466,8 +500,10 @@ export default function BulkMobileVariantEntryModal({
         storage: effectiveStorage,
         color: variant.color,
         colorHex: variant.hex || getProductColorHex(variant.color),
-        image: variant.image || null,
-        images: variant.image ? { front: true, back: false, v: Date.now() } : undefined,
+        image: frontImg || backImg || null,
+        frontImage: frontImg,
+        backImage: backImg,
+        images: (frontImg || backImg) ? { front: Boolean(frontImg), back: Boolean(backImg), v: Date.now() } : undefined,
         description: `${brandName} ${modelName} ${effectiveRam}/${effectiveStorage} with ${variant.color} finish. Official GST Inward.`,
         isGst: finalGstRate > 0,
         hsn: modelDetails.hsn || '851712',
@@ -1426,17 +1462,18 @@ export default function BulkMobileVariantEntryModal({
                         </div>
                       </div>
 
-                      {/* Middle: Colour Image Upload & Preview */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-                        {variant.image ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      {/* Middle: Front & Back Colour Photos */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                        {/* Front Photo Slot */}
+                        {(variant.frontImage || variant.image) ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: 'var(--bg-main)', padding: '2px 4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
                             <div 
-                              onClick={() => setPreviewImage({ url: variant.image, title: `${variant.color} finish photo` })}
-                              title="Click to zoom image"
+                              onClick={() => setPreviewImage({ url: variant.frontImage || variant.image, title: `${variant.color} Front Photo` })}
+                              title="Click to zoom Front photo"
                               style={{ 
-                                width: '36px', 
-                                height: '36px', 
-                                borderRadius: '6px', 
+                                width: '32px', 
+                                height: '32px', 
+                                borderRadius: '5px', 
                                 overflow: 'hidden', 
                                 border: '1px solid var(--border-color, #D1D5DB)', 
                                 cursor: 'pointer',
@@ -1448,14 +1485,21 @@ export default function BulkMobileVariantEntryModal({
                               }}
                             >
                               <img 
-                                src={variant.image} 
-                                alt={variant.color} 
+                                src={variant.frontImage || variant.image} 
+                                alt={`${variant.color} Front`} 
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                               />
+                              <span style={{
+                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                background: 'rgba(0,0,0,0.65)', color: '#FFF',
+                                fontSize: '8px', fontWeight: 800, textAlign: 'center', lineHeight: '10px'
+                              }}>
+                                FRONT
+                              </span>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                               <label 
-                                title="Change photo" 
+                                title="Change Front photo" 
                                 style={{ 
                                   cursor: 'pointer', 
                                   color: 'var(--accent-primary)', 
@@ -1464,20 +1508,20 @@ export default function BulkMobileVariantEntryModal({
                                   alignItems: 'center' 
                                 }}
                               >
-                                <Camera size={13} />
+                                <Camera size={11} />
                                 <input 
                                   type="file" 
                                   accept="image/*" 
                                   style={{ display: 'none' }} 
                                   onChange={(e) => {
-                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, e.target.files[0]);
+                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'front', e.target.files[0]);
                                   }} 
                                 />
                               </label>
                               <button 
                                 type="button" 
-                                onClick={() => handleRemoveColorImage(variant.id)}
-                                title="Remove photo"
+                                onClick={() => handleRemoveColorImage(variant.id, 'front')}
+                                title="Remove Front photo"
                                 style={{ 
                                   background: 'transparent', 
                                   border: 'none', 
@@ -1488,21 +1532,21 @@ export default function BulkMobileVariantEntryModal({
                                   alignItems: 'center' 
                                 }}
                               >
-                                <X size={13} />
+                                <X size={11} />
                               </button>
                             </div>
                           </div>
                         ) : (
                           <label 
-                            title={`Upload photo for ${variant.color}`} 
+                            title={`Upload Front photo for ${variant.color}`} 
                             style={{ 
                               cursor: 'pointer', 
                               display: 'inline-flex', 
                               alignItems: 'center', 
-                              gap: '0.25rem', 
-                              fontSize: '0.72rem', 
+                              gap: '0.2rem', 
+                              fontSize: '0.68rem', 
                               fontWeight: 700,
-                              padding: '0.3rem 0.55rem', 
+                              padding: '0.25rem 0.45rem', 
                               borderRadius: '6px', 
                               background: 'rgba(79, 70, 229, 0.08)', 
                               color: 'var(--accent-primary, #4F46E5)', 
@@ -1510,14 +1554,117 @@ export default function BulkMobileVariantEntryModal({
                               transition: 'all 0.15s ease'
                             }}
                           >
-                            <Camera size={13} />
-                            <span>Add Photo</span>
+                            <Camera size={12} />
+                            <span>+ Front</span>
                             <input 
                               type="file" 
                               accept="image/*" 
                               style={{ display: 'none' }} 
                               onChange={(e) => {
-                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, e.target.files[0]);
+                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'front', e.target.files[0]);
+                              }} 
+                            />
+                          </label>
+                        )}
+
+                        {/* Back Photo Slot */}
+                        {variant.backImage ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: 'var(--bg-main)', padding: '2px 4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            <div 
+                              onClick={() => setPreviewImage({ url: variant.backImage, title: `${variant.color} Back Photo` })}
+                              title="Click to zoom Back photo"
+                              style={{ 
+                                width: '32px', 
+                                height: '32px', 
+                                borderRadius: '5px', 
+                                overflow: 'hidden', 
+                                border: '1px solid var(--border-color, #D1D5DB)', 
+                                cursor: 'pointer',
+                                background: '#FFF',
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <img 
+                                src={variant.backImage} 
+                                alt={`${variant.color} Back`} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              />
+                              <span style={{
+                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                background: 'rgba(0,0,0,0.65)', color: '#FFF',
+                                fontSize: '8px', fontWeight: 800, textAlign: 'center', lineHeight: '10px'
+                              }}>
+                                BACK
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <label 
+                                title="Change Back photo" 
+                                style={{ 
+                                  cursor: 'pointer', 
+                                  color: 'var(--accent-primary)', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <Camera size={11} />
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  style={{ display: 'none' }} 
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'back', e.target.files[0]);
+                                  }} 
+                                />
+                              </label>
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveColorImage(variant.id, 'back')}
+                                title="Remove Back photo"
+                                style={{ 
+                                  background: 'transparent', 
+                                  border: 'none', 
+                                  color: '#EF4444', 
+                                  cursor: 'pointer', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label 
+                            title={`Upload Back photo for ${variant.color}`} 
+                            style={{ 
+                              cursor: 'pointer', 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '0.2rem', 
+                              fontSize: '0.68rem', 
+                              fontWeight: 700,
+                              padding: '0.25rem 0.45rem', 
+                              borderRadius: '6px', 
+                              background: 'rgba(16, 185, 129, 0.08)', 
+                              color: '#059669', 
+                              border: '1px dashed #059669',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Camera size={12} />
+                            <span>+ Back</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'back', e.target.files[0]);
                               }} 
                             />
                           </label>
