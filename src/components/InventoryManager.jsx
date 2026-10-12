@@ -864,10 +864,10 @@ export default function InventoryManager({
                   fontWeight: 800,
                   boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
                 }}
-                title="Bulk Mobile Stock Entry with Colour Variants & IMEIs"
+                title="Bulk Mobile Stock Entry with Colour Variants"
               >
                 <Smartphone size={14} />
-                <span>Bulk Mobiles / IMEIs</span>
+                <span>Bulk Mobile</span>
               </button>
 
               <button 
