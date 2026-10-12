@@ -35,6 +35,13 @@ import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
 import { getProductColorHex } from '../utils/colorUtils';
 import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
+import ProductScanDetailsModal from './ProductScanDetailsModal';
+import { 
+  STANDARD_PRODUCT_TERMS_PRESETS, 
+  DEFAULT_PRODUCT_TERMS, 
+  normalizeProductTerms, 
+  findProductFromScan 
+} from '../utils/productTerms';
 import {
   BASE_CATEGORIES,
   BASE_MOBILE_BRANDS,
@@ -104,6 +111,8 @@ export default function InventoryManager({
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [barcodeMode, setBarcodeMode] = useState('scan'); // 'scan' | 'generate'
+  const [activeScanPreviewItem, setActiveScanPreviewItem] = useState(null);
+  const [customTermInput, setCustomTermInput] = useState('');
   // Product photos (front & back) for the add/edit form
   const [formImages, setFormImages] = useState({ front: null, back: null });
 
@@ -141,6 +150,7 @@ export default function InventoryManager({
     imei1: '',
     imei2: '',
     warranty: '1 Year Brand Warranty',
+    termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
     receivedDate: new Date().toISOString().split('T')[0],
   });
 
@@ -225,7 +235,13 @@ export default function InventoryManager({
     const raw = (scannedCode || '').trim();
     if (!raw) return;
 
-    if (targetField === 'search') {
+    if (targetField === 'search' || targetField === 'specScan') {
+      const directMatch = findProductFromScan(raw, inventory);
+      if (directMatch) {
+        setShowCameraScanner(false);
+        setActiveScanPreviewItem(directMatch);
+        return;
+      }
       setSearchTerm(raw);
       setShowCameraScanner(false);
       return;
@@ -396,8 +412,10 @@ export default function InventoryManager({
       imei1: '',
       imei2: '',
       warranty: '1 Year Brand Warranty',
+      termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
       receivedDate: new Date().toISOString().split('T')[0],
     });
+    setCustomTermInput('');
     setFormImages({ front: null, back: null });
     setShowModal(true);
   };
@@ -440,8 +458,10 @@ export default function InventoryManager({
       imei1: item.units?.[0]?.imei1 || item.imeis?.[0] || '',
       imei2: item.units?.[0]?.imei2 || item.imeis?.[1] || '',
       warranty: item.warranty || '',
+      termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
     });
+    setCustomTermInput('');
     setFormImages({ front: null, back: null });
     if (item.images?.front || item.images?.back) {
       Promise.all([getProductImage(item.id, 'front'), getProductImage(item.id, 'back')])
@@ -612,6 +632,7 @@ export default function InventoryManager({
             imeis: imeisArray,
             units: unitRecords,
             warranty: formData.warranty,
+            termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
             receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
             offer: editingItem.offer,
             createdAt: editingItem.createdAt || new Date().toISOString(),
@@ -647,6 +668,7 @@ export default function InventoryManager({
         imeis: imeisArray,
         units: unitRecords,
         warranty: formData.warranty,
+        termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
         receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
         createdAt: new Date().toISOString(),
         images: imagesMeta,
@@ -1347,6 +1369,22 @@ export default function InventoryManager({
                     <Globe size={14} />
                   </button>
 
+                  {/* QR Specs & Details Scan View */}
+                  <button
+                    onClick={() => setActiveScanPreviewItem(item)}
+                    style={{
+                      padding: '0.45rem',
+                      borderRadius: '6px',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: '#059669',
+                      cursor: 'pointer'
+                    }}
+                    title="View QR Specs, Colour Variants & Terms (Customer & Staff Scan View)"
+                  >
+                    <QrCode size={14} />
+                  </button>
+
                   <button
                     onClick={() => setQuickBarcodeItem(item)}
                     style={{
@@ -1544,6 +1582,15 @@ export default function InventoryManager({
                           title="Live Online Market Price (Amazon & Flipkart)"
                         >
                           <Globe size={13} />
+                        </button>
+                        {/* QR Specs Preview */}
+                        <button
+                          onClick={() => setActiveScanPreviewItem(item)}
+                          className="btn-secondary"
+                          style={{ padding: '0.28rem 0.45rem', color: '#059669' }}
+                          title="View QR Specs, Colour Variants & Terms"
+                        >
+                          <QrCode size={13} />
                         </button>
                         <button
                           onClick={() => setQuickBarcodeItem(item)}
@@ -2511,6 +2558,152 @@ export default function InventoryManager({
                 />
               </div>
 
+              {/* TERMS & CONDITIONS (SHOWN UPON SCANNING QR OR BARCODE) */}
+              <div style={{
+                gridColumn: 'span 2',
+                backgroundColor: 'var(--bg-main)',
+                padding: '0.85rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.65rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>📜 Product Terms & Conditions</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      (Displayed upon scanning QR or Barcode)
+                    </span>
+                  </label>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontWeight: 700 }}>
+                    {(formData.termsAndConditions || []).length} active policies
+                  </span>
+                </div>
+
+                {/* Quick Pre-set Pills */}
+                <div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    Quick-Add Pre-set Policies (Tap to add/remove):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {STANDARD_PRODUCT_TERMS_PRESETS.map((preset) => {
+                      const isSelected = (formData.termsAndConditions || []).some(t => t.includes(preset.text) || preset.text.includes(t));
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => {
+                              const current = prev.termsAndConditions || [];
+                              if (isSelected) {
+                                return { ...prev, termsAndConditions: current.filter(t => !t.includes(preset.text) && !preset.text.includes(t)) };
+                              } else {
+                                return { ...prev, termsAndConditions: [...current, preset.text] };
+                              }
+                            });
+                          }}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-primary)',
+                            color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          {isSelected && <Check size={11} strokeWidth={3} />}
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Active Terms List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '160px', overflowY: 'auto' }}>
+                  {(formData.termsAndConditions || []).map((term, tIdx) => (
+                    <div 
+                      key={tIdx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        padding: '0.35rem 0.6rem',
+                        backgroundColor: 'var(--surface-primary)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.72rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: '0.4rem', flex: 1 }}>
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 800 }}>{tIdx + 1}.</span>
+                        <span style={{ color: 'var(--text-primary)', lineHeight: 1.35 }}>{term}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            termsAndConditions: (prev.termsAndConditions || []).filter((_, idx) => idx !== tIdx)
+                          }));
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                        title="Delete condition"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Custom Condition Input */}
+                <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Type custom condition (e.g. Free tempered glass & cover, Festive store offer)..."
+                    value={customTermInput}
+                    onChange={(e) => setCustomTermInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (customTermInput.trim()) {
+                          setFormData(prev => ({
+                            ...prev,
+                            termsAndConditions: [...(prev.termsAndConditions || []), customTermInput.trim()]
+                          }));
+                          setCustomTermInput('');
+                        }
+                      }
+                    }}
+                    className="input-field"
+                    style={{ fontSize: '0.74rem', flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customTermInput.trim()) {
+                        setFormData(prev => ({
+                          ...prev,
+                          termsAndConditions: [...(prev.termsAndConditions || []), customTermInput.trim()]
+                        }));
+                        setCustomTermInput('');
+                      }
+                    }}
+                    className="btn-secondary"
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.74rem', fontWeight: 700 }}
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
               <div style={{ gridColumn: 'span 2' }}>
                 <ProductImagePicker value={formImages} onChange={setFormImages} />
               </div>
@@ -2727,6 +2920,19 @@ export default function InventoryManager({
           onClose={() => setShowBulkModal(false)}
           onSaveBatch={handleSaveBatchMobiles}
           onPrintBarcodeSheet={onPrintBarcodeSheet}
+        />
+      )}
+
+      {/* Product QR Specs & Terms Details Modal */}
+      {activeScanPreviewItem && (
+        <ProductScanDetailsModal
+          product={activeScanPreviewItem}
+          inventory={inventory}
+          isOpen={!!activeScanPreviewItem}
+          onClose={() => setActiveScanPreviewItem(null)}
+          onQuickBill={onQuickBill}
+          shopConfig={shopConfig}
+          role={role}
         />
       )}
 

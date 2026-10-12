@@ -48,8 +48,13 @@ import {
   Watch,
   LayoutGrid,
   Cable,
-  RefreshCw
+  RefreshCw,
+  Camera,
+  QrCode
 } from 'lucide-react';
+import ProductScanDetailsModal from './ProductScanDetailsModal';
+import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+import { findProductFromScan } from '../utils/productTerms';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -196,6 +201,7 @@ export default function CustomerStorefront({
   const [sortBy, setSortBy] = useState('featured'); 
   const [repairSearch, setRepairSearch] = useState('');
   const [selectedProductModal, setSelectedProductModal] = useState(null);
+  const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
 
   // Quick Commerce Cart State (Blinkit / Zepto / Instamart style)
   const [cart, setCart] = useState({}); // { [productId]: quantity }
@@ -1096,7 +1102,7 @@ export default function CustomerStorefront({
                 onClick={() => setSearchTerm('')}
                 style={{
                   position: 'absolute',
-                  right: '12px',
+                  right: '90px',
                   top: '50%',
                   transform: 'translateY(-50%)',
                   background: 'none',
@@ -1109,6 +1115,32 @@ export default function CustomerStorefront({
                 ✕
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setIsStorefrontScannerOpen(true)}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: '#0F251E',
+                border: 'none',
+                color: '#6EE7B7',
+                borderRadius: '8px',
+                padding: '4px 9px',
+                cursor: 'pointer',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                boxShadow: '0 2px 6px rgba(15, 37, 30, 0.2)'
+              }}
+              title="Scan Product Box QR Code / Barcode"
+            >
+              <Camera size={13} />
+              <span>Scan QR</span>
+            </button>
           </div>
 
           {/* Right: Quick Action Controls + Cart Button */}
@@ -2577,173 +2609,39 @@ export default function CustomerStorefront({
 
       {/* ========================================================================= */}
       {/* 8. QUICK-SPECS & PHOTO PREVIEW MODAL */}
-      {/* ========================================================================= */}
+      {/* Full Product Specifications, Colours & Terms Modal */}
       {selectedProductModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '1rem'
-        }}
-        onClick={() => setSelectedProductModal(null)}
-        >
-          <div style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: '16px',
-            maxWidth: '520px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            padding: '1.5rem',
-            position: 'relative',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+        <ProductScanDetailsModal
+          product={selectedProductModal}
+          inventory={inventory}
+          isOpen={!!selectedProductModal}
+          onClose={() => setSelectedProductModal(null)}
+          onAddToCart={(prod) => {
+            addToCart(prod);
+            setIsCartOpen(true);
           }}
-          onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setSelectedProductModal(null)}
-              style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                backgroundColor: '#F3F4F6',
-                border: 'none',
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <X size={16} />
-            </button>
+          shopConfig={shopConfig}
+          role="customer"
+        />
+      )}
 
-            {/* Photo */}
-            <div style={{
-              height: '200px',
-              backgroundColor: '#F9FAFB',
-              borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              marginBottom: '1rem'
-            }}>
-              {selectedProductModal.images ? (
-                <ProductImageViewer product={selectedProductModal} height={200} />
-              ) : (
-                <img 
-                  src={getRealProductImage(selectedProductModal)} 
-                  alt={selectedProductModal.name} 
-                  style={{ maxHeight: '190px', maxWidth: '90%', objectFit: 'contain' }} 
-                />
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem' }}>
-              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#0C5B43', backgroundColor: '#E8F5E9', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                {selectedProductModal.brand}
-              </span>
-            </div>
-
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 900, color: '#111827', margin: '0 0 0.5rem' }}>
-              {selectedProductModal.name}
-            </h3>
-
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '1.45rem', fontWeight: 900, color: '#111827' }}>
-                ₹{selectedProductModal.price.toLocaleString()}
-              </span>
-              {selectedProductModal.mrp && selectedProductModal.mrp > selectedProductModal.price && (
-                <span style={{ fontSize: '0.88rem', color: '#9CA3AF', textDecoration: 'line-through' }}>
-                  ₹{selectedProductModal.mrp.toLocaleString()}
-                </span>
-              )}
-              {selectedProductModal.discountPct > 0 && (
-                <span style={{ backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                  {selectedProductModal.discountPct}% OFF
-                </span>
-              )}
-              {selectedProductModal.mrp && selectedProductModal.mrp > selectedProductModal.price && (
-                <span style={{ backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', fontSize: '0.75rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                  Save ₹{(selectedProductModal.mrp - selectedProductModal.price).toLocaleString()}
-                </span>
-              )}
-            </div>
-
-            <div style={{ backgroundColor: '#F9FAFB', borderRadius: '8px', padding: '0.85rem', border: '1px solid #E5E7EB', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1.25rem' }}>
-              <div><strong>Specifications:</strong> {selectedProductModal.specs}</div>
-              <div><strong>Warranty:</strong> {selectedProductModal.warranty || '1 Year Official Warranty'}</div>
-              {selectedProductModal.rack && (
-                <div style={{ color: '#0C5B43', fontWeight: 700 }}>
-                  <strong>In-Store Shelf Location:</strong> Aisle Rack {selectedProductModal.rack} • Bin {selectedProductModal.bin}
-                </div>
-              )}
-              <div><strong>Stock Status:</strong> {selectedProductModal.stock > 0 ? `In Stock (${selectedProductModal.stock} units in Bodhan)` : 'On Order'}</div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.65rem' }}>
-              <button
-                type="button"
-                onClick={() => handleSingleWhatsAppInquiry(selectedProductModal)}
-                style={{
-                  backgroundColor: '#25D366',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.75rem',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.45rem',
-                  boxShadow: '0 4px 12px rgba(37, 211, 102, 0.25)'
-                }}
-              >
-                <WhatsAppIcon size={17} color="#FFFFFF" />
-                <span>Enquire on WhatsApp</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  addToCart(selectedProductModal);
-                  setSelectedProductModal(null);
-                  setIsCartOpen(true);
-                }}
-                style={{
-                  backgroundColor: '#0C5B43',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '0.75rem',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.35rem'
-                }}
-              >
-                <Plus size={16} />
-                <span>Add to Cart</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Camera Barcode / QR Scanner for Storefront */}
+      {isStorefrontScannerOpen && (
+        <CameraBarcodeScannerModal
+          isOpen={isStorefrontScannerOpen}
+          onClose={() => setIsStorefrontScannerOpen(false)}
+          onScan={(scannedCode) => {
+            setIsStorefrontScannerOpen(false);
+            const matched = findProductFromScan(scannedCode, inventory);
+            if (matched) {
+              setSelectedProductModal(matched);
+            } else {
+              alert(`Product matching code "${scannedCode}" was not found in active inventory.`);
+            }
+          }}
+          title="Scan Product Box QR Code / Barcode"
+          description="Point camera at the QR code sticker on the phone box to inspect full specifications, available colours & terms"
+        />
       )}
 
       {/* ========================================================================= */}

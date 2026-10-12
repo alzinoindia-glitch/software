@@ -16,6 +16,8 @@ import UniversalSearchModal from './components/UniversalSearchModal';
 import PrintTemplates from './components/PrintTemplates';
 import AdminAuthModal from './components/AdminAuthModal';
 import CustomerStorefront from './components/CustomerStorefront';
+import ProductScanDetailsModal from './components/ProductScanDetailsModal';
+import { findProductFromScan } from './utils/productTerms';
 import { Lock, ShieldCheck, Key } from 'lucide-react';
 
 import {
@@ -110,6 +112,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isPulloutOpen, setIsPulloutOpen] = useState(false);
   const [selectedItemForBarcode, setSelectedItemForBarcode] = useState(null);
+  const [scannedProductModal, setScannedProductModal] = useState(null);
 
   // Printing state
   const [printData, setPrintData] = useState(null);
@@ -168,6 +171,23 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  // Detect ?product=... or ?scan=... in URL when scanning physical QR sticker with smartphone camera
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const scanCode = urlParams.get('product') || urlParams.get('scan') || urlParams.get('code');
+      if (scanCode && inventory && inventory.length > 0) {
+        const found = findProductFromScan(scanCode, inventory);
+        if (found) {
+          setScannedProductModal(found);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not parse scan URL query params:', err);
+    }
+  }, [inventory]);
 
   // Quick Bill Product (from Stock Lookup to POS)
   const [quickBillProduct, setQuickBillProduct] = useState(null);
@@ -610,6 +630,24 @@ export default function App() {
         shopConfig={shopConfig}
         currentRole={role}
       />
+
+      {/* Global Product QR Scan Specifications, Colours & Terms Modal */}
+      {scannedProductModal && (
+        <ProductScanDetailsModal
+          product={scannedProductModal}
+          inventory={inventory}
+          isOpen={!!scannedProductModal}
+          onClose={() => {
+            setScannedProductModal(null);
+            if (typeof window !== 'undefined' && window.location.search.includes('product=')) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+          }}
+          onQuickBill={handleQuickBill}
+          shopConfig={shopConfig}
+          role={role}
+        />
+      )}
 
     </>
   );

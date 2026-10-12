@@ -30,6 +30,11 @@ import { renderCodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
 import { compressImageFile, saveProductImage } from '../utils/productImageStore';
+import { 
+  STANDARD_PRODUCT_TERMS_PRESETS, 
+  DEFAULT_PRODUCT_TERMS, 
+  normalizeProductTerms 
+} from '../utils/productTerms';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
 export const COMMON_STORAGE_OPTIONS = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB', 'Other'];
@@ -62,6 +67,10 @@ export default function BulkMobileVariantEntryModal({
     warranty: '1 Year Brand Warranty',
     receivedDate: new Date().toISOString().split('T')[0],
   });
+
+  // Product Terms & Conditions for the batch (shown on QR scan)
+  const [termsAndConditions, setTermsAndConditions] = useState([...DEFAULT_PRODUCT_TERMS]);
+  const [customTermInput, setCustomTermInput] = useState('');
 
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const availableBrands = useMemo(() => {
@@ -489,6 +498,7 @@ export default function BulkMobileVariantEntryModal({
           status: 'In Stock'
         })),
         warranty: modelDetails.warranty,
+        termsAndConditions: normalizeProductTerms(termsAndConditions),
         receivedDate: modelDetails.receivedDate,
         createdAt: new Date().toISOString(),
         status: 'Active'
@@ -1153,6 +1163,140 @@ export default function BulkMobileVariantEntryModal({
                       onChange={(e) => setModelDetails({ ...modelDetails, warranty: e.target.value })}
                       className="input-field"
                     />
+                  </div>
+                </div>
+
+                {/* TERMS & CONDITIONS (SHOWN UPON SCANNING QR OR BARCODE) */}
+                <div style={{
+                  marginTop: '0.85rem',
+                  padding: '0.85rem',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--bg-main, #F9FAFB)',
+                  border: '1px solid var(--border-color, #E5E7EB)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary, #111827)' }}>
+                        📜 Product Terms & Conditions
+                      </label>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted, #6B7280)' }}>
+                        (Applies to all colour variants & displays upon QR scan)
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#10B981' }}>
+                      {termsAndConditions.length} policies active
+                    </span>
+                  </div>
+
+                  {/* Pre-set Quick Add Pills */}
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted, #6B7280)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                      Quick-Add Pre-set Conditions (Tap to toggle):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {STANDARD_PRODUCT_TERMS_PRESETS.map((preset) => {
+                        const isSelected = termsAndConditions.some(t => t.includes(preset.text) || preset.text.includes(t));
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setTermsAndConditions(prev => prev.filter(t => !t.includes(preset.text) && !preset.text.includes(t)));
+                              } else {
+                                setTermsAndConditions(prev => [...prev, preset.text]);
+                              }
+                            }}
+                            style={{
+                              padding: '0.25rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: isSelected ? '1px solid #10B981' : '1px solid var(--border-color, #D1D5DB)',
+                              backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-primary, #FFFFFF)',
+                              color: isSelected ? '#047857' : 'var(--text-secondary, #4B5563)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                          >
+                            {isSelected && <Check size={11} strokeWidth={3} />}
+                            <span>{preset.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Active List of Terms */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '160px', overflowY: 'auto' }}>
+                    {termsAndConditions.map((term, tIdx) => (
+                      <div
+                        key={tIdx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem',
+                          padding: '0.35rem 0.6rem',
+                          backgroundColor: 'var(--surface-primary, #FFFFFF)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color, #E5E7EB)',
+                          fontSize: '0.72rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '0.4rem', flex: 1 }}>
+                          <span style={{ color: '#10B981', fontWeight: 800 }}>{tIdx + 1}.</span>
+                          <span style={{ color: 'var(--text-primary, #1F2937)', lineHeight: 1.35 }}>{term}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTermsAndConditions(prev => prev.filter((_, i) => i !== tIdx))}
+                          style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                          title="Remove condition"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Custom Term Input */}
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Type custom condition (e.g. Free tempered glass & cover, Festive store offer)..."
+                      value={customTermInput}
+                      onChange={(e) => setCustomTermInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (customTermInput.trim()) {
+                            setTermsAndConditions(prev => [...prev, customTermInput.trim()]);
+                            setCustomTermInput('');
+                          }
+                        }
+                      }}
+                      className="input-field"
+                      style={{ fontSize: '0.74rem', flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customTermInput.trim()) {
+                          setTermsAndConditions(prev => [...prev, customTermInput.trim()]);
+                          setCustomTermInput('');
+                        }
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.74rem', fontWeight: 700 }}
+                    >
+                      + Add
+                    </button>
                   </div>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
+import { buildProductScanUrl } from '../utils/productTerms';
 
 // Number to Words converter for Indian Rupee
 function numberToWords(num) {
@@ -1115,12 +1116,21 @@ export default function PrintTemplates({
               <div style={{ fontSize: '8.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '1px 0' }}>
                 {printData.title}
               </div>
-              <div 
-                style={{ margin: '1.5mm 0' }}
-                dangerouslySetInnerHTML={{ 
-                  __html: renderCodeSvg(printData.barcode, printData.codeFormat || (printData.barcode?.includes('QR-') ? 'qr' : 'barcode'), 150, 48, true) 
-                }} 
-              />
+              {(() => {
+                const isQr = printData.codeFormat === 'qr' || printData.barcode?.includes('QR-');
+                const effectiveCode = isQr && !printData.barcode?.startsWith('http')
+                  ? buildProductScanUrl({ id: printData.id || printData.barcode, barcode: printData.barcode })
+                  : printData.barcode;
+
+                return (
+                  <div 
+                    style={{ margin: '1.5mm 0' }}
+                    dangerouslySetInnerHTML={{ 
+                      __html: renderCodeSvg(effectiveCode, isQr ? 'qr' : 'barcode', 150, 48, true) 
+                    }} 
+                  />
+                );
+              })()}
               <div style={{ fontSize: '10.5px', fontWeight: 900 }}>
                 ₹{Number(printData.price || 0).toLocaleString()} {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7.5px', color: '#666', marginLeft: '4px' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
               </div>
@@ -1132,33 +1142,40 @@ export default function PrintTemplates({
                 gridTemplateColumns: printData.format === 'sheet40' ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', 
                 gap: '4mm' 
               }}>
-                {Array.from({ length: printData.copies || 24 }).map((_, idx) => (
-                  <div 
-                    key={idx}
-                    style={{
-                      border: '1px solid #CCC',
-                      borderRadius: '4px',
-                      padding: '2mm',
-                      textAlign: 'center',
-                      background: '#FFF',
-                      pageBreakInside: 'avoid'
-                    }}
-                  >
-                    <div style={{ fontSize: '9px', fontWeight: 800 }}>{shopConfig.name} • BODHAN</div>
-                    <div style={{ fontSize: '8px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {printData.title}
-                    </div>
+                {(() => {
+                  const isQr = printData.codeFormat === 'qr' || printData.barcode?.includes('QR-');
+                  const effectiveCode = isQr && !printData.barcode?.startsWith('http')
+                    ? buildProductScanUrl({ id: printData.id || printData.barcode, barcode: printData.barcode })
+                    : printData.barcode;
+
+                  return Array.from({ length: printData.copies || 24 }).map((_, idx) => (
                     <div 
-                      style={{ margin: '1mm 0' }}
-                      dangerouslySetInnerHTML={{ 
-                        __html: renderCodeSvg(printData.barcode, printData.codeFormat || (printData.barcode?.includes('QR-') ? 'qr' : 'barcode'), 160, 44, true) 
-                      }} 
-                    />
-                    <div style={{ fontSize: '9px', fontWeight: 800 }}>
-                      ₹{printData.price} {printData.mrp ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{printData.mrp}</span> : null}
+                      key={idx}
+                      style={{
+                        border: '1px solid #CCC',
+                        borderRadius: '4px',
+                        padding: '2mm',
+                        textAlign: 'center',
+                        background: '#FFF',
+                        pageBreakInside: 'avoid'
+                      }}
+                    >
+                      <div style={{ fontSize: '9px', fontWeight: 800 }}>{shopConfig.name} • BODHAN</div>
+                      <div style={{ fontSize: '8px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {printData.title}
+                      </div>
+                      <div 
+                        style={{ margin: '1mm 0' }}
+                        dangerouslySetInnerHTML={{ 
+                          __html: renderCodeSvg(effectiveCode, isQr ? 'qr' : 'barcode', 160, 44, true) 
+                        }} 
+                      />
+                      <div style={{ fontSize: '9px', fontWeight: 800 }}>
+                        ₹{printData.price} {printData.mrp ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{printData.mrp}</span> : null}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           )

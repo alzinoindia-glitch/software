@@ -74,6 +74,7 @@ export default function BarcodeGenerator({
 
   const handlePrint = () => {
     onPrintBarcodeSheet({
+      id: selectedProductId,
       title: customTitle,
       barcode: customBarcode,
       codeFormat,
