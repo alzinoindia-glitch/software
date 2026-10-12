@@ -264,7 +264,7 @@ export default function SettingsBackup({
         alert(empty ? 'Supabase is ready, but there is no shop data in the cloud yet. On the device that has the stock, choose “Push Local Data to Cloud”.' : `✓ Signed in and pulled ${res.count} collections from the shop cloud.`);
       } else {
         setSyncStatusMsg(res.reason || res.error || 'Supabase keys are saved, but this account is not connected to a shop.');
-        alert(res.reason || res.error || 'Supabase keys are saved. Sign in with the invited admin account and verify Google Authenticator before syncing.');
+        alert(res.reason || res.error || 'Supabase keys are saved, but this device needs an active shop account session before cloud sync can run.');
       }
     });
   };
@@ -273,7 +273,7 @@ export default function SettingsBackup({
     if (confirm("Sign out this device from the admin cloud account? Local data will remain on this device, but it will stop syncing until an admin signs in again.")) {
       await getSupabaseClient()?.auth.signOut();
       setCloudConnected(false);
-      setSyncStatusMsg('Signed out. This device will need admin Google Authenticator verification before cloud sync resumes.');
+      setSyncStatusMsg('Signed out. Local PIN access remains available; cloud sync needs an active shop account session.');
       window.location.assign('/cashier');
     }
   };
@@ -783,19 +783,19 @@ export default function SettingsBackup({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Cloud size={18} color={cloudConnected ? 'var(--status-green)' : 'var(--accent-primary)'} />
-                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cloud Sync &amp; Multi-Login</h3>
+                <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Cloud Sync &amp; Multi-Device Data</h3>
               </div>
               <span className="mono-tag" style={{
                 background: cloudConnected ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-primary)',
                 color: cloudConnected ? 'var(--status-green)' : 'var(--text-secondary)',
                 fontWeight: 800
               }}>
-                {cloudStatusLoading ? 'Checking account…' : cloudConnected ? '🟢 Shop Cloud Connected' : isSupabaseConfigured() ? '🟡 Admin authorization needed' : '⚪ Local Only'}
+                {cloudStatusLoading ? 'Checking account…' : cloudConnected ? '🟢 Shop Cloud Connected' : isSupabaseConfigured() ? '🟡 Shop account session needed' : '⚪ Local Only'}
               </span>
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              Admin access uses Google Authenticator. Each device must be authorized by an admin once; after that, cashier access uses PIN 4488. Inventory, transactions and product photos sync inside the shop account. To seed the cloud, push once from the device that currently holds the stock.
+              Admin access uses PIN 4488 and cashier access uses PIN 4848. Cloud data syncs on devices with an active shop account session. Without one, each device uses its own local data. To seed the cloud, push once from the device that currently holds the stock.
             </p>
 
             <form onSubmit={handleSaveCloudConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '0.75rem' }}>

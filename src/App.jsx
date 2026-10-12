@@ -14,7 +14,7 @@ import SettingsBackup from './components/SettingsBackup';
 import IllocaPulloutDrawer from './components/IllocaPulloutDrawer';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import PrintTemplates from './components/PrintTemplates';
-import AdminAuthModal from './components/AdminAuthModal';
+import PinAccessModal from './components/PinAccessModal';
 import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
 import { findProductFromScan } from './utils/productTerms';
@@ -292,7 +292,7 @@ export default function App() {
 
   // Initial Cloud Sync & Realtime multi-device subscription on mount
   useEffect(() => {
-    if (portal === 'customer' || (portal === 'cashier' && isCashierPinOpen)) {
+    if (portal === 'customer' || (portal === 'admin' && isAdminAuthModalOpen) || (portal === 'cashier' && isCashierPinOpen)) {
       setCloudHydrated(false);
       return undefined;
     }
@@ -345,7 +345,7 @@ export default function App() {
       window.removeEventListener('alzino:technicians-updated', handleTechniciansUpdated);
       if (unsubscribe) unsubscribe();
     };
-  }, [portal, isCashierPinOpen]);
+  }, [portal, isCashierPinOpen, isAdminAuthModalOpen]);
 
   // Purge any residual demo data on mount
   useEffect(() => {
@@ -397,39 +397,19 @@ export default function App() {
     setIsAdminAuthModalOpen(true);
   };
 
-  const handleAdminAuthSuccess = async () => {
+  const handleAdminPinSuccess = () => {
     setCloudHydrated(false);
     setRole('admin');
     setPortal('admin');
     const targetTab = initialRoute.portal === 'admin' ? (initialRoute.tab || 'dashboard') : 'dashboard';
     setActiveTab(targetTab);
     window.history.pushState(null, '', targetTab === 'dashboard' ? '/admin' : `/admin/${targetTab}`);
-    const result = await pullAllFromCloud({
-      INVENTORY: setInventory,
-      INVOICES: setInvoices,
-      CUSTOMERS: setCustomers,
-      REPAIR_JOBS: setRepairJobs,
-      USED_PURCHASES: setUsedPurchases,
-      SUPPLIERS: setSuppliers,
-      EXPENSES: setExpenses,
-      WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig,
-      CUSTOM_TAXONOMY: applyCustomTaxonomy,
-      CUSTOM_TECHNICIANS: applyCustomTechnicians
-    });
-    if (!result.success) {
-      console.warn('[CloudSync] Initial authenticated pull failed:', result.reason || result.error);
-      setIsAdminAuthModalOpen(false);
-      window.alert(`Admin is verified, but shop data could not load: ${result.reason || result.error || 'Connection failed'}. Cloud sync is paused on this device until data loads.`);
-      return;
-    }
-    setCloudHydrated(true);
     setIsAdminAuthModalOpen(false);
   };
 
   const handleCashierPinSubmit = (event) => {
     event.preventDefault();
-    if (cashierPin !== '4488') {
+    if (cashierPin !== '4848') {
       setCashierPinError('Incorrect cashier PIN.');
       setCashierPin('');
       return;
@@ -811,11 +791,12 @@ export default function App() {
         />
       )}
 
-      {/* Admin Authentication Modal (email link + Google Authenticator TOTP) */}
-      <AdminAuthModal
+      {/* Admin PIN gate */}
+      <PinAccessModal
         isOpen={isAdminAuthModalOpen}
+        role="admin"
         onClose={portal === 'admin' ? undefined : () => setIsAdminAuthModalOpen(false)}
-        onSuccess={handleAdminAuthSuccess}
+        onSuccess={handleAdminPinSuccess}
       />
 
       {isCashierPinOpen && (
