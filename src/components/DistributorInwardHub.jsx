@@ -20,7 +20,7 @@ import {
   X
 } from 'lucide-react';
 import { getAvailableCategories, getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
-import { getProductSuggestions } from '../utils/productSuggestions';
+import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { playDeviceBeep } from '../utils/hardwareDevices';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 
@@ -126,24 +126,39 @@ export default function DistributorInwardHub({
         if (matchedInv.rack) setRack(matchedInv.rack);
         if (matchedInv.bin) setBin(matchedInv.bin);
       } else {
-        const suggestions = getProductSuggestions(code, inventory, 1);
-        if (suggestions.length > 0) {
-          const sug = suggestions[0];
-          activeBrand = sug.brand || '';
-          activeModel = sug.model || sug.name || '';
-          activeColor = sug.color || '';
+        const catalogMatch = lookupProductByBarcodeOrImei(code, inventory);
+        if (catalogMatch) {
+          activeBrand = catalogMatch.brand || '';
+          activeModel = catalogMatch.model || catalogMatch.name || '';
+          activeColor = catalogMatch.color || '';
           setBrand(activeBrand);
           setModel(activeModel);
-          if (sug.ram) setRam(sug.ram);
-          if (sug.storage) setStorage(sug.storage);
+          if (catalogMatch.ram) setRam(catalogMatch.ram);
+          if (catalogMatch.storage) setStorage(catalogMatch.storage);
           if (activeColor) setColor(activeColor);
-          if (sug.category) setCategory(sug.category);
-          if (sug.suggestedBuy) setBuyPrice(String(sug.suggestedBuy));
-          if (sug.suggestedSell) setSellPrice(String(sug.suggestedSell));
-          if (sug.suggestedSell) setMrp(String(sug.suggestedSell));
-          if (sug.rack) setRack(sug.rack);
-          if (sug.bin) setBin(sug.bin);
+          if (catalogMatch.category) setCategory(catalogMatch.category);
+          if (catalogMatch.suggestedBuy) setBuyPrice(String(catalogMatch.suggestedBuy));
+          if (catalogMatch.suggestedSell) setSellPrice(String(catalogMatch.suggestedSell));
+          if (catalogMatch.mrp || catalogMatch.suggestedSell) setMrp(String(catalogMatch.mrp || catalogMatch.suggestedSell));
         } else {
+          const suggestions = getProductSuggestions(code, inventory, 1);
+          if (suggestions.length > 0) {
+            const sug = suggestions[0];
+            activeBrand = sug.brand || '';
+            activeModel = sug.model || sug.name || '';
+            activeColor = sug.color || '';
+            setBrand(activeBrand);
+            setModel(activeModel);
+            if (sug.ram) setRam(sug.ram);
+            if (sug.storage) setStorage(sug.storage);
+            if (activeColor) setColor(activeColor);
+            if (sug.category) setCategory(sug.category);
+            if (sug.suggestedBuy) setBuyPrice(String(sug.suggestedBuy));
+            if (sug.suggestedSell) setSellPrice(String(sug.suggestedSell));
+            if (sug.suggestedSell) setMrp(String(sug.suggestedSell));
+            if (sug.rack) setRack(sug.rack);
+            if (sug.bin) setBin(sug.bin);
+          } else {
           // Zero manual typing: automatically supply specs template on gun scan
           const existingMobile = inventory.find(i => i.category === 'New Mobiles' && i.brand && i.model);
           if (existingMobile) {
@@ -178,6 +193,7 @@ export default function DistributorInwardHub({
         }
       }
     }
+  }
 
     const brandTag = (activeBrand || 'PHN').slice(0, 3).toUpperCase();
     const modelTag = (activeModel || 'UNIT').replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase();

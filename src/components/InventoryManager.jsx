@@ -45,7 +45,7 @@ import {
   saveCustomCategory,
   saveCustomBrand
 } from '../utils/customTaxonomy';
-import { getProductSuggestions } from '../utils/productSuggestions';
+import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -212,6 +212,59 @@ export default function InventoryManager({
     setShowModelSuggestions(false);
     setNameSuggestionIndex(-1);
     setModelSuggestionIndex(-1);
+  };
+
+  const [cameraScanTarget, setCameraScanTarget] = useState('barcode'); // 'barcode' | 'imei1' | 'imei2'
+
+  const handleBarcodeOrImeiScanned = (scannedCode, targetField = cameraScanTarget) => {
+    const raw = (scannedCode || '').trim();
+    if (!raw) return;
+
+    const digitsOnly = raw.replace(/[^0-9a-zA-Z]/g, '');
+    const is15DigitImei = digitsOnly.length === 15 && /^\d+$/.test(digitsOnly);
+
+    // Look up in catalog / inventory for auto-filling details
+    const matched = lookupProductByBarcodeOrImei(raw, inventory);
+
+    setFormData(prev => {
+      const next = { ...prev };
+
+      // 1. Assign to barcode or IMEI fields
+      if (is15DigitImei || targetField === 'imei1' || targetField === 'imei2') {
+        if (targetField === 'imei2') {
+          next.imei2 = raw;
+        } else if (targetField === 'imei1' || !next.imei1) {
+          next.imei1 = raw;
+        } else if (!next.imei2) {
+          next.imei2 = raw;
+        }
+      } else {
+        next.barcode = raw;
+      }
+
+      // 2. If matched catalog template (e.g. Karbonn K9 from barcode 8903888001263 or TAC)
+      if (matched) {
+        if (!next.name || next.name.trim() === '') next.name = matched.name || '';
+        if (matched.brand) next.brand = matched.brand;
+        if (matched.model && (!next.model || next.model.trim() === '')) next.model = matched.model;
+        if (matched.category) next.category = matched.category;
+        if (matched.color && (!next.color || next.color === 'Onyx Black')) next.color = matched.color;
+        if (matched.ram) next.ram = matched.ram;
+        if (matched.storage) next.storage = matched.storage;
+        if (matched.description && !next.description) next.description = matched.description;
+        if (matched.hsn) next.hsn = matched.hsn;
+        if (matched.gstRate) next.gstRate = matched.gstRate;
+        if (matched.suggestedBuy && !next.buyPrice) next.buyPrice = String(matched.suggestedBuy);
+        if (matched.suggestedSell && !next.sellPrice) next.sellPrice = String(matched.suggestedSell);
+        if (matched.mrp && !next.mrp) next.mrp = String(matched.mrp);
+        if (matched.barcode && !next.barcode) next.barcode = matched.barcode;
+        if (matched.warranty && !next.warranty) next.warranty = matched.warranty;
+      }
+
+      return next;
+    });
+
+    setBarcodeMode('scan');
   };
 
   const handleCopy = (text, id) => {
@@ -2119,15 +2172,30 @@ export default function InventoryManager({
                     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                       <input
                         type="text"
-                        placeholder="Scan or type barcode from box (e.g. 890123...)"
+                        placeholder="Scan or type barcode from box (e.g. 8903888001263)"
                         value={formData.barcode}
-                        onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData(prev => ({ ...prev, barcode: val }));
+                          if (val.trim().length >= 8) {
+                            handleBarcodeOrImeiScanned(val, 'barcode');
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleBarcodeOrImeiScanned(formData.barcode, 'barcode');
+                          }
+                        }}
                         className="input-field"
                         style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}
                       />
                       <button
                         type="button"
-                        onClick={() => setShowCameraScanner(true)}
+                        onClick={() => {
+                          setCameraScanTarget('barcode');
+                          setShowCameraScanner(true);
+                        }}
                         className="btn-primary"
                         style={{ padding: '0.42rem 0.85rem', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--accent-primary)', color: '#000' }}
                         title="Scan box barcode using phone camera or webcam without barcode reader"
@@ -2247,7 +2315,10 @@ export default function InventoryManager({
                   <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1)</label>
                   <button
                     type="button"
-                    onClick={() => setShowCameraScanner(true)}
+                    onClick={() => {
+                      setCameraScanTarget('imei1');
+                      setShowCameraScanner(true);
+                    }}
                     style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
                     title="Camera Scan IMEI 1"
                   >
@@ -2269,7 +2340,10 @@ export default function InventoryManager({
                   <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM)</label>
                   <button
                     type="button"
-                    onClick={() => setShowCameraScanner(true)}
+                    onClick={() => {
+                      setCameraScanTarget('imei2');
+                      setShowCameraScanner(true);
+                    }}
                     style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
                     title="Camera Scan IMEI 2"
                   >
@@ -2495,10 +2569,9 @@ export default function InventoryManager({
           isOpen={showCameraScanner}
           onClose={() => setShowCameraScanner(false)}
           onScan={(scannedCode) => {
-            setFormData(prev => ({ ...prev, barcode: scannedCode }));
-            setBarcodeMode('scan');
+            handleBarcodeOrImeiScanned(scannedCode, cameraScanTarget);
           }}
-          title="Scan Product Box Barcode"
+          title={cameraScanTarget === 'imei1' ? "Scan IMEI 1 Barcode" : cameraScanTarget === 'imei2' ? "Scan IMEI 2 Barcode" : "Scan Product Box Barcode"}
           description="Point your phone camera or webcam at the barcode on the box"
         />
       )}

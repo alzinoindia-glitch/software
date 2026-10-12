@@ -26,6 +26,12 @@ export const BASE_MOBILE_BRANDS = [
   'Poco',
   'Infinix',
   'Tecno',
+  'Karbonn',
+  'Lava',
+  'itel',
+  'Nokia',
+  'Jio',
+  'Micromax',
   'Universal'
 ];
 

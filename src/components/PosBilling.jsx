@@ -42,6 +42,7 @@ import { getUpiQrUrl } from '../utils/barcode';
 import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareDevices';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
+import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 
 
 export default function PosBilling({ 
@@ -305,8 +306,13 @@ export default function PosBilling({
       setTimeout(() => setScanNotification(''), 3500);
     } else {
       playDeviceBeep('error');
-      setScanNotification(`⚠️ Scanned Barcode/IMEI not in inventory: "${scannedCode}"`);
-      setTimeout(() => setScanNotification(''), 4000);
+      const catalogMatch = lookupProductByBarcodeOrImei(scannedCode, inventory);
+      if (catalogMatch) {
+        setScanNotification(`⚠️ Found: ${catalogMatch.name} [Code: ${scannedCode}] — NOT in store stock! Inward/Add it to inventory first.`);
+      } else {
+        setScanNotification(`⚠️ Scanned Barcode/IMEI not in inventory: "${scannedCode}"`);
+      }
+      setTimeout(() => setScanNotification(''), 4500);
     }
   };
 

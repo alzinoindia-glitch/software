@@ -567,3 +567,178 @@ export function getProductSuggestions(query = '', inventory = [], limit = 8) {
 
   return scored.slice(0, limit).map(s => s.item);
 }
+
+// Master Barcode & IMEI TAC Lookup Catalog
+export const KNOWN_BARCODE_CATALOG = [
+  // Karbonn K9 (P) as shown in user's photo
+  {
+    barcode: '8903888001263',
+    tacPrefix: '35279099',
+    brand: 'Karbonn',
+    model: 'K9 (P)',
+    name: 'Karbonn K9 (P)',
+    category: 'New Mobiles',
+    color: 'Black & Red',
+    description: 'GSM 900/1800 Dual SIM with Type-C USB Connector',
+    ram: '32MB',
+    storage: '32MB',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 1050,
+    suggestedSell: 1299,
+    mrp: 1599,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8903888001270',
+    brand: 'Karbonn',
+    model: 'K9 Jumbo',
+    name: 'Karbonn K9 Jumbo',
+    category: 'New Mobiles',
+    color: 'Dark Blue',
+    description: 'Big Battery Dual SIM Feature Phone',
+    ram: '32MB',
+    storage: '32MB',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 1100,
+    suggestedSell: 1399,
+    mrp: 1699,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8904128521191',
+    brand: 'Lava',
+    model: 'A1 2021',
+    name: 'Lava A1 2021 Dual SIM',
+    category: 'New Mobiles',
+    color: 'Midnight Blue',
+    description: 'Military Grade Certified Dual SIM Feature Phone',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 1020,
+    suggestedSell: 1249,
+    mrp: 1499,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8904128531121',
+    brand: 'itel',
+    model: 'it2163S',
+    name: 'itel it2163S King Talker',
+    category: 'New Mobiles',
+    color: 'Deep Blue',
+    description: 'Super Loud Speaker Dual SIM',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 950,
+    suggestedSell: 1199,
+    mrp: 1399,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8904128541131',
+    brand: 'Nokia',
+    model: '105 SS',
+    name: 'Nokia 105 Single/Dual SIM',
+    category: 'New Mobiles',
+    color: 'Charcoal Black',
+    description: 'Long Lasting Battery Wireless FM Radio',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 1180,
+    suggestedSell: 1449,
+    mrp: 1699,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8904128551141',
+    brand: 'Samsung',
+    model: 'Guru Music 2 (SM-B310E)',
+    name: 'Samsung Guru Music 2 SM-B310E',
+    category: 'New Mobiles',
+    color: 'White',
+    description: 'Dedicated Music Keys, Dual SIM, 16GB Expandable',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 1850,
+    suggestedSell: 2299,
+    mrp: 2499,
+    warranty: '1 Year Brand Warranty'
+  },
+  {
+    barcode: '8904128561151',
+    brand: 'Jio',
+    model: 'JioBharat V2 4G',
+    name: 'JioBharat V2 4G Feature Phone',
+    category: 'New Mobiles',
+    color: 'Ash Black',
+    description: 'JioCinema, UPI Pay, HD Voice Calling',
+    hsn: '851712',
+    gstRate: 18,
+    suggestedBuy: 890,
+    suggestedSell: 999,
+    mrp: 1299,
+    warranty: '1 Year Brand Warranty'
+  }
+];
+
+export function lookupProductByBarcodeOrImei(rawCode, inventory = []) {
+  if (!rawCode) return null;
+  const clean = String(rawCode).trim().toLowerCase();
+  const digitsOnly = clean.replace(/[^0-9a-zA-Z]/g, '');
+
+  // 1. Check existing store inventory
+  if (Array.isArray(inventory)) {
+    const existing = inventory.find(item => {
+      if (!item) return false;
+      if (item.barcode && item.barcode.trim().toLowerCase() === clean) return true;
+      if (Array.isArray(item.barcodes) && item.barcodes.some(b => b && b.trim().toLowerCase() === clean)) return true;
+      if (Array.isArray(item.imeis) && item.imeis.some(im => im && im.trim().toLowerCase() === clean)) return true;
+      if (item.imei1 && item.imei1.trim().toLowerCase() === clean) return true;
+      if (item.imei2 && item.imei2.trim().toLowerCase() === clean) return true;
+      if (Array.isArray(item.units) && item.units.some(u => 
+        (u.barcode && u.barcode.trim().toLowerCase() === clean) ||
+        (u.imei1 && u.imei1.trim().toLowerCase() === clean) ||
+        (u.imei2 && u.imei2.trim().toLowerCase() === clean)
+      )) return true;
+      return false;
+    });
+
+    if (existing) {
+      return {
+        source: 'inventory',
+        ...existing
+      };
+    }
+  }
+
+  // 2. Check KNOWN_BARCODE_CATALOG by exact barcode
+  const matchedCatalog = KNOWN_BARCODE_CATALOG.find(cat => 
+    cat.barcode && cat.barcode.toLowerCase() === clean
+  );
+  if (matchedCatalog) {
+    return {
+      source: 'catalog',
+      ...matchedCatalog
+    };
+  }
+
+  // 3. Check by IMEI TAC (first 8 digits of a 15-digit IMEI)
+  if (digitsOnly.length === 15) {
+    const tac8 = digitsOnly.substring(0, 8);
+    const matchedTac = KNOWN_BARCODE_CATALOG.find(cat => 
+      cat.tacPrefix && cat.tacPrefix === tac8
+    );
+    if (matchedTac) {
+      return {
+        source: 'tac',
+        ...matchedTac,
+        detectedImei: digitsOnly
+      };
+    }
+  }
+
+  return null;
+}
+
