@@ -1,8 +1,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
-import { clearAllProductImages } from './productImageStore';
+import { clearAllProductImages, syncAllProductImagesToCloud } from './productImageStore';
 
-const SYNC_TABLE = 'alzino_erp_sync';
 const STORE_STATE_TABLE = 'store_state';
 
 const KEY_TO_DOMAIN = {
@@ -13,375 +12,190 @@ const KEY_TO_DOMAIN = {
   USED_PURCHASES: 'usedPurchases',
   SUPPLIERS: 'suppliers',
   EXPENSES: 'expenses',
+  WARRANTY_CLAIMS: 'warrantyClaims',
   SHOP_CONFIG: 'shopConfig'
 };
 
-const DOMAIN_TO_KEY = {
-  inventory: 'INVENTORY',
-  invoices: 'INVOICES',
-  customers: 'CUSTOMERS',
-  repairJobs: 'REPAIR_JOBS',
-  usedPurchases: 'USED_PURCHASES',
-  suppliers: 'SUPPLIERS',
-  expenses: 'EXPENSES',
-  shopConfig: 'SHOP_CONFIG'
-};
-
-const SYNC_KEYS = [
-  'INVENTORY',
-  'INVOICES',
-  'CUSTOMERS',
-  'REPAIR_JOBS',
-  'USED_PURCHASES',
-  'SUPPLIERS',
-  'EXPENSES',
-  'WARRANTY_CLAIMS',
-  'SHOP_CONFIG'
-];
-
-let cachedOrgId = null;
-
-/**
- * Find or create active Organization ID from Supabase
- */
-export const getActiveOrgId = async (client) => {
-  if (cachedOrgId) return cachedOrgId;
-  try {
-    const saved = localStorage.getItem('ALZINO_ERP_ORG_ID');
-    if (saved) {
-      cachedOrgId = saved;
-      return saved;
-    }
-    // Query existing organizations
-    const { data: orgs } = await client.from('organizations').select('id, slug').limit(1);
-    if (orgs && orgs.length > 0) {
-      cachedOrgId = orgs[0].id;
-      localStorage.setItem('ALZINO_ERP_ORG_ID', orgs[0].id);
-      return orgs[0].id;
-    }
-  } catch (err) {
-    console.debug('[CloudSync] Org ID lookup notice:', err);
-  }
-  return null;
-};
-
-// Debounce map for automatic continuous saving to cloud
+const DOMAIN_TO_KEY = Object.fromEntries(Object.entries(KEY_TO_DOMAIN).map(([key, domain]) => [domain, key]));
+const SYNC_KEYS = Object.keys(KEY_TO_DOMAIN);
 const debounceTimers = {};
 
-/**
- * Push a single collection into Supabase (debounced by 1.2s)
- */
-export const pushCollectionToCloud = (key, data) => {
-  if (!isSupabaseConfigured()) return;
-  const client = getSupabaseClient();
-  if (!client) return;
+export const getActiveOrgId = async (client = getSupabaseClient()) => {
+  if (!client) return null;
+  const { data: { user }, error: authError } = await client.auth.getUser();
+  if (authError || !user) return null;
 
-  if (debounceTimers[key]) {
-    clearTimeout(debounceTimers[key]);
-  }
+  const { data: profile, error } = await client
+    .from('profiles')
+    .select('organization_id, is_active')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (error || !profile?.is_active || !profile.organization_id) return null;
+  return profile.organization_id;
+};
+
+const authRequired = () => ({ success: false, reason: 'Sign in with an authorized shop account to sync data.' });
+
+export const pushCollectionToCloud = (key, data) => {
+  if (!isSupabaseConfigured() || !KEY_TO_DOMAIN[key]) return;
+  if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
 
   debounceTimers[key] = setTimeout(async () => {
     try {
+      const client = getSupabaseClient();
       const orgId = await getActiveOrgId(client);
-      const domain = KEY_TO_DOMAIN[key];
+      if (!orgId) return;
+      const { data: { user } } = await client.auth.getUser();
+      const { error } = await client.from(STORE_STATE_TABLE).upsert({
+        organization_id: orgId,
+        domain: KEY_TO_DOMAIN[key],
+        payload: data ?? [],
+        updated_at: new Date().toISOString(),
+        updated_by: user?.id ?? null
+      }, { onConflict: 'organization_id,domain' });
 
-      // 1. If store_state schema is present and we have an orgId or domain:
-      if (domain && orgId) {
-        const { error: storeErr } = await client
-          .from(STORE_STATE_TABLE)
-          .upsert({
-            organization_id: orgId,
-            domain,
-            payload: data || [],
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'organization_id,domain' });
-
-        if (!storeErr) {
-          console.debug(`[CloudSync] ✓ Synced ${domain} to store_state`);
-          return;
-        }
-      }
-
-      // 2. Fallback to alzino_erp_sync key-value table:
-      const payload = {
-        key,
-        data: data || [],
-        updated_at: new Date().toISOString()
-      };
-      const { error } = await client
-        .from(SYNC_TABLE)
-        .upsert(payload, { onConflict: 'key' });
-
-      if (error) {
-        console.warn(`[CloudSync] Error saving ${key} to Supabase:`, error.message);
-      } else {
-        console.debug(`[CloudSync] ✓ Synced ${key} to Supabase`);
-      }
+      if (error) console.warn(`[CloudSync] Could not save ${key}:`, error.message);
     } catch (err) {
-      console.warn(`[CloudSync] Exception saving ${key}:`, err);
+      console.warn(`[CloudSync] Could not save ${key}:`, err);
     }
   }, 1200);
 };
 
-/**
- * Fetch and populate all collections from Supabase into app state
- */
 export const pullAllFromCloud = async (setters = {}) => {
-  if (!isSupabaseConfigured()) {
-    return { success: false, reason: 'Supabase not configured' };
-  }
+  if (!isSupabaseConfigured()) return { success: false, reason: 'Supabase is not configured.' };
   const client = getSupabaseClient();
-  if (!client) {
-    return { success: false, reason: 'No client available' };
-  }
+  if (!client) return { success: false, reason: 'Supabase client is unavailable.' };
+  const orgId = await getActiveOrgId(client);
+  if (!orgId) return authRequired();
 
-  try {
-    const orgId = await getActiveOrgId(client);
+  const { data, error } = await client
+    .from(STORE_STATE_TABLE)
+    .select('domain, payload, updated_at')
+    .eq('organization_id', orgId);
 
-    // 1. Check store_state table first (Official Database Schema)
-    try {
-      let storeQuery = client.from(STORE_STATE_TABLE).select('organization_id, domain, payload, updated_at');
-      if (orgId) {
-        storeQuery = storeQuery.eq('organization_id', orgId);
-      }
-      const { data: storeRows, error: storeErr } = await storeQuery;
-
-      if (!storeErr && storeRows && storeRows.length > 0) {
-        let loaded = 0;
-        storeRows.forEach(row => {
-          const k = DOMAIN_TO_KEY[row.domain];
-          if (k && setters[k] && row.payload !== undefined) {
-            setters[k](row.payload);
-            try {
-              localStorage.setItem(`ALZINO_ERP_${k}`, JSON.stringify(row.payload));
-            } catch (e) {}
-            loaded++;
-          }
-        });
-        if (loaded > 0) {
-          return { success: true, count: loaded, source: 'store_state' };
-        }
-      }
-    } catch (e) {
-      console.debug('[CloudSync] store_state check notice:', e);
-    }
-
-    // 2. Fallback to alzino_erp_sync table
-    const { data, error } = await client
-      .from(SYNC_TABLE)
-      .select('key, data, updated_at');
-
-    if (error) {
-      console.warn('[CloudSync] Error pulling from Supabase:', error.message);
-      return { success: false, error: error.message };
-    }
-
-    if (!data || data.length === 0) {
-      return { success: true, count: 0, message: 'Cloud database is currently empty' };
-    }
-
-    let loadedCount = 0;
-    data.forEach(row => {
-      const { key, data: colData } = row;
-      if (setters[key] && colData !== undefined) {
-        setters[key](colData);
-        try {
-          localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(colData));
-        } catch (e) {}
-        loadedCount++;
-      }
-    });
-
-    return { success: true, count: loadedCount, source: 'alzino_erp_sync' };
-  } catch (err) {
-    console.warn('[CloudSync] Exception during pullAllFromCloud:', err);
-    return { success: false, error: err.message };
-  }
+  if (error) return { success: false, error: error.message };
+  let count = 0;
+  (data || []).forEach(row => {
+    const key = DOMAIN_TO_KEY[row.domain];
+    if (!key || !setters[key] || row.payload === undefined) return;
+    setters[key](row.payload);
+    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(row.payload)); } catch {}
+    count++;
+  });
+  return { success: true, count, source: STORE_STATE_TABLE };
 };
 
-/**
- * Push all local store state collections to Supabase in 1 batch
- */
 export const pushAllToCloud = async (stateObj = {}) => {
-  if (!isSupabaseConfigured()) {
-    return { success: false, reason: 'Supabase not configured' };
-  }
+  if (!isSupabaseConfigured()) return { success: false, reason: 'Supabase is not configured.' };
   const client = getSupabaseClient();
-  if (!client) {
-    return { success: false, reason: 'No client available' };
+  const orgId = await getActiveOrgId(client);
+  if (!orgId) return authRequired();
+
+  const { data: currentRows, error: readError } = await client
+    .from(STORE_STATE_TABLE)
+    .select('domain, payload')
+    .eq('organization_id', orgId);
+  if (readError) return { success: false, error: readError.message };
+  const hasExistingBusinessData = currentRows?.some(row => {
+    if (row.domain === 'shopConfig') return false;
+    if (Array.isArray(row.payload)) return row.payload.length > 0;
+    return row.payload && typeof row.payload === 'object' && Object.keys(row.payload).length > 0;
+  });
+  if (hasExistingBusinessData) {
+    return { success: false, reason: 'The shop cloud already has data. Pull it to this device before syncing more changes.' };
   }
+  const { data: { user } } = await client.auth.getUser();
 
+  const rows = Object.entries(KEY_TO_DOMAIN)
+    .filter(([key]) => stateObj[key] !== undefined)
+    .map(([key, domain]) => ({
+      organization_id: orgId,
+      domain,
+      payload: stateObj[key] ?? [],
+      updated_at: new Date().toISOString(),
+      updated_by: user?.id ?? null
+    }));
+
+  if (!rows.length) return { success: true, count: 0, target: STORE_STATE_TABLE };
+  const { error } = await client.from(STORE_STATE_TABLE).upsert(rows, { onConflict: 'organization_id,domain' });
+  if (error) return { success: false, error: error.message };
   try {
-    const orgId = await getActiveOrgId(client);
-
-    // 1. If store_state schema is accessible and we have orgId:
-    if (orgId) {
-      const domainRecords = [];
-      Object.entries(KEY_TO_DOMAIN).forEach(([k, domain]) => {
-        if (stateObj[k] !== undefined) {
-          domainRecords.push({
-            organization_id: orgId,
-            domain,
-            payload: stateObj[k] || [],
-            updated_at: new Date().toISOString()
-          });
-        }
-      });
-
-      if (domainRecords.length > 0) {
-        const { error: storeErr } = await client
-          .from(STORE_STATE_TABLE)
-          .upsert(domainRecords, { onConflict: 'organization_id,domain' });
-
-        if (!storeErr) {
-          return { success: true, count: domainRecords.length, target: 'store_state' };
-        }
-      }
-    }
-
-    // 2. Fallback to alzino_erp_sync
-    const records = [];
-    SYNC_KEYS.forEach(k => {
-      if (stateObj[k] !== undefined) {
-        records.push({
-          key: k,
-          data: stateObj[k],
-          updated_at: new Date().toISOString()
-        });
-      }
-    });
-
-    if (records.length === 0) return { success: true, count: 0 };
-
-    const { error } = await client
-      .from(SYNC_TABLE)
-      .upsert(records, { onConflict: 'key' });
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    return { success: true, count: records.length, target: 'alzino_erp_sync' };
-  } catch (err) {
-    return { success: false, error: err.message };
+    const { count: imagesCount } = await syncAllProductImagesToCloud(orgId);
+    return { success: true, count: rows.length, imagesCount, target: STORE_STATE_TABLE };
+  } catch (imageError) {
+    return { success: false, error: `Shop data was uploaded, but product photos did not finish syncing: ${imageError.message}` };
   }
 };
 
-/**
- * Subscribe to Supabase Realtime broadcast across both schemas
- */
 export const subscribeRealtimeSync = (setters = {}) => {
   if (!isSupabaseConfigured()) return () => {};
   const client = getSupabaseClient();
   if (!client) return () => {};
-
-  try {
-    const channel = client
-      .channel('alzino-erp-realtime-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: STORE_STATE_TABLE },
-        (payload) => {
-          const row = payload.new;
-          if (row && row.domain) {
-            const k = DOMAIN_TO_KEY[row.domain];
-            if (k && setters[k] && row.payload !== undefined) {
-              console.log(`[CloudSync] Live update received from store_state: ${row.domain}`);
-              setters[k](row.payload);
-              try {
-                localStorage.setItem(`ALZINO_ERP_${k}`, JSON.stringify(row.payload));
-              } catch (e) {}
-            }
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: SYNC_TABLE },
-        (payload) => {
-          const row = payload.new;
-          if (row && row.key && setters[row.key] && row.data !== undefined) {
-            console.log(`[CloudSync] Live update received from alzino_erp_sync: ${row.key}`);
-            setters[row.key](row.data);
-            try {
-              localStorage.setItem(`ALZINO_ERP_${row.key}`, JSON.stringify(row.data));
-            } catch (e) {}
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      client.removeChannel(channel);
-    };
-  } catch (err) {
-    console.warn('[CloudSync] Realtime subscription error:', err);
-    return () => {};
-  }
-};
-
-/**
- * Wipe all collections from Supabase tables (store_state and alzino_erp_sync)
- */
-export const wipeAllDataFromCloud = async () => {
-  if (!isSupabaseConfigured()) return { success: false, reason: 'Supabase not configured' };
-  const client = getSupabaseClient();
-  if (!client) return { success: false, reason: 'No client' };
-
-  try {
+  let cancelled = false;
+  let channel = null;
+  let activeOrgId = null;
+  const subscribeForCurrentUser = async () => {
     const orgId = await getActiveOrgId(client);
-    if (orgId) {
-      await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);
-    } else {
-      await client.from(STORE_STATE_TABLE).delete().neq('domain', '');
+    if (cancelled) return;
+    if (!orgId) {
+      if (channel) await client.removeChannel(channel);
+      channel = null;
+      activeOrgId = null;
+      return;
     }
-    await client.from(SYNC_TABLE).delete().neq('key', '');
-    console.log('[CloudSync] ✓ Cleared cloud tables');
-    return { success: true };
-  } catch (err) {
-    console.warn('[CloudSync] Error wiping cloud data:', err);
-    return { success: false, error: err };
-  }
+    if (orgId === activeOrgId) return;
+    if (channel) await client.removeChannel(channel);
+    activeOrgId = orgId;
+    channel = client.channel(`store-state-${orgId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: STORE_STATE_TABLE,
+        filter: `organization_id=eq.${orgId}`
+      }, payload => {
+        const row = payload.new;
+        const key = row?.domain && DOMAIN_TO_KEY[row.domain];
+        if (!key || !setters[key] || row.payload === undefined) return;
+        setters[key](row.payload);
+        try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(row.payload)); } catch {}
+      })
+      .subscribe();
+  };
+  subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  const { data: authListener } = client.auth.onAuthStateChange(() => {
+    setTimeout(() => subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err)), 0);
+  });
+  const handleAuthReady = () => subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  window.addEventListener('alzino-cloud-auth-ready', handleAuthReady);
+
+  return () => {
+    cancelled = true;
+    authListener.subscription.unsubscribe();
+    window.removeEventListener('alzino-cloud-auth-ready', handleAuthReady);
+    if (channel) client.removeChannel(channel);
+  };
 };
 
-/**
- * Master purge: removes all offline-first local data and resets database cleanly
- */
+export const wipeAllDataFromCloud = async () => {
+  if (!isSupabaseConfigured()) return { success: false, reason: 'Supabase is not configured.' };
+  const client = getSupabaseClient();
+  const orgId = await getActiveOrgId(client);
+  if (!orgId) return authRequired();
+  const { error } = await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);
+  return error ? { success: false, error: error.message } : { success: true };
+};
+
 export const purgeAllLegacyOfflineData = async (setters = {}) => {
-  const legacyKeys = [
-    'INVENTORY',
-    'INVOICES',
-    'CUSTOMERS',
-    'REPAIR_JOBS',
-    'USED_PURCHASES',
-    'SUPPLIERS',
-    'EXPENSES',
-    'WARRANTY_CLAIMS'
-  ];
-
-  // 1. Wipe from LocalStorage
-  legacyKeys.forEach(k => {
-    try {
-      localStorage.removeItem(`ALZINO_ERP_${k}`);
-    } catch (e) {}
+  SYNC_KEYS.filter(key => key !== 'SHOP_CONFIG').forEach(key => {
+    try { localStorage.removeItem(`ALZINO_ERP_${key}`); } catch {}
   });
-
-  // 2. Clear IndexedDB stores
   try {
     await clearSsdIndexedDb();
     await clearAllProductImages();
   } catch (e) {
     console.debug('IndexedDB purge error:', e);
   }
+  try { await wipeAllDataFromCloud(); } catch (e) { console.debug('Cloud wipe error:', e); }
 
-  // 3. Clear from cloud if configured
-  try {
-    await wipeAllDataFromCloud();
-  } catch (e) {
-    console.debug('Cloud wipe error:', e);
-  }
-
-  // 4. Update React state if setters provided
   if (setters.setInventory) setters.setInventory([]);
   if (setters.setInvoices) setters.setInvoices([]);
   if (setters.setCustomers) setters.setCustomers([]);
@@ -390,11 +204,6 @@ export const purgeAllLegacyOfflineData = async (setters = {}) => {
   if (setters.setSuppliers) setters.setSuppliers([]);
   if (setters.setExpenses) setters.setExpenses([]);
   if (setters.setWarrantyClaims) setters.setWarrantyClaims([]);
-
-  // 5. Broadcast to other open browser tabs
-  try {
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {}
-
+  window.dispatchEvent(new Event('storage'));
   return { success: true };
 };

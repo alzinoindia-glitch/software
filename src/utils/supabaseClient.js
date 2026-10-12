@@ -5,7 +5,16 @@ export const DEFAULT_SUPABASE_URL = 'https://iaugdtkalwjcwnjadony.supabase.co';
 // Retrieve credentials from .env or localStorage config
 export const getSupabaseCredentials = () => {
   const envUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  // Supabase now recommends publishable keys. Continue accepting the legacy
+  // anon-key name so existing Vercel environments keep working.
+  const envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  // A deployed project's environment must win over browser-local settings.
+  // Otherwise a stale key saved on one device can make that device connect to
+  // a different Supabase project than every other device.
+  if (envKey) {
+    return { url: envUrl.trim(), anonKey: envKey.trim() };
+  }
 
   try {
     const customConfig = localStorage.getItem('ALZINO_ERP_SUPABASE_CONFIG');
@@ -18,10 +27,6 @@ export const getSupabaseCredentials = () => {
     }
   } catch (e) {
     console.debug('Error reading local supabase config:', e);
-  }
-
-  if (envKey) {
-    return { url: (envUrl || DEFAULT_SUPABASE_URL).trim(), anonKey: envKey.trim() };
   }
 
   return { url: DEFAULT_SUPABASE_URL, anonKey: '' };

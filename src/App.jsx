@@ -23,7 +23,6 @@ import {
   pullAllFromCloud, 
   pushCollectionToCloud, 
   subscribeRealtimeSync,
-  purgeAllLegacyOfflineData
 } from './utils/cloudSyncService';
 
 import {
@@ -88,15 +87,17 @@ export default function App() {
   const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
   // Role Mode ('admin' | 'cashier')
   const [role, setRole] = useState(() => initialRoute.role !== 'customer' ? initialRoute.role : getStorageData('ROLE', 'admin'));
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
+  const [isCashierPinOpen, setIsCashierPinOpen] = useState(() => initialRoute.portal === 'cashier');
+  const [cloudHydrated, setCloudHydrated] = useState(false);
+  const [cashierPin, setCashierPin] = useState('');
+  const [cashierPinError, setCashierPinError] = useState('');
+  const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
 
   const [shopConfig, setShopConfig] = useState(() => {
     const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
     const updated = { ...cfg };
-    if (!updated?.adminPin || updated.adminPin === '4488') {
-      updated.adminPin = '4848';
-    }
     // Update store contact & WhatsApp enquiry number to client's 9121212292
     if (!updated.whatsappNumber || updated.whatsappNumber.includes('98490') || updated.phone?.includes('98490')) {
       updated.phone = '+91 91212 12292';
@@ -109,29 +110,6 @@ export default function App() {
     }
     return updated;
   });
-
-  // One-time automatic purge for legacy offline test data created before cloud sync
-  (() => {
-    try {
-      const OFFLINE_CLEANUP_FLAG = 'ALZINO_ERP_LEGACY_OFFLINE_DATA_PURGED_20261012';
-      if (typeof window !== 'undefined' && !localStorage.getItem(OFFLINE_CLEANUP_FLAG)) {
-        localStorage.setItem(OFFLINE_CLEANUP_FLAG, 'true');
-        [
-          'ALZINO_ERP_INVENTORY',
-          'ALZINO_ERP_INVOICES',
-          'ALZINO_ERP_CUSTOMERS',
-          'ALZINO_ERP_REPAIR_JOBS',
-          'ALZINO_ERP_USED_PURCHASES',
-          'ALZINO_ERP_SUPPLIERS',
-          'ALZINO_ERP_EXPENSES',
-          'ALZINO_ERP_WARRANTY_CLAIMS'
-        ].forEach(k => {
-          try { localStorage.removeItem(k); } catch (e) {}
-        });
-        purgeAllLegacyOfflineData();
-      }
-    } catch (e) {}
-  })();
 
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
   const [usedPurchases, setUsedPurchases] = useState(() => getStorageData('USED_PURCHASES', initialUsedPurchases));
@@ -167,6 +145,13 @@ export default function App() {
 
   const handleNavigatePortal = (targetPath) => {
     const cleanPath = targetPath.replace(/\\/g, '/');
+    if (cleanPath.startsWith('/cashier')) {
+      setCashierTargetPath(cleanPath);
+      setCashierPin('');
+      setCashierPinError('');
+      setIsCashierPinOpen(true);
+      return;
+    }
     if (cleanPath.startsWith('/admin') && role !== 'admin') {
       setIsAdminAuthModalOpen(true);
       return;
@@ -192,12 +177,20 @@ export default function App() {
       const r = parseRoute();
       setPortal(r.portal);
       if (r.portal === 'admin') {
+        setIsAdminAuthModalOpen(true);
+        setIsCashierPinOpen(false);
         setRole('admin');
         setActiveTab(r.tab || 'dashboard');
       } else if (r.portal === 'cashier') {
+        setCashierTargetPath(window.location.pathname);
+        setCashierPin('');
+        setCashierPinError('');
+        setIsCashierPinOpen(true);
         setRole('cashier');
         setActiveTab(r.tab || 'pos');
       } else {
+        setIsAdminAuthModalOpen(false);
+        setIsCashierPinOpen(false);
         setRole('customer');
         setActiveTab('storefront');
       }
@@ -249,43 +242,49 @@ export default function App() {
   useEffect(() => { setStorageData('ROLE', role); }, [role]);
   useEffect(() => { 
     setStorageData('SHOP_CONFIG', shopConfig); 
-    pushCollectionToCloud('SHOP_CONFIG', shopConfig);
-  }, [shopConfig]);
+    if (cloudHydrated) pushCollectionToCloud('SHOP_CONFIG', shopConfig);
+  }, [shopConfig, cloudHydrated]);
   useEffect(() => { 
     setStorageData('INVENTORY', inventory); 
-    pushCollectionToCloud('INVENTORY', inventory);
-  }, [inventory]);
+    if (cloudHydrated) pushCollectionToCloud('INVENTORY', inventory);
+  }, [inventory, cloudHydrated]);
   useEffect(() => { 
     setStorageData('USED_PURCHASES', usedPurchases); 
-    pushCollectionToCloud('USED_PURCHASES', usedPurchases);
-  }, [usedPurchases]);
+    if (cloudHydrated) pushCollectionToCloud('USED_PURCHASES', usedPurchases);
+  }, [usedPurchases, cloudHydrated]);
   useEffect(() => { 
     setStorageData('REPAIR_JOBS', repairJobs); 
-    pushCollectionToCloud('REPAIR_JOBS', repairJobs);
-  }, [repairJobs]);
+    if (cloudHydrated) pushCollectionToCloud('REPAIR_JOBS', repairJobs);
+  }, [repairJobs, cloudHydrated]);
   useEffect(() => { 
     setStorageData('CUSTOMERS', customers); 
-    pushCollectionToCloud('CUSTOMERS', customers);
-  }, [customers]);
+    if (cloudHydrated) pushCollectionToCloud('CUSTOMERS', customers);
+  }, [customers, cloudHydrated]);
   useEffect(() => { 
     setStorageData('SUPPLIERS', suppliers); 
-    pushCollectionToCloud('SUPPLIERS', suppliers);
-  }, [suppliers]);
+    if (cloudHydrated) pushCollectionToCloud('SUPPLIERS', suppliers);
+  }, [suppliers, cloudHydrated]);
   useEffect(() => { 
     setStorageData('EXPENSES', expenses); 
-    pushCollectionToCloud('EXPENSES', expenses);
-  }, [expenses]);
+    if (cloudHydrated) pushCollectionToCloud('EXPENSES', expenses);
+  }, [expenses, cloudHydrated]);
   useEffect(() => { 
     setStorageData('INVOICES', invoices); 
-    pushCollectionToCloud('INVOICES', invoices);
-  }, [invoices]);
+    if (cloudHydrated) pushCollectionToCloud('INVOICES', invoices);
+  }, [invoices, cloudHydrated]);
   useEffect(() => { 
     setStorageData('WARRANTY_CLAIMS', warrantyClaims); 
-    pushCollectionToCloud('WARRANTY_CLAIMS', warrantyClaims);
-  }, [warrantyClaims]);
+    if (cloudHydrated) pushCollectionToCloud('WARRANTY_CLAIMS', warrantyClaims);
+  }, [warrantyClaims, cloudHydrated]);
 
   // Initial Cloud Sync & Realtime multi-device subscription on mount
   useEffect(() => {
+    if (portal === 'customer' || (portal === 'cashier' && isCashierPinOpen)) {
+      setCloudHydrated(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setCloudHydrated(false);
     const setters = {
       INVENTORY: setInventory,
       INVOICES: setInvoices,
@@ -297,12 +296,17 @@ export default function App() {
       WARRANTY_CLAIMS: setWarrantyClaims,
       SHOP_CONFIG: setShopConfig
     };
-    pullAllFromCloud(setters);
+    pullAllFromCloud(setters).then(result => {
+      if (cancelled) return;
+      if (result.success) setCloudHydrated(true);
+      else console.info('[CloudSync] Waiting for authorized cloud access:', result.reason || result.error);
+    });
     const unsubscribe = subscribeRealtimeSync(setters);
     return () => {
+      cancelled = true;
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [portal, isCashierPinOpen]);
 
   // Purge any residual demo data on mount
   useEffect(() => {
@@ -358,8 +362,39 @@ export default function App() {
     setIsAdminAuthModalOpen(false);
     setRole('admin');
     setPortal('admin');
-    setActiveTab('dashboard');
-    window.history.pushState(null, '', '/admin');
+    const targetTab = initialRoute.portal === 'admin' ? (initialRoute.tab || 'dashboard') : 'dashboard';
+    setActiveTab(targetTab);
+    window.history.pushState(null, '', targetTab === 'dashboard' ? '/admin' : `/admin/${targetTab}`);
+    pullAllFromCloud({
+      INVENTORY: setInventory,
+      INVOICES: setInvoices,
+      CUSTOMERS: setCustomers,
+      REPAIR_JOBS: setRepairJobs,
+      USED_PURCHASES: setUsedPurchases,
+      SUPPLIERS: setSuppliers,
+      EXPENSES: setExpenses,
+      WARRANTY_CLAIMS: setWarrantyClaims,
+      SHOP_CONFIG: setShopConfig
+    }).then(result => {
+      if (result.success) setCloudHydrated(true);
+      if (!result.success) console.warn('[CloudSync] Initial authenticated pull failed:', result.reason || result.error);
+    });
+  };
+
+  const handleCashierPinSubmit = (event) => {
+    event.preventDefault();
+    if (cashierPin !== '4488') {
+      setCashierPinError('Incorrect cashier PIN.');
+      setCashierPin('');
+      return;
+    }
+    setCashierPinError('');
+    setIsCashierPinOpen(false);
+    window.history.pushState(null, '', cashierTargetPath || '/cashier');
+    const route = parseRoute();
+    setPortal('cashier');
+    setRole('cashier');
+    setActiveTab(route.tab || 'pos');
   };
 
   // Apply theme class to <body>
@@ -728,14 +763,26 @@ export default function App() {
         />
       )}
 
-      {/* Admin Authentication Modal (Master PIN or Google / Microsoft Authenticator 2FA) */}
+      {/* Admin Authentication Modal (email link + Google Authenticator TOTP) */}
       <AdminAuthModal
         isOpen={isAdminAuthModalOpen}
-        onClose={() => setIsAdminAuthModalOpen(false)}
+        onClose={portal === 'admin' ? undefined : () => setIsAdminAuthModalOpen(false)}
         onSuccess={handleAdminAuthSuccess}
-        shopConfig={shopConfig}
-        currentRole={role}
       />
+
+      {isCashierPinOpen && (
+        <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
+          <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cashier-pin-title" style={{ maxWidth: 360, width: '92%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14 }}>
+            <h2 id="cashier-pin-title" style={{ marginTop: 0 }}>Cashier PIN</h2>
+            <p style={{ color: 'var(--text-secondary)' }}>Enter the 4-digit cashier PIN to open the counter.</p>
+            {cashierPinError && <p role="alert" style={{ color: 'var(--status-red)' }}>{cashierPinError}</p>}
+            <form onSubmit={handleCashierPinSubmit} style={{ display: 'grid', gap: 12 }}>
+              <input autoFocus aria-label="Cashier PIN" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" required value={cashierPin} onChange={event => setCashierPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="input-field" />
+              <button className="btn-primary" type="submit" disabled={cashierPin.length !== 4}>Unlock cashier</button>
+            </form>
+          </section>
+        </div>
+      )}
 
       {/* Global Product QR Scan Specifications, Colours & Terms Modal */}
       {scannedProductModal && (

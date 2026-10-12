@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Database, 
   Download, 
@@ -19,12 +19,14 @@ import {
 } from 'lucide-react';
 import { 
   getSupabaseCredentials, 
+  getSupabaseClient,
   isSupabaseConfigured, 
   saveSupabaseCredentials 
 } from '../utils/supabaseClient';
 import { 
   pullAllFromCloud, 
   pushAllToCloud,
+  getActiveOrgId,
   purgeAllLegacyOfflineData
 } from '../utils/cloudSyncService';
 
@@ -199,9 +201,34 @@ export default function SettingsBackup({
 
   // Cloud Sync State & Handlers (Supabase)
   const [cloudCreds, setCloudCreds] = useState(() => getSupabaseCredentials());
-  const [cloudConnected, setCloudConnected] = useState(() => isSupabaseConfigured());
+  const [cloudConnected, setCloudConnected] = useState(false);
+  const [cloudStatusLoading, setCloudStatusLoading] = useState(true);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setCloudStatusLoading(false);
+      return undefined;
+    }
+    const client = getSupabaseClient();
+    let active = true;
+    const refresh = async () => {
+      const orgId = await getActiveOrgId(client);
+      if (active) {
+        setCloudConnected(Boolean(orgId));
+        setCloudStatusLoading(false);
+      }
+    };
+    refresh();
+    const { data: listener } = client.auth.onAuthStateChange(() => setTimeout(refresh, 0));
+    window.addEventListener('alzino-cloud-auth-ready', refresh);
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+      window.removeEventListener('alzino-cloud-auth-ready', refresh);
+    };
+  }, []);
 
   const handleSaveCloudConfig = (e) => {
     e.preventDefault();
@@ -210,7 +237,6 @@ export default function SettingsBackup({
       return;
     }
     saveSupabaseCredentials(cloudCreds.url, cloudCreds.anonKey);
-    setCloudConnected(isSupabaseConfigured());
     setSyncStatusMsg('Connecting and syncing with Supabase...');
     setIsSyncingCloud(true);
     pullAllFromCloud({
@@ -223,24 +249,27 @@ export default function SettingsBackup({
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
       SHOP_CONFIG: setShopConfig
-    }).then(res => {
+    }).then(async res => {
       setIsSyncingCloud(false);
-      if (res.success) {
-        setSyncStatusMsg('✓ Connected! Synced ' + (res.count || 0) + ' collections from cloud.');
-        alert('✓ Successfully connected to Supabase Cloud! Real-time multi-device sync is now active.');
+      const activeOrg = await getActiveOrgId(getSupabaseClient());
+      setCloudConnected(Boolean(activeOrg));
+      if (res.success && activeOrg) {
+        const empty = (res.count || 0) === 0;
+        setSyncStatusMsg(empty ? 'Shop account is ready. Cloud data is empty; push stock from the device that has it.' : `✓ Pulled ${res.count} collections from cloud.`);
+        alert(empty ? 'Supabase is ready, but there is no shop data in the cloud yet. On the device that has the stock, choose “Push Local Data to Cloud”.' : `✓ Signed in and pulled ${res.count} collections from the shop cloud.`);
       } else {
-        setSyncStatusMsg('Connected to Supabase. Click "Push Local Data to Cloud" to initialize table.');
-        alert('Connected to Supabase! If you have local products on this device, click "Push Local Data to Cloud" to upload them.');
+        setSyncStatusMsg(res.reason || res.error || 'Supabase keys are saved, but this account is not connected to a shop.');
+        alert(res.reason || res.error || 'Supabase keys are saved. Sign in with the invited admin account and verify Google Authenticator before syncing.');
       }
     });
   };
 
-  const handleDisconnectCloud = () => {
-    if (confirm("Disconnect Supabase cloud sync? Your local data will remain intact on this device.")) {
-      saveSupabaseCredentials('', '');
-      setCloudCreds({ url: '', anonKey: '' });
+  const handleDisconnectCloud = async () => {
+    if (confirm("Sign out this device from the admin cloud account? Local data will remain on this device, but it will stop syncing until an admin signs in again.")) {
+      await getSupabaseClient()?.auth.signOut();
       setCloudConnected(false);
-      setSyncStatusMsg('Disconnected from cloud sync.');
+      setSyncStatusMsg('Signed out. This device will need admin Google Authenticator verification before cloud sync resumes.');
+      window.location.assign('/cashier');
     }
   };
 
@@ -260,8 +289,13 @@ export default function SettingsBackup({
     });
     setIsSyncingCloud(false);
     if (res.success) {
-      alert('✓ Data successfully pulled from cloud! Your desktop now has the latest stock and invoices.');
-      setSyncStatusMsg('✓ Successfully pulled ' + (res.count || 0) + ' collections from cloud.');
+      if ((res.count || 0) === 0) {
+        setSyncStatusMsg('Cloud data is empty. To preserve existing stock, push it from the device where you entered it.');
+        alert('The shop cloud has no saved collections yet. Go to the device with your inventory and choose “Push Local Data to Cloud”.');
+      } else {
+        alert(`✓ Pulled ${res.count} collections from the shop cloud.`);
+        setSyncStatusMsg(`✓ Pulled ${res.count} collections from cloud.`);
+      }
     } else {
       alert('Could not pull from cloud: ' + (res.error || res.reason || 'Unknown error'));
       setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
@@ -284,8 +318,8 @@ export default function SettingsBackup({
     });
     setIsSyncingCloud(false);
     if (res.success) {
-      alert('✓ Complete local catalog (' + inventory.length + ' items) successfully uploaded to Supabase! All other logins can now see this data.');
-      setSyncStatusMsg('✓ Uploaded local database to cloud.');
+      alert(`✓ Uploaded shop data and ${res.imagesCount || 0} product photos. Authorized devices can now pull it.`);
+      setSyncStatusMsg(`✓ Uploaded shop data and ${res.imagesCount || 0} product photos to cloud.`);
     } else {
       alert('Could not push to cloud: ' + (res.error || res.reason || 'Check table schema'));
       setSyncStatusMsg('Error: ' + (res.error || 'Failed'));
@@ -297,7 +331,6 @@ export default function SettingsBackup({
     const defaultAcc = (formData.upiAccounts || []).find(a => a.isDefault) || (formData.upiAccounts || [])[0];
     const updated = {
       ...formData,
-      adminPin: shopConfig.adminPin || '4848',
       upiId: defaultAcc ? defaultAcc.upiId : formData.upiId,
       qrCodeImage: defaultAcc ? defaultAcc.qrCodeImage : (formData.qrCodeImage || null),
       bankName: defaultAcc ? defaultAcc.bankName : formData.bankName
@@ -748,12 +781,12 @@ export default function SettingsBackup({
                 color: cloudConnected ? 'var(--status-green)' : 'var(--text-secondary)',
                 fontWeight: 800
               }}>
-                {cloudConnected ? '🟢 Live Cloud Sync Active' : '⚪ Local Only'}
+                {cloudStatusLoading ? 'Checking account…' : cloudConnected ? '🟢 Shop Cloud Connected' : isSupabaseConfigured() ? '🟡 Admin authorization needed' : '⚪ Local Only'}
               </span>
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.85rem', lineHeight: 1.4 }}>
-              Connect Supabase to keep all desktop computers, mobile phones, and cashier terminals 100% in sync in real time. Products added on your phone will instantly appear on your desktop.
+              Admin access uses Google Authenticator. Each device must be authorized by an admin once; after that, cashier access uses PIN 4488. Inventory, transactions and product photos sync inside the shop account. To seed the cloud, push once from the device that currently holds the stock.
             </p>
 
             <form onSubmit={handleSaveCloudConfig} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '0.75rem' }}>
@@ -773,7 +806,7 @@ export default function SettingsBackup({
 
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
-                  Supabase Public Anon Key
+                  Supabase Publishable / Public Key
                 </label>
                 <input
                   type="password"
@@ -793,7 +826,7 @@ export default function SettingsBackup({
                   style={{ flex: 1, padding: '0.45rem 0.85rem', fontSize: '0.78rem', justifyContent: 'center' }}
                 >
                   <Save size={14} />
-                  <span>{cloudConnected ? 'Update Cloud Keys' : 'Save & Connect Cloud'}</span>
+                    <span>{cloudConnected ? 'Update Cloud Keys' : 'Save Cloud Keys'}</span>
                 </button>
 
                 {cloudConnected && (
@@ -803,7 +836,7 @@ export default function SettingsBackup({
                     className="btn-outline"
                     style={{ padding: '0.45rem 0.75rem', fontSize: '0.75rem', color: 'var(--status-red)' }}
                   >
-                    Disconnect
+                    Sign out admin
                   </button>
                 )}
               </div>
