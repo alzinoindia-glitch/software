@@ -28,6 +28,9 @@ const conflictedDomains = new Set();
 const scopeKey = (orgId, key) => `${orgId}:${KEY_TO_DOMAIN[key]}`;
 const serializePayload = payload => JSON.stringify(payload ?? []);
 
+let publicCatalogTimer = null;
+let publicCatalogRevision = 0;
+
 export const getActiveOrgId = async (client = getSupabaseClient()) => {
   if (!client) return null;
   const { data: { user }, error: authError } = await client.auth.getUser();
@@ -41,6 +44,81 @@ export const getActiveOrgId = async (client = getSupabaseClient()) => {
 
   if (error || !profile?.is_active || !profile.organization_id) return null;
   return profile.organization_id;
+};
+
+export const syncPublishedCatalog = (inventory = []) => {
+  if (!isSupabaseConfigured()) return;
+  if (publicCatalogTimer) clearTimeout(publicCatalogTimer);
+  const snapshot = Array.isArray(inventory) ? inventory.map(item => ({ ...item })) : [];
+  const revision = ++publicCatalogRevision;
+  publicCatalogTimer = setTimeout(async () => {
+    try {
+      const client = getSupabaseClient();
+      const organizationId = await getActiveOrgId(client);
+      if (!organizationId || revision !== publicCatalogRevision) return;
+
+      const products = snapshot.filter(item => item?.id && item?.name).map(item => {
+        const stock = Math.max(0, Number(item.stock) || 0);
+        const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
+          .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) || null;
+        return {
+          organization_id: organizationId,
+          id: String(item.id),
+          name: String(item.name).trim(),
+          brand: item.brand || null,
+          category: item.category || null,
+          sell_price: Math.max(0, Number(item.sellPrice) || 0),
+          mrp: item.mrp == null ? null : Math.max(0, Number(item.mrp) || 0),
+          stock_status: stock > 0 ? 'Available in store' : 'Out of stock',
+          image_url: publicImage,
+          offer_text: item.offer?.label || item.offerText || null,
+          is_published: stock > 0 && item.isPublished !== false && item.status !== 'Archived',
+          updated_at: new Date().toISOString()
+        };
+      });
+
+      const { data: existing, error: existingError } = await client
+        .from('catalog_products')
+        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published')
+        .eq('organization_id', organizationId);
+      if (existingError) throw existingError;
+      if (revision !== publicCatalogRevision) return;
+
+      const existingById = new Map((existing || []).map(item => [item.id, item]));
+      const changedProducts = products.filter(product => {
+        const current = existingById.get(product.id);
+        if (!current) return true;
+        return current.name !== product.name ||
+          current.brand !== product.brand ||
+          current.category !== product.category ||
+          Number(current.sell_price) !== product.sell_price ||
+          (current.mrp == null ? null : Number(current.mrp)) !== product.mrp ||
+          current.stock_status !== product.stock_status ||
+          current.image_url !== product.image_url ||
+          current.offer_text !== product.offer_text ||
+          current.is_published !== product.is_published;
+      });
+      if (changedProducts.length) {
+        const { error } = await client.from('catalog_products').upsert(changedProducts, {
+          onConflict: 'organization_id,id'
+        });
+        if (error) throw error;
+      }
+
+      const currentIds = new Set(products.map(item => item.id));
+      const removedIds = (existing || []).map(item => item.id).filter(id => !currentIds.has(id));
+      for (const id of removedIds) {
+        if (revision !== publicCatalogRevision) return;
+        const { error } = await client.from('catalog_products')
+          .update({ is_published: false, stock_status: 'Out of stock', updated_at: new Date().toISOString() })
+          .eq('organization_id', organizationId)
+          .eq('id', id);
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.warn('[PublicCatalog] Could not sync storefront products:', error.message);
+    }
+  }, 500);
 };
 
 const authRequired = () => ({ success: false, reason: 'Sign in with an authorized shop account to sync data.' });

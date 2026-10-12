@@ -58,6 +58,7 @@ import ProductScanDetailsModal from './ProductScanDetailsModal';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
+import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -206,6 +207,51 @@ export default function CustomerStorefront({
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
+  const [publicCatalog, setPublicCatalog] = useState([]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return undefined;
+    const client = getSupabaseClient();
+    if (!client) return undefined;
+    let active = true;
+    let requestRevision = 0;
+    let refreshTimer;
+    const loadCatalog = async () => {
+      const revision = ++requestRevision;
+      const { data, error } = await client
+        .from('catalog_products')
+        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
+        .eq('is_published', true)
+        .eq('stock_status', 'Available in store')
+        .order('updated_at', { ascending: false });
+      if (!active || revision !== requestRevision) return;
+      if (error) {
+        console.warn('[PublicCatalog] Could not load storefront products:', error.message);
+        return;
+      }
+      setPublicCatalog(data || []);
+    };
+    loadCatalog();
+    const scheduleCatalogRefresh = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadCatalog, 150);
+    };
+    const channel = client.channel('published-store-catalog')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'catalog_products' }, scheduleCatalogRefresh)
+      .subscribe();
+    const refreshOnFocus = () => { if (document.visibilityState === 'visible') loadCatalog(); };
+    const refreshInterval = window.setInterval(loadCatalog, 60_000);
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+    return () => {
+      active = false;
+      window.clearTimeout(refreshTimer);
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+      client.removeChannel(channel);
+    };
+  }, []);
 
   // Quick Commerce Cart State (Blinkit / Zepto / Instamart style)
   const [cart, setCart] = useState({}); // { [productId]: quantity }
@@ -285,381 +331,45 @@ export default function CustomerStorefront({
 
   const currentBanner = promoBanners[activeBannerIdx] || promoBanners[0];
 
-  // Curated showcase of Mobiles, Audio, Accessories & Home Appliances with 100% verified matching images
-  const fallbackShowroomCatalog = [
-    {
-      id: 'SHOW-MOB-01',
-      name: 'Samsung Galaxy S24 Ultra 5G (256GB - Titanium Gray)',
-      category: 'New Mobiles',
-      department: 'mobiles',
-      brand: 'Samsung',
-      price: 114999,
-      mrp: 129999,
-      stock: 4,
-      condition: 'Flagship Deal',
-      discountPct: 12,
-      warranty: '1 Year Samsung India Official Warranty',
-      specs: 'Snapdragon 8 Gen 3 • Galaxy AI • 200MP Quad Camera • S-Pen Included',
-      rack: 'R-04',
-      bin: 'B-12',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
-    },
-    {
-      id: 'SHOW-MOB-02',
-      name: 'Apple iPhone 15 Pro (128GB - Natural Titanium)',
-      category: 'New Mobiles',
-      department: 'mobiles',
-      brand: 'Apple',
-      price: 119900,
-      mrp: 134900,
-      stock: 3,
-      condition: 'Brand New Sealed',
-      discountPct: 11,
-      warranty: '1 Year Apple Official India Warranty',
-      specs: 'A17 Pro Chip • Super Retina XDR • 48MP Pro System • Aerospace Titanium',
-      rack: 'R-01',
-      bin: 'B-01',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
-    },
-    {
-      id: 'SHOW-MOB-03',
-      name: 'OnePlus 12R 5G (16GB RAM / 256GB - Cool Blue)',
-      category: 'New Mobiles',
-      department: 'mobiles',
-      brand: 'OnePlus',
-      price: 42999,
-      mrp: 45999,
-      stock: 6,
-      condition: 'Featured Flagship',
-      discountPct: 7,
-      warranty: '1 Year Official OnePlus Warranty',
-      specs: 'Snapdragon 8 Gen 2 • 1.5K 120Hz ProXDR • 100W SUPERVOOC • 5500mAh Battery',
-      rack: 'R-02',
-      bin: 'B-05',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1565849904461-04a58ad377e0?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
-    },
-    {
-      id: 'SHOW-MOB-04',
-      name: 'Vivo V30 Pro 5G (512GB - Andaman Blue)',
-      category: 'New Mobiles',
-      department: 'mobiles',
-      brand: 'Vivo',
-      price: 41999,
-      mrp: 46999,
-      stock: 5,
-      condition: 'ZEISS Portrait Master',
-      discountPct: 11,
-      warranty: '1 Year Vivo India Warranty',
-      specs: 'ZEISS Professional Optics • 50MP Eye-AF Front • 80W FlashCharge • Slim Design',
-      rack: 'R-03',
-      bin: 'B-02',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
-    },
-    {
-      id: 'SHOW-MOB-05',
-      name: 'Realme 12 Pro+ 5G (256GB - Submarine Blue)',
-      category: 'New Mobiles',
-      department: 'mobiles',
-      brand: 'Realme',
-      price: 29999,
-      mrp: 34999,
-      stock: 7,
-      condition: 'Periscope Camera Deal',
-      discountPct: 14,
-      warranty: '1 Year Realme Official Warranty',
-      specs: '64MP Periscope Portrait Camera • Snapdragon 7s Gen 2 • 120Hz Curved OLED',
-      rack: 'R-03',
-      bin: 'B-07',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1580910051074-3eb694886505?w=800&auto=format&fit=crop&q=80',
-      type: 'new'
-    },
-    {
-      id: 'SHOW-REF-01',
-      name: 'Apple iPhone 14 (128GB - Midnight Blue)',
-      category: 'Used Mobiles',
-      department: 'mobiles',
-      brand: 'Apple',
-      price: 44999,
-      mrp: 69900,
-      stock: 2,
-      condition: 'Certified Grade A+',
-      discountPct: 36,
-      warranty: '6 Months ALZINO Comprehensive Hardware Warranty',
-      specs: 'Battery Health 94% • A15 Bionic • Ceramic Shield • Tested 24-Point QC Check',
-      rack: 'R-02',
-      bin: 'B-04',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&auto=format&fit=crop&q=80',
-      type: 'refurbished'
-    },
-    {
-      id: 'SHOW-REF-02',
-      name: 'OnePlus 11 5G (256GB - Titan Black)',
-      category: 'Used Mobiles',
-      department: 'mobiles',
-      brand: 'OnePlus',
-      price: 36999,
-      mrp: 61999,
-      stock: 1,
-      condition: 'Certified Grade A+',
-      discountPct: 40,
-      warranty: '6 Months ALZINO Comprehensive Hardware Warranty',
-      specs: 'Battery Health 96% • Hasselblad Triple Camera • 100W Charging • Original Box',
-      rack: 'R-02',
-      bin: 'B-06',
-      deliveryTime: '15-30 Mins',
-      image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&auto=format&fit=crop&q=80',
-      type: 'refurbished'
-    },
-    {
-      id: 'SHOW-ACC-01',
-      name: 'Apple 20W USB-C Power Adapter (Original Box)',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'Apple',
-      price: 1699,
-      mrp: 1900,
-      stock: 12,
-      condition: '100% Genuine Box',
-      discountPct: 11,
-      warranty: '1 Year Apple Official Warranty',
-      specs: 'Original Apple 20W Fast Charging • Works with iPhone 15/14/13/12 & iPad • BIS Mark',
-      rack: 'R-03',
-      bin: 'B-01',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1622445262464-84b14e32452e?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-02',
-      name: 'OnePlus 80W SUPERVOOC Power Adapter + Type-C Cable',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'OnePlus',
-      price: 2499,
-      mrp: 3499,
-      stock: 10,
-      condition: 'Flash Charge Deal',
-      discountPct: 29,
-      warranty: '1 Year Instant Replacement Warranty',
-      specs: 'Original OnePlus 80W Flash Charge • GaN Technology • 10-Layer Safety Protection • Type-C Cable',
-      rack: 'R-03',
-      bin: 'B-03',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-03',
-      name: 'boAt Airdopes 141 True Wireless Earbuds (42H Playtime)',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'boAt',
-      price: 1199,
-      mrp: 4490,
-      stock: 20,
-      condition: 'Mega Price Drop',
-      discountPct: 73,
-      warranty: '1 Year boAt India Warranty',
-      specs: '42H Total Playtime • Beast Mode 80ms Low Latency • ENx Tech Mic • ASAP Fast Charge',
-      rack: 'R-03',
-      bin: 'B-05',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-04',
-      name: 'Noise ColorFit Pulse 3 AMOLED Bluetooth Calling Smartwatch',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'Noise',
-      price: 1799,
-      mrp: 6999,
-      stock: 15,
-      condition: '74% Clearance Deal',
-      discountPct: 74,
-      warranty: '1 Year Noise Official Warranty',
-      specs: '1.96" AMOLED Always-On Display • BT Calling with Dialpad • 100+ Sports Modes • SpO2',
-      rack: 'R-03',
-      bin: 'B-08',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-05',
-      name: 'Anker 20,000mAh 22.5W Fast Charging Power Bank',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'Anker',
-      price: 2199,
-      mrp: 3999,
-      stock: 8,
-      condition: 'Fast PD Power',
-      discountPct: 45,
-      warranty: '18 Months Anker Warranty',
-      specs: 'Dual USB-A + Type-C PD Output • PowerIQ 3.0 • MultiProtect Safety • Smart LED Display',
-      rack: 'R-03',
-      bin: 'B-10',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1609592424109-dd9892f1b177?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-06',
-      name: 'Premium 9D Curved Tempered Glass with Free Installation',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'ALZINO Armor',
-      price: 199,
-      mrp: 499,
-      stock: 50,
-      condition: 'Instant Fit Deal',
-      discountPct: 60,
-      warranty: 'Bubble-Free In-Store Installation Included',
-      specs: '9H Diamond Hardness • Edge-to-Edge Full Glue • Oleophobic Anti-Fingerprint Coating',
-      rack: 'R-03',
-      bin: 'B-14',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-ACC-07',
-      name: 'MagSafe Shockproof Magnetic Protective Case with Camera Guard',
-      category: 'Mobile Accessories',
-      department: 'accessories',
-      brand: 'ALZINO Armor',
-      price: 399,
-      mrp: 999,
-      stock: 35,
-      condition: 'Drop-Tested Deal',
-      discountPct: 60,
-      warranty: 'Military Grade Drop Certified',
-      specs: 'Strong N52 Magnetic Ring • Raised 1.5mm Camera Lip • Scratch-Resistant Matte Finish',
-      rack: 'R-03',
-      bin: 'B-15',
-      deliveryTime: '15 Mins',
-      image: 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80',
-      type: 'accessory'
-    },
-    {
-      id: 'SHOW-APP-01',
-      name: 'Sony Bravia 55" 4K Ultra HD Smart Google TV (KD-55X74L)',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Sony',
-      price: 57990,
-      mrp: 89900,
-      stock: 3,
-      condition: 'Cinema 4K Deal',
-      discountPct: 35,
-      warranty: '3 Years Comprehensive Sony India Warranty',
-      specs: 'X1 4K HDR Processor • Live Color • Dolby Audio • Google TV with Voice Remote',
-      rack: 'AP-01',
-      bin: 'B-01',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    },
-    {
-      id: 'SHOW-APP-02',
-      name: 'Samsung 43" Crystal 4K Vivid Pro Smart LED TV',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Samsung',
-      price: 28990,
-      mrp: 42900,
-      stock: 4,
-      condition: 'In-Store Deal',
-      discountPct: 32,
-      warranty: '2 Years Comprehensive Samsung Warranty',
-      specs: 'Crystal Processor 4K • PurColor • Motion Xcelerator • 20W Q-Symphony Audio',
-      rack: 'AP-01',
-      bin: 'B-03',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1461151304267-38535e780c79?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    },
-    {
-      id: 'SHOW-APP-03',
-      name: 'Voltas 1.5 Ton 5-Star Adjustable Inverter Split AC',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Voltas',
-      price: 36990,
-      mrp: 75990,
-      stock: 3,
-      condition: 'Old Stock Clearance',
-      discountPct: 51,
-      warranty: '10 Years Inverter Compressor Warranty',
-      specs: '100% Copper Condenser • 4-in-1 Cooling • Superdry Mode • Anti-Dust Filter',
-      rack: 'AP-02',
-      bin: 'B-02',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    },
-    {
-      id: 'SHOW-APP-04',
-      name: 'LG 8.0 Kg 5-Star AI Direct Drive Front Load Washing Machine',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'LG',
-      price: 33990,
-      mrp: 49990,
-      stock: 2,
-      condition: 'In-Store Deal',
-      discountPct: 32,
-      warranty: '10 Years Direct Drive Motor Warranty',
-      specs: 'AI DD Steam Wash • 6 Motion Tech • Stainless Steel Tub • TurboWash Quick Cycle',
-      rack: 'AP-03',
-      bin: 'B-03',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    },
-    {
-      id: 'SHOW-APP-05',
-      name: 'Symphony Diet 3D 55i Personal Tower Air Cooler (55 Litres)',
-      category: 'Home Appliances',
-      department: 'appliances',
-      brand: 'Symphony',
-      price: 9499,
-      mrp: 13999,
-      stock: 5,
-      condition: 'Summer Special',
-      discountPct: 32,
-      warranty: '1 Year Manufacturer Warranty',
-      specs: '3D Cooling Honeycomb Pads • i-Pure Air Tech • Low Power Consumption • Remote',
-      rack: 'AP-04',
-      bin: 'B-04',
-      deliveryTime: 'Same-Day Bodhan',
-      image: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80',
-      type: 'appliance'
-    }
-  ];
-
   // Helper to extract clean condition text without noisy emojis
   const cleanBadgeText = (text) => {
     if (!text) return 'Verified Stock';
     return text.replace(/[⚡🏷️🔥✨🎉●]/g, '').trim();
   };
 
-  // Build live showroom products list combining real admin inventory & refurbished & showcase
+  // Use the shared public catalog for visitors on every device. If Supabase is
+  // not configured, fall back to this device's real Stock Hub inventory only.
   const liveProducts = useMemo(() => {
+    if (isSupabaseConfigured()) {
+      return publicCatalog.map(item => {
+        const category = item.category || 'New Mobiles';
+        const isUsed = category === 'Used Mobiles';
+        const isAppliance = category === 'Home Appliances';
+        const isAccessory = category === 'Mobile Accessories';
+        const price = Number(item.sell_price) || 0;
+        return {
+          id: item.id,
+          name: item.name,
+          category,
+          department: isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles'),
+          brand: item.brand || item.name.split(' ')[0],
+          price,
+          mrp: Number(item.mrp) || price,
+          discountPct: item.mrp > price ? Math.round(((item.mrp - price) / item.mrp) * 100) : 0,
+          stock: 1,
+          condition: item.offer_text || (isUsed ? 'Certified Refurbished' : 'In-Store Stock'),
+          warranty: isUsed ? '15 Days ALZINO Testing Warranty' : 'Ask in store for warranty details',
+          rack: '',
+          bin: '',
+          deliveryTime: 'Counter pickup / Bodhan delivery',
+          specs: '',
+          image: item.image_url || null,
+          type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
+        };
+      });
+    }
+
     const list = [];
-    const seenNames = new Set();
     const seenVouchers = new Set();
     const seenImeis = new Set();
 
@@ -667,7 +377,7 @@ export default function CustomerStorefront({
     if (inventory && inventory.length > 0) {
       inventory.forEach(item => {
         const cleanName = (item.name || '').replace(/^sSamsung/i, 'Samsung');
-        seenNames.add(cleanName.toLowerCase());
+        if ((Number(item.stock) || 0) <= 0 || item.isPublished === false || item.status === 'Archived') return;
         if (item.kycRef) seenVouchers.add(item.kycRef);
         if (item.imeis && Array.isArray(item.imeis)) item.imeis.forEach(im => seenImeis.add(im));
         if (item.imei1) seenImeis.add(item.imei1);
@@ -775,15 +485,8 @@ export default function CustomerStorefront({
       });
     }
 
-    // 3. Always include showcase catalog so the customer store has full product variety across all categories
-    fallbackShowroomCatalog.forEach(showcaseItem => {
-      if (!seenNames.has(showcaseItem.name.toLowerCase())) {
-        list.push(showcaseItem);
-      }
-    });
-
     return list;
-  }, [inventory, usedPurchases]);
+  }, [inventory, usedPurchases, publicCatalog]);
 
   // Cart Quantities & Helpers
   const addToCart = (product) => {

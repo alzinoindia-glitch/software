@@ -26,6 +26,7 @@ import {
   pushCollectionToCloud, 
   subscribeRealtimeSync,
   resolveCloudConflict,
+  syncPublishedCatalog,
 } from './utils/cloudSyncService';
 
 import {
@@ -249,7 +250,10 @@ export default function App() {
   }, [shopConfig, cloudHydrated]);
   useEffect(() => { 
     setStorageData('INVENTORY', inventory); 
-    if (cloudHydrated) pushCollectionToCloud('INVENTORY', inventory);
+    if (cloudHydrated) {
+      pushCollectionToCloud('INVENTORY', inventory);
+      syncPublishedCatalog(inventory);
+    }
   }, [inventory, cloudHydrated]);
   useEffect(() => { 
     setStorageData('USED_PURCHASES', usedPurchases); 
