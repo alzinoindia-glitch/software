@@ -2195,22 +2195,17 @@ export default function InventoryManager({
                 />
               </div>
 
-              {/* Smart Barcode & QR Code Suite (Unique per product) */}
+              {/* Product Barcode & QR Code (Matches Bulk Design) */}
               <div style={{ gridColumn: 'span 2', background: 'var(--surface-secondary, rgba(255,255,255,0.03))', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                    <QrCode size={16} color="var(--accent-primary)" />
-                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Barcode & QR Code Option
-                    </span>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '1px 6px', borderRadius: '4px' }}>
-                      Unique per product
-                    </span>
-                  </div>
+                {/* Header row with Title and [Barcode | QR] Switcher */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', margin: 0 }}>
+                    {formData.codeFormat === 'qr' ? <QrCode size={16} color="#4F46E5" /> : <Barcode size={16} color="#10B981" />}
+                    <span>Barcode & QR Code</span>
+                  </label>
 
-                  {/* Format Switcher: 1D Barcode vs 2D QR Code */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(0,0,0,0.35)', padding: '2px 4px', borderRadius: '7px' }}>
-                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 700, paddingLeft: '4px' }}>Code:</span>
+                  {/* Compact Pill Switcher: Barcode vs QR */}
+                  <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.12)', padding: '2px', borderRadius: '6px' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -2222,18 +2217,22 @@ export default function InventoryManager({
                       }}
                       style={{
                         padding: '0.2rem 0.55rem',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        borderRadius: '5px',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
                         border: 'none',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        background: (formData.codeFormat || 'barcode') === 'barcode' ? 'var(--accent-primary, #6366F1)' : 'transparent',
-                        color: '#FFFFFF',
+                        background: (formData.codeFormat || 'barcode') !== 'qr' ? '#10B981' : 'transparent',
+                        color: (formData.codeFormat || 'barcode') !== 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
                         transition: 'all 0.15s ease'
                       }}
-                      title="1D Standard Barcode (Code-128) - Laser scanner readable"
+                      title="Set 1D Barcode (Code-128)"
                     >
-                      1D Barcode
+                      <Barcode size={12} />
+                      <span>Barcode</span>
                     </button>
                     <button
                       type="button"
@@ -2241,257 +2240,194 @@ export default function InventoryManager({
                         let nextCode = formData.barcode;
                         if (nextCode && nextCode.startsWith('ALZ-') && !nextCode.includes('ALZ-QR-')) {
                           nextCode = nextCode.replace('ALZ-', 'ALZ-QR-');
-                        } else if (!nextCode && barcodeMode === 'generate') {
+                        } else if (!nextCode) {
                           nextCode = `ALZ-QR-${Date.now().toString().slice(-6)}`;
                         }
                         setFormData(prev => ({ ...prev, codeFormat: 'qr', barcode: nextCode }));
                       }}
                       style={{
                         padding: '0.2rem 0.55rem',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        borderRadius: '5px',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
                         border: 'none',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        background: formData.codeFormat === 'qr' ? '#10B981' : 'transparent',
-                        color: '#FFFFFF',
+                        background: formData.codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                        color: formData.codeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
                         transition: 'all 0.15s ease'
                       }}
-                      title="2D QR Code - Phone camera & 2D scanner readable"
+                      title="Set 2D QR Code"
                     >
-                      2D QR Code
-                    </button>
-                  </div>
-
-                  {/* Mode Selector */}
-                  <div style={{ display: 'flex', gap: '0.3rem', background: 'rgba(0,0,0,0.35)', padding: '3px', borderRadius: '7px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setBarcodeMode('scan')}
-                      style={{
-                        padding: '0.22rem 0.6rem',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        borderRadius: '5px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        background: barcodeMode === 'scan' ? '#10B981' : 'transparent',
-                        color: '#FFFFFF',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      📦 Box has Code
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBarcodeMode('generate');
-                        if (!formData.barcode || (!formData.barcode.startsWith('ALZ-') && !formData.barcode.startsWith('ALZ-QR-'))) {
-                          const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
-                          setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
-                        }
-                      }}
-                      style={{
-                        padding: '0.22rem 0.6rem',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        borderRadius: '5px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        background: barcodeMode === 'generate' ? '#10B981' : 'transparent',
-                        color: '#FFFFFF',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      🏷️ Generate & Print Label
+                      <QrCode size={12} />
+                      <span>QR</span>
                     </button>
                   </div>
                 </div>
 
-                {barcodeMode === 'scan' ? (
-                  <div>
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        placeholder="Scan or type Barcode / QR Code from box (or leave empty)"
-                        value={formData.barcode}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setFormData(prev => ({ ...prev, barcode: val }));
-                          if (val.trim().length >= 8) {
-                            handleBarcodeOrImeiScanned(val, 'barcode');
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleBarcodeOrImeiScanned(formData.barcode, 'barcode');
-                          }
-                        }}
-                        className="input-field"
-                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', flex: 1 }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCameraScanTarget('barcode');
-                          setShowCameraScanner(true);
-                        }}
-                        className="btn-primary"
-                        style={{ 
-                          padding: '0.42rem 0.8rem', 
-                          fontSize: '0.74rem', 
-                          whiteSpace: 'nowrap', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '0.35rem', 
-                          background: '#059669', 
-                          color: '#FFFFFF',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontWeight: 700
-                        }}
-                        title="Scan box barcode or QR code using phone camera"
-                      >
-                        <Camera size={14} color="#FFFFFF" />
-                        <span style={{ color: '#FFFFFF' }}>Mobile/Cam Scan</span>
-                      </button>
+                {/* Input row: allows typing own barcode / QR code or scanning / generating */}
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder={formData.codeFormat === 'qr' ? "e.g. ALZ-QR-429177 or custom QR text / link" : "e.g. 8901234567890 or ALZ-429177"}
+                    value={formData.barcode}
+                    onChange={(e) => setFormData(prev => ({ ...prev, barcode: e.target.value }))}
+                    className="input-field"
+                    style={{ 
+                      fontFamily: 'var(--font-mono)', 
+                      fontSize: '0.85rem', 
+                      fontWeight: 700,
+                      flex: 1,
+                      color: formData.barcode ? (formData.codeFormat === 'qr' ? '#4F46E5' : 'var(--text-primary)') : 'var(--text-muted)'
+                    }}
+                  />
 
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
-                        className="btn-secondary"
-                        style={{
-                          padding: '0.42rem 0.65rem',
-                          fontSize: '0.74rem',
-                          whiteSpace: 'nowrap',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          color: '#EF4444',
-                          borderColor: 'rgba(239, 68, 68, 0.35)'
-                        }}
-                        title="Delete code (stores as empty in database)"
-                      >
-                        <Trash2 size={13} color="#EF4444" />
-                        <span>Delete Code</span>
-                      </button>
-                    </div>
+                  {/* Camera Scanner Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraScanTarget('barcode');
+                      setShowCameraScanner(true);
+                    }}
+                    className="btn-secondary"
+                    style={{
+                      padding: '0.42rem 0.65rem',
+                      fontSize: '0.74rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Scan box barcode or QR with phone camera"
+                  >
+                    <Camera size={13} />
+                    <span>Scan</span>
+                  </button>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.68rem', color: formData.barcode ? 'var(--text-muted)' : '#EF4444', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        {formData.barcode ? '📱 Point phone camera or type code from box' : '⚠️ No Barcode / QR Code assigned. Will be stored as empty in database.'}
-                      </span>
-                      {formData.barcode && onPrintBarcodeSheet && (
-                        <button
-                          type="button"
-                          onClick={() => onPrintBarcodeSheet({
-                            title: formData.name || 'Product',
-                            barcode: formData.barcode,
-                            codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
-                            price: formData.sellPrice || 0,
-                            mrp: formData.mrp || formData.sellPrice || 0,
-                            copies: 1,
-                            format: 'single'
-                          })}
-                          className="btn-secondary"
-                          style={{ padding: '0.2rem 0.55rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                        >
-                          <Printer size={12} />
-                          <span>Print Sticker (50x25mm)</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                      <input
-                        type="text"
-                        placeholder="No Code (Deleted / None)"
-                        value={formData.barcode}
-                        onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                        className="input-field"
-                        style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: formData.barcode ? 'var(--accent-primary)' : 'var(--text-muted)', fontSize: '0.9rem', flex: 1, minWidth: '180px' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
-                          setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
-                        }}
-                        className="btn-secondary"
-                        style={{ padding: '0.42rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                        title="Generate a fresh unique code"
-                      >
-                        <RefreshCw size={13} />
-                        <span>New Code</span>
-                      </button>
+                  {/* Reset / New Auto Code */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                      setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
+                    }}
+                    className="btn-secondary"
+                    style={{
+                      padding: '0.42rem 0.65rem',
+                      fontSize: '0.74rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Generate new unique ALZ code"
+                  >
+                    <RefreshCw size={12} />
+                    <span>New</span>
+                  </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
-                        className="btn-secondary"
-                        style={{
-                          padding: '0.42rem 0.65rem',
-                          fontSize: '0.75rem',
-                          whiteSpace: 'nowrap',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.3rem',
-                          color: '#EF4444',
-                          borderColor: 'rgba(239, 68, 68, 0.35)'
-                        }}
-                        title="Delete code (stores as empty in database)"
-                      >
-                        <Trash2 size={13} color="#EF4444" />
-                        <span>Delete Code</span>
-                      </button>
+                  {/* Print Sticker button */}
+                  {formData.barcode && onPrintBarcodeSheet && (
+                    <button
+                      type="button"
+                      onClick={() => onPrintBarcodeSheet({
+                        title: formData.name || 'Product',
+                        barcode: formData.barcode,
+                        codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
+                        price: formData.sellPrice || 0,
+                        mrp: formData.mrp || formData.sellPrice || 0,
+                        copies: 1,
+                        format: 'single'
+                      })}
+                      className="btn-secondary"
+                      style={{
+                        padding: '0.42rem 0.65rem',
+                        fontSize: '0.74rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        color: formData.codeFormat === 'qr' ? '#4F46E5' : '#10B981',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Print 50x25mm single sticker"
+                    >
+                      <Printer size={12} />
+                      <span>Print</span>
+                    </button>
+                  )}
 
-                      {formData.barcode && onPrintBarcodeSheet && (
-                        <button
-                          type="button"
-                          onClick={() => onPrintBarcodeSheet({
-                            title: formData.name || 'New Item',
-                            barcode: formData.barcode,
-                            codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
-                            price: formData.sellPrice || 0,
-                            mrp: formData.mrp || formData.sellPrice || 0,
-                            copies: 1,
-                            format: 'single'
-                          })}
-                          className="btn-primary"
-                          style={{ padding: '0.42rem 0.9rem', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#10B981', color: '#FFF' }}
-                        >
-                          <Printer size={14} />
-                          <span>Print Sticker to Paste</span>
-                        </button>
-                      )}
-                    </div>
+                  {/* Delete / Clear Button */}
+                  {formData.barcode ? (
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        padding: '0.35rem 0.5rem',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title="Delete code (stores as empty in database)"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                        setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#10B981',
+                        cursor: 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        padding: '0.35rem 0.45rem',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Add code"
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.7rem', color: formData.barcode ? '#10B981' : '#EF4444', fontWeight: 600 }}>
-                        {formData.barcode ? (
-                          `✓ ${formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode'} attached to product. Print 50x25mm label to paste!`
-                        ) : (
-                          '⚠️ Code deleted/empty. Stored as empty in database.'
-                        )}
-                      </span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                        Thermal 50x25mm / A4 Sheet
-                      </span>
-                    </div>
-
-                    {/* Live Code Visual Preview */}
-                    {formData.barcode && (
-                      <div style={{ marginTop: '0.5rem', background: '#FFFFFF', padding: '0.45rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #E2E8F0' }}>
-                        <div 
-                          dangerouslySetInnerHTML={{ 
-                            __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 52, true) 
-                          }} 
-                        />
-                      </div>
+                {/* Status & Live Preview */}
+                <div style={{ marginTop: '0.45rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.68rem', color: formData.barcode ? 'var(--text-muted)' : '#EF4444', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    {formData.barcode ? (
+                      `Format: ${formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode (Code-128)'} • Type custom code or scan`
+                    ) : (
+                      '⚠️ No barcode or QR code assigned (will be stored as empty in database)'
                     )}
+                  </span>
+                </div>
+
+                {/* Vector SVG Live Preview */}
+                {formData.barcode && (
+                  <div style={{ 
+                    marginTop: '0.45rem', 
+                    background: '#FFFFFF', 
+                    padding: '0.45rem', 
+                    borderRadius: '6px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    border: '1px solid #E2E8F0' 
+                  }}>
+                    <div 
+                      dangerouslySetInnerHTML={{ 
+                        __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 50, true) 
+                      }} 
+                    />
                   </div>
                 )}
               </div>
