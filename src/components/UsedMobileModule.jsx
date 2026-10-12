@@ -22,11 +22,13 @@ import {
   CheckSquare,
   Square,
   DollarSign,
-  Globe
+  Globe,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
 import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
-import { saveProductImage } from '../utils/productImageStore';
+import { saveProductImage, compressImageFile } from '../utils/productImageStore';
 
 export default function UsedMobileModule({ 
   usedPurchases = [], 
@@ -158,18 +160,33 @@ export default function UsedMobileModule({
     }
   };
 
-  const handleDeviceImagesUpload = (e) => {
+  const handleDeviceImagesUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      files.forEach(file => {
-        if (file.size <= 8 * 1024 * 1024) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setDeviceImages(prev => [...prev, reader.result]);
-          };
-          reader.readAsDataURL(file);
-        }
-      });
+    if (files.length === 0) return;
+
+    try {
+      const processedImages = await Promise.all(
+        files.map(async (file) => {
+          try {
+            return await compressImageFile(file, 900, 0.82);
+          } catch {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(file);
+            });
+          }
+        })
+      );
+      const validImages = processedImages.filter(Boolean);
+      if (validImages.length > 0) {
+        setDeviceImages(prev => [...prev, ...validImages]);
+      }
+    } catch (err) {
+      console.error("Error uploading handset photos:", err);
+    } finally {
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -283,7 +300,8 @@ export default function UsedMobileModule({
       color: color.trim() || 'Standard',
       department: 'mobiles',
       type: 'refurbished',
-      image: frontImg || backImg || null,
+      image: frontImg || backImg || (deviceImages && deviceImages[0]) || null,
+      deviceImages: deviceImages || [],
       images: (frontImg || backImg) ? { front: Boolean(frontImg), back: Boolean(backImg), v: Date.now() } : undefined,
       description: `Certified Pre-Owned ${effectiveBrand} ${model.trim()} with ${condition} (Battery Health: ${batteryHealth}%). Tested 24-point diagnostic QC check with 15-day ALZINO testing warranty.`,
       addedAt: new Date().toISOString()
@@ -806,23 +824,46 @@ export default function UsedMobileModule({
                     return (
                       <tr key={phone.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                         <td style={{ padding: '0.75rem 0.5rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <div style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: 'var(--radius-sm)',
-                              background: 'var(--illoca-blue-subtle)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--accent-primary)',
-                              flexShrink: 0
-                            }}>
-                              <Smartphone size={16} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                            <div 
+                              onClick={() => {
+                                const photo = (phone.deviceImages && phone.deviceImages[0]) || phone.image;
+                                if (photo) setPreviewModalImage(photo);
+                              }}
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'var(--illoca-blue-subtle)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--accent-primary)',
+                                flexShrink: 0,
+                                overflow: 'hidden',
+                                border: '1px solid var(--border-color)',
+                                cursor: (phone.deviceImages?.length > 0 || phone.image) ? 'pointer' : 'default'
+                              }}
+                              title={phone.deviceImages?.length > 0 ? "Click to view handset photos" : ""}
+                            >
+                              {(phone.deviceImages && phone.deviceImages[0]) || phone.image ? (
+                                <img 
+                                  src={(phone.deviceImages && phone.deviceImages[0]) || phone.image} 
+                                  alt={phone.name} 
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                />
+                              ) : (
+                                <Smartphone size={16} />
+                              )}
                             </div>
                             <div>
-                              <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                {phone.name}
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                <span>{phone.name}</span>
+                                {phone.deviceImages?.length > 1 && (
+                                  <span style={{ fontSize: '0.66rem', fontWeight: 700, padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(79, 70, 229, 0.08)', color: 'var(--accent-primary)' }}>
+                                    📷 {phone.deviceImages.length} photos
+                                  </span>
+                                )}
                               </div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                                 Brand: <strong style={{ color: 'var(--text-primary)' }}>{phone.brand}</strong> {phone.kycRef && `• KYC: ${phone.kycRef}`}
@@ -1376,10 +1417,16 @@ export default function UsedMobileModule({
             </div>
 
             {/* Mobile Device Photos Upload */}
-            <div style={{ gridColumn: 'span 2' }}>
-              <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Mobile Handset Photos (Front, Back, Display Condition)
-              </label>
+            <div style={{ gridColumn: 'span 2', background: 'var(--surface-secondary, rgba(0,0,0,0.02))', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-primary)' }}>
+                  <Camera size={15} color="var(--accent-primary)" />
+                  <span>Mobile Handset Photos (Front, Back, Display Condition)</span>
+                </label>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {deviceImages.length > 0 ? `${deviceImages.length} photo${deviceImages.length > 1 ? 's' : ''} attached` : 'Upload multiple photos'}
+                </span>
+              </div>
 
               <input
                 type="file"
@@ -1390,70 +1437,93 @@ export default function UsedMobileModule({
                 style={{ display: 'none' }}
               />
 
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.55rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <label
                   htmlFor="device-photos-upload-file"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '0.45rem',
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.55rem 0.85rem',
                     borderRadius: 'var(--radius-sm)',
-                    border: '1px dashed var(--border-accent)',
+                    border: '1.5px dashed var(--accent-primary)',
                     background: 'var(--surface-primary)',
                     cursor: 'pointer',
-                    fontSize: '0.75rem',
+                    fontSize: '0.76rem',
                     color: 'var(--accent-primary)',
-                    fontWeight: 600,
-                    transition: 'var(--transition-smooth)'
+                    fontWeight: 700,
+                    transition: 'all 0.15s ease'
                   }}
+                  title="Choose multiple photos or take photos from camera"
                 >
-                  <Upload size={14} />
+                  <Plus size={14} />
                   <span>Add Mobile Photos</span>
                 </label>
 
-                {deviceImages.map((imgSrc, idx) => (
-                  <div 
-                    key={idx} 
-                    style={{ 
-                      position: 'relative', 
-                      display: 'inline-block',
-                      borderRadius: '3px',
-                      border: '1px solid var(--border-color)',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    <img
-                      src={imgSrc}
-                      alt={`Device ${idx + 1}`}
-                      onClick={() => setPreviewModalImage(imgSrc)}
-                      style={{ width: '42px', height: '30px', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
-                      title="Click to preview device photo"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeDeviceImage(idx)}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        right: 0,
-                        background: 'rgba(0,0,0,0.7)',
-                        color: '#FFF',
-                        fontSize: '10px',
-                        width: '16px',
-                        height: '16px',
+                {deviceImages.map((imgSrc, idx) => {
+                  const label = idx === 0 ? 'Front' : idx === 1 ? 'Back' : idx === 2 ? 'Display' : `Extra #${idx + 1}`;
+                  return (
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        position: 'relative', 
                         display: 'flex',
+                        flexDirection: 'column',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        border: 'none'
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        overflow: 'hidden',
+                        background: '#FFFFFF',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
                       }}
-                      title="Remove image"
                     >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      <img
+                        src={imgSrc}
+                        alt={`Device photo ${idx + 1}`}
+                        onClick={() => setPreviewModalImage(imgSrc)}
+                        style={{ width: '56px', height: '48px', objectFit: 'cover', cursor: 'pointer', display: 'block' }}
+                        title="Click to preview full-size device photo"
+                      />
+                      <span style={{ 
+                        fontSize: '9px', 
+                        fontWeight: 800, 
+                        color: '#475569', 
+                        background: '#F1F5F9', 
+                        width: '100%', 
+                        textAlign: 'center', 
+                        padding: '1px 0', 
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.02em'
+                      }}>
+                        {label}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeDeviceImage(idx)}
+                        style={{
+                          position: 'absolute',
+                          top: '2px',
+                          right: '2px',
+                          background: 'rgba(0,0,0,0.65)',
+                          color: '#FFF',
+                          fontSize: '11px',
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          border: 'none',
+                          padding: 0
+                        }}
+                        title="Remove this photo"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
