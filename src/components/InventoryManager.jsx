@@ -2124,19 +2124,19 @@ export default function InventoryManager({
                     <span>Barcode & Product Sticker</span>
                   </label>
 
-                  <div style={{ display: 'flex', gap: '0.3rem', background: 'rgba(0,0,0,0.25)', padding: '3px', borderRadius: '7px' }}>
+                  <div style={{ display: 'flex', gap: '0.3rem', background: 'rgba(0,0,0,0.35)', padding: '3px', borderRadius: '7px' }}>
                     <button
                       type="button"
                       onClick={() => setBarcodeMode('scan')}
                       style={{
-                        padding: '0.22rem 0.6rem',
+                        padding: '0.25rem 0.65rem',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         borderRadius: '5px',
                         border: 'none',
                         cursor: 'pointer',
-                        background: barcodeMode === 'scan' ? 'var(--accent-primary)' : 'transparent',
-                        color: barcodeMode === 'scan' ? '#000' : 'var(--text-muted)',
+                        background: barcodeMode === 'scan' ? '#10B981' : 'transparent',
+                        color: '#FFFFFF',
                         transition: 'all 0.15s ease'
                       }}
                     >
@@ -2151,14 +2151,14 @@ export default function InventoryManager({
                         }
                       }}
                       style={{
-                        padding: '0.22rem 0.6rem',
+                        padding: '0.25rem 0.65rem',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         borderRadius: '5px',
                         border: 'none',
                         cursor: 'pointer',
-                        background: barcodeMode === 'generate' ? 'var(--accent-primary)' : 'transparent',
-                        color: barcodeMode === 'generate' ? '#000' : 'var(--text-muted)',
+                        background: barcodeMode === 'generate' ? '#10B981' : 'transparent',
+                        color: '#FFFFFF',
                         transition: 'all 0.15s ease'
                       }}
                     >
@@ -2197,11 +2197,23 @@ export default function InventoryManager({
                           setShowCameraScanner(true);
                         }}
                         className="btn-primary"
-                        style={{ padding: '0.42rem 0.85rem', fontSize: '0.76rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--accent-primary)', color: '#000' }}
+                        style={{ 
+                          padding: '0.42rem 0.85rem', 
+                          fontSize: '0.76rem', 
+                          whiteSpace: 'nowrap', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '0.35rem', 
+                          background: '#059669', 
+                          color: '#FFFFFF',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontWeight: 700
+                        }}
                         title="Scan box barcode using phone camera or webcam without barcode reader"
                       >
-                        <Camera size={14} />
-                        <span>Mobile/Cam Scan</span>
+                        <Camera size={14} color="#FFFFFF" />
+                        <span style={{ color: '#FFFFFF' }}>Mobile/Cam Scan</span>
                       </button>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem', flexWrap: 'wrap', gap: '0.3rem' }}>
