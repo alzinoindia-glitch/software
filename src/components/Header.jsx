@@ -21,9 +21,7 @@ import {
   ShieldCheck,
   Lock,
   Key,
-  UserCheck,
-  MapPin,
-  Star
+  UserCheck
 } from 'lucide-react';
 import AlzinoLogo from './AlzinoLogo';
 
@@ -37,7 +35,6 @@ export default function Header({
   lowStockCount,
   pendingRepairsCount,
   invoicesCount,
-  shopConfig,
   role = 'admin',
   onLockToCashier = () => {},
   onOpenAdminAuth = () => {},
@@ -212,56 +209,6 @@ export default function Header({
               <span style={{ fontSize: '0.85rem' }}>🌐</span>
               <span className="hide-on-mobile">alzino.shop</span>
             </button>
-
-            {/* Locate Us Button (Google Maps) */}
-            <a
-              href={shopConfig?.mapsUrl || "https://maps.app.goo.gl/dtJgpyb2mju1U3YM7"}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                color: '#FBBF24',
-                padding: '0.38rem 0.65rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.74rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                textDecoration: 'none'
-              }}
-              title="Locate Us (Station Road, Bodhan - Google Maps)"
-            >
-              <MapPin size={13} color="#FBBF24" />
-              <span className="hide-on-mobile">Locate Us</span>
-            </a>
-
-            {/* Rate Us Button */}
-            <a
-              href="https://g.page/r/CWxRHXGDCdZ7EBM/review"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'rgba(234, 179, 8, 0.12)',
-                border: '1px solid rgba(234, 179, 8, 0.35)',
-                color: '#FACC15',
-                padding: '0.38rem 0.65rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.74rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                textDecoration: 'none'
-              }}
-              title="Rate ALZINO on Google Reviews"
-            >
-              <Star size={13} color="#FACC15" fill="#FACC15" />
-              <span className="hide-on-mobile">Rate Us</span>
-            </a>
 
             {/* Mobile Search Button (before Menu) */}
             <button 
