@@ -97,6 +97,8 @@ export default function InventoryManager({
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const [isCustomStorage, setIsCustomStorage] = useState(false);
+  const [isCustomRam, setIsCustomRam] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
   const [quickBarcodeItem, setQuickBarcodeItem] = useState(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
@@ -208,6 +210,8 @@ export default function InventoryManager({
     });
     setIsCustomCategory(false);
     setIsCustomBrand(false);
+    setIsCustomStorage(false);
+    setIsCustomRam(false);
     setShowNameSuggestions(false);
     setShowModelSuggestions(false);
     setNameSuggestionIndex(-1);
@@ -346,6 +350,8 @@ export default function InventoryManager({
     setEditingItem(null);
     setIsCustomCategory(false);
     setIsCustomBrand(false);
+    setIsCustomStorage(false);
+    setIsCustomRam(false);
     setBarcodeMode('generate');
     const defaultCat = availableCategories.includes('New Mobiles') ? 'New Mobiles' : (availableCategories[0] || 'New Mobiles');
     const validBrands = getAvailableBrandsForCategory(defaultCat, inventory);
@@ -387,6 +393,8 @@ export default function InventoryManager({
     const validBrands = getAvailableBrandsForCategory(item.category, inventory);
     const isBrCustom = Boolean(item.brand && !validBrands.includes(item.brand));
     setIsCustomBrand(isBrCustom);
+    setIsCustomStorage(Boolean(item.storage && !COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(item.storage)));
+    setIsCustomRam(Boolean(item.ram && !COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(item.ram)));
     const isGenerated = Boolean(item.barcode && item.barcode.startsWith('ALZ-'));
     setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
@@ -1722,8 +1730,21 @@ export default function InventoryManager({
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM</label>
                 <select
-                  value={formData.ram}
-                  onChange={(e) => setFormData(prev => ({ ...prev, ram: e.target.value }))}
+                  value={
+                    COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(formData.ram)
+                      ? formData.ram
+                      : (formData.ram ? 'Other' : (isCustomRam ? 'Other' : ''))
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setIsCustomRam(true);
+                      setFormData(prev => ({ ...prev, ram: '' }));
+                    } else {
+                      setIsCustomRam(false);
+                      setFormData(prev => ({ ...prev, ram: val }));
+                    }
+                  }}
                   className="input-field"
                 >
                   <option value="">Select RAM</option>
@@ -1731,13 +1752,37 @@ export default function InventoryManager({
                     <option key={r} value={r}>{r}</option>
                   ))}
                 </select>
+                {(isCustomRam || (!COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(formData.ram) && formData.ram)) && (
+                  <input
+                    type="text"
+                    placeholder="Type custom RAM (e.g. 32MB, 24GB)..."
+                    value={formData.ram}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ram: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Storage</label>
                 <select
-                  value={formData.storage}
-                  onChange={(e) => setFormData(prev => ({ ...prev, storage: e.target.value }))}
+                  value={
+                    COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(formData.storage)
+                      ? formData.storage
+                      : (formData.storage ? 'Other' : (isCustomStorage ? 'Other' : ''))
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setIsCustomStorage(true);
+                      setFormData(prev => ({ ...prev, storage: '' }));
+                    } else {
+                      setIsCustomStorage(false);
+                      setFormData(prev => ({ ...prev, storage: val }));
+                    }
+                  }}
                   className="input-field"
                 >
                   <option value="">Select Storage</option>
@@ -1745,6 +1790,17 @@ export default function InventoryManager({
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                {(isCustomStorage || (!COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(formData.storage) && formData.storage)) && (
+                  <input
+                    type="text"
+                    placeholder="Type custom storage (e.g. 32MB, 2TB)..."
+                    value={formData.storage}
+                    onChange={(e) => setFormData(prev => ({ ...prev, storage: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                    autoFocus
+                  />
+                )}
               </div>
 
               <div>
