@@ -323,3 +323,22 @@ export class FastCustomerSearchEngine {
     return results;
   }
 }
+
+/**
+ * Wipe all local SSD IndexedDB records
+ */
+export async function clearSsdIndexedDb() {
+  try {
+    const db = await openSsdIndexedDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.debug('IndexedDB clear notice:', err);
+    return false;
+  }
+}

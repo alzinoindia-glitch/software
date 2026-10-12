@@ -134,3 +134,17 @@ export const useProductImages = (productId, version) => {
   }, [productId, version]);
   return images;
 };
+
+export const clearAllProductImages = async () => {
+  try {
+    const db = await openDb();
+    return new Promise((resolve) => {
+      const t = db.transaction(STORE, 'readwrite');
+      t.objectStore(STORE).clear();
+      t.oncomplete = () => resolve(true);
+      t.onerror = () => resolve(false);
+    });
+  } catch {
+    return false;
+  }
+};

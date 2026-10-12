@@ -23,7 +23,8 @@ import {
 } from '../utils/supabaseClient';
 import { 
   pullAllFromCloud, 
-  pushAllToCloud 
+  pushAllToCloud,
+  purgeAllLegacyOfflineData
 } from '../utils/cloudSyncService';
 
 export default function SettingsBackup({ 
@@ -359,27 +360,19 @@ export default function SettingsBackup({
     }
   };
 
-  // Clear Database / Fresh Clean Slate (Zero Demo Data)
-  const handleClearAllData = () => {
-    if (confirm("Are you sure you want to clear all data? This will remove all items, sales invoices, repair tokens, and customer records to start fresh with a clean database.")) {
-      setInventory([]);
-      setUsedPurchases([]);
-      setRepairJobs([]);
-      setCustomers([]);
-      setSuppliers([]);
-      setExpenses([]);
-      setInvoices([]);
-      try {
-        localStorage.removeItem('ALZINO_ERP_INVENTORY');
-        localStorage.removeItem('ALZINO_ERP_USED_PURCHASES');
-        localStorage.removeItem('ALZINO_ERP_REPAIR_JOBS');
-        localStorage.removeItem('ALZINO_ERP_CUSTOMERS');
-        localStorage.removeItem('ALZINO_ERP_SUPPLIERS');
-        localStorage.removeItem('ALZINO_ERP_EXPENSES');
-        localStorage.removeItem('ALZINO_ERP_INVOICES');
-        localStorage.removeItem('ALZINO_ERP_WARRANTY_CLAIMS');
-      } catch (e) {}
-      alert("All demo and transactional data cleared! Store database is now completely clean.");
+  // Clear Database / Fresh Clean Slate (Zero Demo Data & Purge Offline Test Records)
+  const handleClearAllData = async () => {
+    if (confirm("Are you sure you want to clear all offline test data? This will permanently wipe all test products, inventory, sales invoices, repair tokens, and customer records from LocalStorage, SSD IndexedDB, and Cloud Sync.")) {
+      await purgeAllLegacyOfflineData({
+        setInventory,
+        setUsedPurchases,
+        setRepairJobs,
+        setCustomers,
+        setSuppliers,
+        setExpenses,
+        setInvoices
+      });
+      alert("All offline test data and local/cloud records cleared! Your store database is now completely clean.");
     }
   };
 

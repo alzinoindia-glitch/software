@@ -1,4 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { clearSsdIndexedDb } from './syncAndStorageEngine';
+import { clearAllProductImages } from './productImageStore';
 
 const SYNC_TABLE = 'alzino_erp_sync';
 const STORE_STATE_TABLE = 'store_state';
@@ -316,4 +318,83 @@ export const subscribeRealtimeSync = (setters = {}) => {
     console.warn('[CloudSync] Realtime subscription error:', err);
     return () => {};
   }
+};
+
+/**
+ * Wipe all collections from Supabase tables (store_state and alzino_erp_sync)
+ */
+export const wipeAllDataFromCloud = async () => {
+  if (!isSupabaseConfigured()) return { success: false, reason: 'Supabase not configured' };
+  const client = getSupabaseClient();
+  if (!client) return { success: false, reason: 'No client' };
+
+  try {
+    const orgId = await getActiveOrgId(client);
+    if (orgId) {
+      await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);
+    } else {
+      await client.from(STORE_STATE_TABLE).delete().neq('domain', '');
+    }
+    await client.from(SYNC_TABLE).delete().neq('key', '');
+    console.log('[CloudSync] ✓ Cleared cloud tables');
+    return { success: true };
+  } catch (err) {
+    console.warn('[CloudSync] Error wiping cloud data:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Master purge: removes all offline-first local data and resets database cleanly
+ */
+export const purgeAllLegacyOfflineData = async (setters = {}) => {
+  const legacyKeys = [
+    'INVENTORY',
+    'INVOICES',
+    'CUSTOMERS',
+    'REPAIR_JOBS',
+    'USED_PURCHASES',
+    'SUPPLIERS',
+    'EXPENSES',
+    'WARRANTY_CLAIMS'
+  ];
+
+  // 1. Wipe from LocalStorage
+  legacyKeys.forEach(k => {
+    try {
+      localStorage.removeItem(`ALZINO_ERP_${k}`);
+    } catch (e) {}
+  });
+
+  // 2. Clear IndexedDB stores
+  try {
+    await clearSsdIndexedDb();
+    await clearAllProductImages();
+  } catch (e) {
+    console.debug('IndexedDB purge error:', e);
+  }
+
+  // 3. Clear from cloud if configured
+  try {
+    await wipeAllDataFromCloud();
+  } catch (e) {
+    console.debug('Cloud wipe error:', e);
+  }
+
+  // 4. Update React state if setters provided
+  if (setters.setInventory) setters.setInventory([]);
+  if (setters.setInvoices) setters.setInvoices([]);
+  if (setters.setCustomers) setters.setCustomers([]);
+  if (setters.setRepairJobs) setters.setRepairJobs([]);
+  if (setters.setUsedPurchases) setters.setUsedPurchases([]);
+  if (setters.setSuppliers) setters.setSuppliers([]);
+  if (setters.setExpenses) setters.setExpenses([]);
+  if (setters.setWarrantyClaims) setters.setWarrantyClaims([]);
+
+  // 5. Broadcast to other open browser tabs
+  try {
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {}
+
+  return { success: true };
 };

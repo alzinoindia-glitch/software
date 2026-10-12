@@ -54,6 +54,7 @@ import {
   saveCustomBrand
 } from '../utils/customTaxonomy';
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
+import { purgeAllLegacyOfflineData } from '../utils/cloudSyncService';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -908,6 +909,32 @@ export default function InventoryManager({
                 <Plus size={14} />
                 <span>Add</span>
               </button>
+
+              {inventory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm(`Are you sure you want to remove all ${inventory.length} items from inventory? This will clear test products from local storage, SSD IndexedDB, and Cloud Sync to start fresh.`)) {
+                      await purgeAllLegacyOfflineData({ setInventory });
+                    }
+                  }}
+                  className="btn-secondary"
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    fontSize: '0.74rem',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    color: 'var(--color-danger)',
+                    borderColor: 'rgba(239, 68, 68, 0.35)'
+                  }}
+                  title="Clear All Test Products & Reset Catalog"
+                >
+                  <Trash2 size={13} color="var(--color-danger)" />
+                  <span className="hide-on-mobile">Clear Test Stock</span>
+                </button>
+              )}
             </>
           )}
         </div>

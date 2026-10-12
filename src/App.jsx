@@ -22,7 +22,8 @@ import { Lock, ShieldCheck, Key } from 'lucide-react';
 import { 
   pullAllFromCloud, 
   pushCollectionToCloud, 
-  subscribeRealtimeSync 
+  subscribeRealtimeSync,
+  purgeAllLegacyOfflineData
 } from './utils/cloudSyncService';
 
 import {
@@ -108,6 +109,30 @@ export default function App() {
     }
     return updated;
   });
+
+  // One-time automatic purge for legacy offline test data created before cloud sync
+  (() => {
+    try {
+      const OFFLINE_CLEANUP_FLAG = 'ALZINO_ERP_LEGACY_OFFLINE_DATA_PURGED_20261012';
+      if (typeof window !== 'undefined' && !localStorage.getItem(OFFLINE_CLEANUP_FLAG)) {
+        localStorage.setItem(OFFLINE_CLEANUP_FLAG, 'true');
+        [
+          'ALZINO_ERP_INVENTORY',
+          'ALZINO_ERP_INVOICES',
+          'ALZINO_ERP_CUSTOMERS',
+          'ALZINO_ERP_REPAIR_JOBS',
+          'ALZINO_ERP_USED_PURCHASES',
+          'ALZINO_ERP_SUPPLIERS',
+          'ALZINO_ERP_EXPENSES',
+          'ALZINO_ERP_WARRANTY_CLAIMS'
+        ].forEach(k => {
+          try { localStorage.removeItem(k); } catch (e) {}
+        });
+        purgeAllLegacyOfflineData();
+      }
+    } catch (e) {}
+  })();
+
   const [inventory, setInventory] = useState(() => getStorageData('INVENTORY', initialInventory));
   const [usedPurchases, setUsedPurchases] = useState(() => getStorageData('USED_PURCHASES', initialUsedPurchases));
   const [repairJobs, setRepairJobs] = useState(() => getStorageData('REPAIR_JOBS', initialRepairJobs));
