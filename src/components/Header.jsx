@@ -272,7 +272,7 @@ export default function Header({
             display: 'inline-flex',
             alignItems: 'center',
             gap: '0.45rem',
-            padding: '0.38rem 0.7rem',
+            padding: '0.45rem 0.8rem',
             border: menuOpen ? '1px solid #A9BC5C' : '1px solid #CBD5CF',
             background: menuOpen ? '#A9BC5C' : '#FFFFFF',
             color: '#0F251E',
@@ -282,8 +282,8 @@ export default function Header({
           }}
           title="Open Main Menu (Press M)"
         >
-          <Menu size={18} color="#0F251E" />
-          <span style={{ fontSize: '0.82rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>Menu</span>
+          <Menu size={19} color="#0F251E" />
+          <span style={{ fontSize: '0.86rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>Menu</span>
           <kbd style={{ background: '#EEF2E8', padding: '0.05rem 0.35rem', borderRadius: '3px', fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: '#0F251E' }}>M</kbd>
         </button>
       </div>

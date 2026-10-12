@@ -112,7 +112,7 @@ header {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0.25rem 1.25rem;
+  padding: 0.4rem 1.25rem;
 }
 
 .header-content-inner {
@@ -674,7 +674,7 @@ input, select, textarea {
   }
 
   .header-menu-row {
-    padding: 0.25rem 0.65rem !important;
+    padding: 0.4rem 0.65rem !important;
   }
 
   .app-module-container {
