@@ -18,12 +18,15 @@ import {
   ArrowRight,
   Layers,
   Printer,
-  Hash
+  Hash,
+  QrCode,
+  Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
 import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
 import { getProductSuggestions } from '../utils/productSuggestions';
+import { renderCodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
@@ -107,6 +110,8 @@ export default function BulkMobileVariantEntryModal({
 
   // Physical Units matrix: [{ id, variantId, color, unitNo, imei1, imei2, barcode }]
   const [units, setUnits] = useState([]);
+  const [codeFormat, setCodeFormat] = useState('barcode'); // 'barcode' | 'qr'
+  const [previewUnit, setPreviewUnit] = useState(null);
 
   // Batch paste modal state
   const [showPasteModal, setShowPasteModal] = useState(false);
@@ -130,6 +135,7 @@ export default function BulkMobileVariantEntryModal({
       const newUnits = [];
       const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
       const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+      const prefix = codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
       let globalIndex = 1;
 
       colourVariants.forEach(variant => {
@@ -142,7 +148,7 @@ export default function BulkMobileVariantEntryModal({
           // Preserve already typed IMEI/barcode if user previously entered it
           const existing = prevUnits.find(u => u.unitKey === unitKey) || prevUnits[globalIndex - 1];
 
-          const defaultBarcode = `ALZ-${brandCode}-${modelCode}-${colorSlug}-${String(i).padStart(2, '0')}`;
+          const defaultBarcode = `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(i).padStart(2, '0')}`;
 
           newUnits.push({
             id: `UNIT-${Date.now()}-${globalIndex}`,
@@ -162,7 +168,7 @@ export default function BulkMobileVariantEntryModal({
 
       return newUnits;
     });
-  }, [colourVariants, modelDetails.brand, modelDetails.model]);
+  }, [colourVariants, modelDetails.brand, modelDetails.model, codeFormat]);
 
   // Total quantity of units
   const totalStockCount = useMemo(() => {
@@ -233,17 +239,47 @@ export default function BulkMobileVariantEntryModal({
     })));
   };
 
-  // Regenerate clean barcodes for all physical units
-  const handleRegenerateBarcodes = () => {
+  // Toggle Admin Choice: Barcode (Code-128) vs QR Code (2D)
+  const handleToggleCodeFormat = (newFormat) => {
+    setCodeFormat(newFormat);
     const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
     const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    const prefix = newFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
     setUnits(prev => prev.map(unit => {
       const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
       return {
         ...unit,
-        barcode: `ALZ-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
+        barcode: `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
       };
     }));
+  };
+
+  // Regenerate clean barcodes/QR codes for all physical units
+  const handleRegenerateBarcodes = () => {
+    const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+    const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    const prefix = codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+    setUnits(prev => prev.map(unit => {
+      const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+      return {
+        ...unit,
+        barcode: `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
+      };
+    }));
+  };
+
+  // 1-Click Print Stickers for all units
+  const handlePrintAllStickers = () => {
+    if (!onPrintBarcodeSheet || units.length === 0) return;
+    onPrintBarcodeSheet({
+      title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage})`,
+      barcode: units[0]?.barcode || 'ALZ-001',
+      codeFormat,
+      price: modelDetails.sellPrice || 0,
+      mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+      copies: units.length,
+      format: 'sheet24'
+    });
   };
 
   // Batch paste IMEIs from clipboard or supplier list
@@ -341,12 +377,14 @@ export default function BulkMobileVariantEntryModal({
         locations: [{ rack: rackVal, bin: binVal, qty: variantQty }],
         barcode: primaryBarcode,
         barcodes: allBarcodes,
+        codeFormat: codeFormat,
         imeis: variantImeis,
         units: variantUnits.map(u => ({
           unitId: u.id,
           imei1: u.imei1.trim(),
           imei2: u.imei2.trim(),
           barcode: u.barcode.trim(),
+          codeFormat: codeFormat,
           color: variant.color,
           rack: rackVal,
           bin: binVal,
@@ -1228,13 +1266,57 @@ export default function BulkMobileVariantEntryModal({
                         Unit-by-Unit IMEI 1 & IMEI 2 Matrix ({units.length} Physical Phones)
                       </h4>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        Scan box barcode laser or type IMEIs • Laser gun automatically jumps to next field
+                        Type or laser scan IMEIs • Alzino auto-generates 100% scannable Barcodes or QR Codes
                       </span>
                     </div>
                   </div>
 
                   {/* Fast Helper Actions */}
-                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Admin Choice: Barcode vs QR Code */}
+                    <div style={{ display: 'inline-flex', background: 'var(--bg-main, #F3F4F6)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color, #E5E7EB)' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('barcode')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'barcode' ? '#10B981' : 'transparent',
+                          color: codeFormat === 'barcode' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Barcode size={12} />
+                        <span>Barcode</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('qr')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                          color: codeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <QrCode size={12} />
+                        <span>QR Code</span>
+                      </button>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => setShowPasteModal(true)}
@@ -1265,8 +1347,22 @@ export default function BulkMobileVariantEntryModal({
                       title="Regenerate unique SKU/Barcodes for each unit"
                     >
                       <RefreshCw size={12} />
-                      <span>Reset Barcodes</span>
+                      <span>Reset {codeFormat === 'qr' ? 'QR Codes' : 'Barcodes'}</span>
                     </button>
+
+                    {onPrintBarcodeSheet && (
+                      <button
+                        type="button"
+                        onClick={handlePrintAllStickers}
+                        disabled={units.length === 0}
+                        className="btn-secondary"
+                        style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#4F46E5' }}
+                        title="Print stickers for all physical units"
+                      >
+                        <Printer size={12} />
+                        <span>Print Labels</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1385,9 +1481,31 @@ export default function BulkMobileVariantEntryModal({
 
                         {/* Unique Unit Barcode / SKU */}
                         <div>
-                          <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.15rem' }}>
-                            Unit Barcode / SKU
-                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                              Unit {codeFormat === 'qr' ? 'QR Code' : 'Barcode'}
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewUnit(unit)}
+                              style={{ 
+                                background: 'transparent', 
+                                border: 'none', 
+                                color: codeFormat === 'qr' ? '#4F46E5' : '#10B981', 
+                                cursor: 'pointer', 
+                                padding: 0, 
+                                fontSize: '0.66rem', 
+                                fontWeight: 800, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '2px' 
+                              }}
+                              title={`Preview & Print ${codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker`}
+                            >
+                              <Eye size={11} />
+                              <span>View</span>
+                            </button>
+                          </div>
                           <input
                             type="text"
                             value={unit.barcode}
@@ -1397,7 +1515,8 @@ export default function BulkMobileVariantEntryModal({
                               padding: '0.28rem 0.5rem', 
                               fontSize: '0.74rem', 
                               fontFamily: 'var(--font-mono)', 
-                              color: 'var(--accent-primary, #4F46E5)' 
+                              color: codeFormat === 'qr' ? '#4F46E5' : '#10B981',
+                              fontWeight: 700
                             }}
                           />
                         </div>
@@ -1688,11 +1807,109 @@ export default function BulkMobileVariantEntryModal({
         <CameraBarcodeScannerModal
           isOpen={true}
           onClose={() => setActiveScanUnitIndex(null)}
+          onScan={(scannedCode) => {
+            handleUnitChange(activeScanUnitIndex, activeScanField, scannedCode);
+            setActiveScanUnitIndex(null);
+          }}
           onScanSuccess={(scannedCode) => {
             handleUnitChange(activeScanUnitIndex, activeScanField, scannedCode);
             setActiveScanUnitIndex(null);
           }}
         />
+      )}
+
+      {/* Code Preview & Instant Sticker Modal */}
+      {previewUnit && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1350, padding: '1rem' }}>
+          <div className="illoca-card animate-fade-in" style={{ maxWidth: '380px', width: '100%', background: 'var(--surface-primary)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                {codeFormat === 'qr' ? <QrCode size={18} color="#4F46E5" /> : <Barcode size={18} color="#10B981" />}
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800 }}>
+                  Unit {codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker
+                </h4>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setPreviewUnit(null)} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{
+              background: '#FFFFFF',
+              color: '#0A0D14',
+              padding: '0.9rem',
+              borderRadius: '8px',
+              border: '2px dashed #CBD5E1',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 900, letterSpacing: '0.04em' }}>ALZINO • BODHAN</div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, margin: '2px 0' }}>
+                {modelDetails.brand} {modelDetails.model}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+                {modelDetails.ram}/{modelDetails.storage} • {previewUnit.color}
+              </div>
+
+              <div 
+                style={{ margin: '0.6rem 0', display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ 
+                  __html: renderCodeSvg(previewUnit.barcode, codeFormat, 220, codeFormat === 'qr' ? 95 : 55, true) 
+                }} 
+              />
+
+              <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#0F172A' }}>
+                ₹{Number(modelDetails.sellPrice || 0).toLocaleString()} 
+                {modelDetails.mrp && Number(modelDetails.mrp) > Number(modelDetails.sellPrice) && (
+                  <span style={{ textDecoration: 'line-through', fontSize: '0.72rem', color: '#94A3B8', marginLeft: '6px' }}>
+                    MRP: ₹{Number(modelDetails.mrp).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {previewUnit.imei1 && (
+                <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: '#475569', marginTop: '4px' }}>
+                  IMEI: {previewUnit.imei1}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setPreviewUnit(null)}
+                className="btn-secondary"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem' }}
+              >
+                Close
+              </button>
+              {onPrintBarcodeSheet && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPrintBarcodeSheet({
+                      title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage} - ${previewUnit.color})`,
+                      barcode: previewUnit.barcode,
+                      codeFormat,
+                      price: modelDetails.sellPrice || 0,
+                      mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+                      copies: 1,
+                      format: 'single'
+                    });
+                    setPreviewUnit(null);
+                  }}
+                  className="btn-primary"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Printer size={13} />
+                  <span>Print Sticker</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

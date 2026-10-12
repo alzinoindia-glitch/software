@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { renderBarcodeSvg, getUpiQrUrl } from '../utils/barcode';
+import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 
 // Number to Words converter for Indian Rupee
 function numberToWords(num) {
@@ -1117,7 +1117,9 @@ export default function PrintTemplates({
               </div>
               <div 
                 style={{ margin: '1.5mm 0' }}
-                dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(printData.barcode, 150, 36, true) }} 
+                dangerouslySetInnerHTML={{ 
+                  __html: renderCodeSvg(printData.barcode, printData.codeFormat || (printData.barcode?.includes('QR-') ? 'qr' : 'barcode'), 150, 48, true) 
+                }} 
               />
               <div style={{ fontSize: '10.5px', fontWeight: 900 }}>
                 ₹{Number(printData.price || 0).toLocaleString()} {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7.5px', color: '#666', marginLeft: '4px' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
@@ -1148,7 +1150,9 @@ export default function PrintTemplates({
                     </div>
                     <div 
                       style={{ margin: '1mm 0' }}
-                      dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(printData.barcode, 160, 40, true) }} 
+                      dangerouslySetInnerHTML={{ 
+                        __html: renderCodeSvg(printData.barcode, printData.codeFormat || (printData.barcode?.includes('QR-') ? 'qr' : 'barcode'), 160, 44, true) 
+                      }} 
                     />
                     <div style={{ fontSize: '9px', fontWeight: 800 }}>
                       ₹{printData.price} {printData.mrp ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{printData.mrp}</span> : null}

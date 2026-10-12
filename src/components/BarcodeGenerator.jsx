@@ -6,9 +6,10 @@ import {
   CheckCircle, 
   Layers, 
   Sparkles, 
-  Tag 
+  Tag,
+  QrCode
 } from 'lucide-react';
-import { renderBarcodeSvg } from '../utils/barcode';
+import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
 
 export default function BarcodeGenerator({ 
   inventory, 
@@ -35,6 +36,9 @@ export default function BarcodeGenerator({
 
   const [labelCopies, setLabelCopies] = useState(24);
   const [labelFormat, setLabelFormat] = useState('sheet24'); // sheet24 | sheet40 | thermalSingle
+  const [codeFormat, setCodeFormat] = useState(
+    selectedItemForBarcode?.codeFormat || (selectedItemForBarcode?.barcode?.includes('QR-') ? 'qr' : 'barcode')
+  );
 
   // Sync if selectedItemForBarcode changes
   React.useEffect(() => {
@@ -44,6 +48,11 @@ export default function BarcodeGenerator({
       setCustomBarcode(selectedItemForBarcode.barcode || `ALZ-${selectedItemForBarcode.id}`);
       setCustomPrice(selectedItemForBarcode.sellPrice);
       setCustomMrp(selectedItemForBarcode.mrp || selectedItemForBarcode.sellPrice);
+      if (selectedItemForBarcode.codeFormat) {
+        setCodeFormat(selectedItemForBarcode.codeFormat);
+      } else if (selectedItemForBarcode.barcode?.includes('QR-')) {
+        setCodeFormat('qr');
+      }
     }
   }, [selectedItemForBarcode]);
 
@@ -55,6 +64,11 @@ export default function BarcodeGenerator({
       setCustomBarcode(prod.barcode || `ALZ-${prod.id}`);
       setCustomPrice(prod.sellPrice);
       setCustomMrp(prod.mrp || prod.sellPrice);
+      if (prod.codeFormat) {
+        setCodeFormat(prod.codeFormat);
+      } else if (prod.barcode?.includes('QR-')) {
+        setCodeFormat('qr');
+      }
     }
   };
 
@@ -62,6 +76,7 @@ export default function BarcodeGenerator({
     onPrintBarcodeSheet({
       title: customTitle,
       barcode: customBarcode,
+      codeFormat,
       price: customPrice,
       mrp: customMrp,
       copies: parseInt(labelCopies, 10) || 24,
@@ -114,6 +129,57 @@ export default function BarcodeGenerator({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Code Format Choice */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+              Sticker Code Format:
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setCodeFormat('barcode')}
+                style={{
+                  padding: '0.45rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1.5px solid ${codeFormat === 'barcode' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                  background: codeFormat === 'barcode' ? 'var(--illoca-blue-subtle)' : 'var(--surface-primary)',
+                  color: codeFormat === 'barcode' ? 'var(--accent-primary)' : 'var(--text-primary)',
+                  fontWeight: 700,
+                  fontSize: '0.76rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <Barcode size={14} />
+                <span>1D Barcode (Code-128)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCodeFormat('qr')}
+                style={{
+                  padding: '0.45rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1.5px solid ${codeFormat === 'qr' ? '#4F46E5' : 'var(--border-color)'}`,
+                  background: codeFormat === 'qr' ? 'rgba(79, 70, 229, 0.08)' : 'var(--surface-primary)',
+                  color: codeFormat === 'qr' ? '#4F46E5' : 'var(--text-primary)',
+                  fontWeight: 700,
+                  fontSize: '0.76rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <QrCode size={14} />
+                <span>2D QR Code</span>
+              </button>
+            </div>
           </div>
 
           <div>
@@ -243,10 +309,10 @@ export default function BarcodeGenerator({
               {customTitle}
             </div>
 
-            {/* SVG Barcode */}
+            {/* SVG Barcode or QR Code */}
             <div 
-              style={{ margin: '0.35rem 0' }}
-              dangerouslySetInnerHTML={{ __html: renderBarcodeSvg(customBarcode, 220, 55, true) }} 
+              style={{ margin: '0.35rem 0', display: 'flex', justifyContent: 'center' }}
+              dangerouslySetInnerHTML={{ __html: renderCodeSvg(customBarcode, codeFormat, 220, codeFormat === 'qr' ? 100 : 55, true) }} 
             />
 
             {/* Pricing */}

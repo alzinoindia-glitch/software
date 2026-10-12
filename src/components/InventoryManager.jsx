@@ -222,6 +222,12 @@ export default function InventoryManager({
     const raw = (scannedCode || '').trim();
     if (!raw) return;
 
+    if (targetField === 'search') {
+      setSearchTerm(raw);
+      setShowCameraScanner(false);
+      return;
+    }
+
     const digitsOnly = raw.replace(/[^0-9a-zA-Z]/g, '');
     const is15DigitImei = digitsOnly.length === 15 && /^\d+$/.test(digitsOnly);
 
@@ -321,15 +327,23 @@ export default function InventoryManager({
       if (!q) return matchesCategory && matchesBrand && matchesStock;
 
       const words = q.split(/\s+/).filter(Boolean);
+      const unitCodes = (item.units || []).flatMap(u => [u.barcode, u.imei1, u.imei2, u.color]).filter(Boolean);
+      const allBarcodes = (item.barcodes || []).filter(Boolean);
       const haystack = [
         item.name || '',
         item.brand || '',
         item.category || '',
+        item.model || '',
+        item.color || '',
+        item.ram || '',
+        item.storage || '',
         item.description || '',
         item.barcode || '',
         item.rack || '',
         item.bin || '',
-        ...(item.imeis || [])
+        ...(item.imeis || []),
+        ...unitCodes,
+        ...allBarcodes
       ].join(' ').toLowerCase();
 
       return matchesCategory && matchesBrand && matchesStock && words.every(word => haystack.includes(word));
@@ -709,7 +723,7 @@ export default function InventoryManager({
             className="input-field"
             style={{
               paddingLeft: '2.1rem',
-              paddingRight: searchTerm ? '2.2rem' : '0.85rem',
+              paddingRight: searchTerm ? '5.6rem' : '4.4rem',
               height: '34px',
               fontSize: '0.82rem',
               borderRadius: '8px',
@@ -718,27 +732,51 @@ export default function InventoryManager({
               background: 'var(--bg-main)'
             }}
           />
-          {searchTerm && (
+          <div style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  if (onClearInitialSearchTerm) onClearInitialSearchTerm();
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px'
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => {
-                setSearchTerm('');
-                if (onClearInitialSearchTerm) onClearInitialSearchTerm();
+                setCameraScanTarget('search');
+                setShowCameraScanner(true);
               }}
               style={{
-                position: 'absolute',
-                right: '8px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
+                background: 'linear-gradient(135deg, #10B981, #059669)',
                 border: 'none',
-                color: 'var(--text-muted)',
+                borderRadius: '5px',
+                color: '#FFFFFF',
+                padding: '3px 7px',
                 cursor: 'pointer',
-                padding: '2px'
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                boxShadow: '0 1px 4px rgba(16, 185, 129, 0.3)'
               }}
+              title="Scan Barcode or QR Code with Camera"
             >
-              <X size={14} />
+              <Camera size={12} />
+              <span>Scan</span>
             </button>
-          )}
+          </div>
         </div>
 
         {/* Right: View Toggle + Quick Actions */}

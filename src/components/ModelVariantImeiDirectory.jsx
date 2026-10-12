@@ -483,6 +483,7 @@ export default function ModelVariantImeiDirectory({
                                           onClick={() => onPrintBarcodeSheet({
                                             title: unit.productName || group.modelName,
                                             barcode: unit.barcode,
+                                            codeFormat: unit.codeFormat || (unit.barcode?.includes('QR-') ? 'qr' : 'barcode'),
                                             price: unit.sellPrice || 0,
                                             mrp: unit.sellPrice || 0,
                                             copies: 1,

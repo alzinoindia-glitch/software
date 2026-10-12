@@ -40,13 +40,23 @@ export default function UniversalSearchModal({
 
   // Search Results grouping
   const matchedInventory = q ? inventory.filter(i => {
+    const unitCodes = (i.units || []).flatMap(u => [u.barcode, u.imei1, u.imei2, u.color]).filter(Boolean);
+    const allBarcodes = (i.barcodes || []).filter(Boolean);
     const haystack = [
       i.name || '',
       i.brand || '',
       i.category || '',
+      i.model || '',
+      i.color || '',
+      i.ram || '',
+      i.storage || '',
       i.description || '',
       i.barcode || '',
-      ...(i.imeis || [])
+      i.rack || '',
+      i.bin || '',
+      ...(i.imeis || []),
+      ...unitCodes,
+      ...allBarcodes
     ].join(' ').toLowerCase();
     return words.every(w => haystack.includes(w));
   }).slice(0, 6) : [];

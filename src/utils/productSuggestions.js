@@ -706,9 +706,18 @@ export function lookupProductByBarcodeOrImei(rawCode, inventory = []) {
     });
 
     if (existing) {
+      let matchedUnit = null;
+      if (Array.isArray(existing.units)) {
+        matchedUnit = existing.units.find(u => 
+          (u.barcode && u.barcode.trim().toLowerCase() === clean) ||
+          (u.imei1 && u.imei1.trim().toLowerCase() === clean) ||
+          (u.imei2 && u.imei2.trim().toLowerCase() === clean)
+        );
+      }
       return {
         source: 'inventory',
-        ...existing
+        ...existing,
+        matchedUnit: matchedUnit || null
       };
     }
   }
