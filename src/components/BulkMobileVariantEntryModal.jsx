@@ -29,6 +29,7 @@ import { getProductSuggestions } from '../utils/productSuggestions';
 import { renderCodeSvg } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
+import { compressImageFile, saveProductImage } from '../utils/productImageStore';
 
 export const COMMON_RAM_OPTIONS = ['3GB', '4GB', '6GB', '8GB', '12GB', '16GB', '24GB', 'Other'];
 export const COMMON_STORAGE_OPTIONS = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB', 'Other'];
@@ -91,13 +92,14 @@ export default function BulkMobileVariantEntryModal({
     setModelSuggestionIndex(-1);
   };
 
-  // Colour Variants list: [{ id, color, hex, qty }]
+  // Colour Variants list: [{ id, color, hex, qty, image }]
   const [colourVariants, setColourVariants] = useState([
-    { id: 'cv-1', color: 'Onyx Black', hex: '#1C1C1E', qty: 2 },
-    { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2 }
+    { id: 'cv-1', color: 'Onyx Black', hex: '#1C1C1E', qty: 2, image: null },
+    { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2, image: null }
   ]);
   const [newColorInput, setNewColorInput] = useState('');
   const [customColorHex, setCustomColorHex] = useState('#EC4899');
+  const [previewImage, setPreviewImage] = useState(null); // { url, title }
 
   // Physical Units matrix: [{ id, variantId, color, unitNo, imei1, imei2, barcode }]
   const [units, setUnits] = useState([]);
@@ -147,6 +149,7 @@ export default function BulkMobileVariantEntryModal({
             variantId: variant.id,
             color: colorName,
             colorHex: variant.hex || getProductColorHex(colorName),
+            image: variant.image || null,
             unitNo: i,
             globalIndex,
             imei1: existing?.imei1 || '',
@@ -171,7 +174,7 @@ export default function BulkMobileVariantEntryModal({
   const effectiveStorage = modelDetails.storage === 'Other' ? (modelDetails.customStorage || '') : modelDetails.storage;
 
   // Add a new colour to the variants list
-  const handleAddColor = (colorName, hex = null) => {
+  const handleAddColor = (colorName, hex = null, image = null) => {
     if (!colorName.trim()) return;
     const exists = colourVariants.some(c => c.color.toLowerCase() === colorName.trim().toLowerCase());
     if (exists) {
@@ -181,7 +184,7 @@ export default function BulkMobileVariantEntryModal({
     const resolvedHex = hex || getProductColorHex(colorName, customColorHex || '#EC4899');
     setColourVariants(prev => [
       ...prev,
-      { id: `cv-${Date.now()}`, color: colorName.trim(), hex: resolvedHex, qty: 1 }
+      { id: `cv-${Date.now()}`, color: colorName.trim(), hex: resolvedHex, qty: 1, image: image || null }
     ]);
     setNewColorInput('');
     setCustomColorHex('#EC4899');
@@ -189,6 +192,20 @@ export default function BulkMobileVariantEntryModal({
 
   const handleUpdateColorHex = (id, newHex) => {
     setColourVariants(prev => prev.map(c => c.id === id ? { ...c, hex: newHex } : c));
+  };
+
+  const handleUpdateColorImage = async (id, file) => {
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file, 720, 0.8);
+      setColourVariants(prev => prev.map(c => c.id === id ? { ...c, image: compressed } : c));
+    } catch (err) {
+      alert(err.message || 'Could not load photo');
+    }
+  };
+
+  const handleRemoveColorImage = (id) => {
+    setColourVariants(prev => prev.map(c => c.id === id ? { ...c, image: null } : c));
   };
 
   const handleRemoveColor = (id) => {
@@ -308,7 +325,7 @@ export default function BulkMobileVariantEntryModal({
   // =========================================================================
   // SUBMIT MANUAL BULK ENTRY: Save All Units to Inventory
   // =========================================================================
-  const handleSaveAll = (e) => {
+  const handleSaveAll = async (e) => {
     if (e) e.preventDefault();
 
     if (!modelDetails.model.trim()) {
@@ -336,7 +353,8 @@ export default function BulkMobileVariantEntryModal({
 
     // Group units by colour variant to create distinct inventory items
     // (One inventory item per Colour Variant, each holding its stock & distinct IMEIs)
-    const newInventoryItems = colourVariants.map(variant => {
+    const newInventoryItems = [];
+    for (const variant of colourVariants) {
       const variantUnits = units.filter(u => u.variantId === variant.id);
       const variantQty = variantUnits.length;
 
@@ -350,9 +368,18 @@ export default function BulkMobileVariantEntryModal({
       const variantName = `${brandName} ${modelName} (${effectiveRam}/${effectiveStorage} - ${variant.color})`;
       const primaryBarcode = variantUnits[0]?.barcode || `ALZ-${Date.now().toString().slice(-6)}`;
       const allBarcodes = variantUnits.map(u => u.barcode).filter(Boolean);
+      const prodId = `PROD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-      return {
-        id: `PROD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`,
+      if (variant.image) {
+        try {
+          await saveProductImage(prodId, 'front', variant.image);
+        } catch (err) {
+          console.warn('Could not save variant image to IndexedDB:', err);
+        }
+      }
+
+      newInventoryItems.push({
+        id: prodId,
         category: modelDetails.category,
         brand: brandName,
         model: modelName,
@@ -360,6 +387,9 @@ export default function BulkMobileVariantEntryModal({
         ram: effectiveRam,
         storage: effectiveStorage,
         color: variant.color,
+        colorHex: variant.hex || getProductColorHex(variant.color),
+        image: variant.image || null,
+        images: variant.image ? { front: true, back: false, v: Date.now() } : undefined,
         description: `${brandName} ${modelName} ${effectiveRam}/${effectiveStorage} with ${variant.color} finish. Official GST Inward.`,
         isGst: finalGstRate > 0,
         hsn: modelDetails.hsn || '851712',
@@ -383,6 +413,8 @@ export default function BulkMobileVariantEntryModal({
           barcode: u.barcode.trim(),
           codeFormat: codeFormat,
           color: variant.color,
+          colorHex: variant.hex || getProductColorHex(variant.color),
+          image: variant.image || null,
           rack: rackVal,
           bin: binVal,
           status: 'In Stock'
@@ -391,8 +423,8 @@ export default function BulkMobileVariantEntryModal({
         receivedDate: modelDetails.receivedDate,
         createdAt: new Date().toISOString(),
         status: 'Active'
-      };
-    });
+      });
+    }
 
     onSaveBatch(newInventoryItems);
     alert(`✓ Successfully added ${totalStockCount} mobiles across ${colourVariants.length} colour variants into inventory!`);
@@ -1137,26 +1169,27 @@ export default function BulkMobileVariantEntryModal({
                 </div>
 
                 {/* Colour Variant Rows */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
                   {colourVariants.map((variant, idx) => (
                     <div 
                       key={variant.id}
                       style={{
                         padding: '0.65rem 0.85rem',
-                        borderRadius: '8px',
+                        borderRadius: '10px',
                         border: '1px solid var(--border-color, #E5E7EB)',
                         background: 'var(--bg-main, #F9FAFB)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '0.5rem'
+                        gap: '0.65rem'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <label title="Click to change colour shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                      {/* Left: Swatch + Variant info */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0, flex: 1 }}>
+                        <label title="Click to adjust color shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
                           <span style={{ 
-                            width: '18px', 
-                            height: '18px', 
+                            width: '20px', 
+                            height: '20px', 
                             borderRadius: '50%', 
                             backgroundColor: variant.hex || getProductColorHex(variant.color), 
                             border: '2px solid rgba(0,0,0,0.15)',
@@ -1170,15 +1203,116 @@ export default function BulkMobileVariantEntryModal({
                             style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
                           />
                         </label>
-                        <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.82rem' }}>{variant.color}</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ fontWeight: 800, fontSize: '0.82rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {variant.color}
+                          </div>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                             Variant #{idx + 1}
                           </div>
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      {/* Middle: Colour Image Upload & Preview */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                        {variant.image ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <div 
+                              onClick={() => setPreviewImage({ url: variant.image, title: `${variant.color} finish photo` })}
+                              title="Click to zoom image"
+                              style={{ 
+                                width: '36px', 
+                                height: '36px', 
+                                borderRadius: '6px', 
+                                overflow: 'hidden', 
+                                border: '1px solid var(--border-color, #D1D5DB)', 
+                                cursor: 'pointer',
+                                background: '#FFF',
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <img 
+                                src={variant.image} 
+                                alt={variant.color} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <label 
+                                title="Change photo" 
+                                style={{ 
+                                  cursor: 'pointer', 
+                                  color: 'var(--accent-primary)', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <Camera size={13} />
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  style={{ display: 'none' }} 
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, e.target.files[0]);
+                                  }} 
+                                />
+                              </label>
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveColorImage(variant.id)}
+                                title="Remove photo"
+                                style={{ 
+                                  background: 'transparent', 
+                                  border: 'none', 
+                                  color: '#EF4444', 
+                                  cursor: 'pointer', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label 
+                            title={`Upload photo for ${variant.color}`} 
+                            style={{ 
+                              cursor: 'pointer', 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '0.25rem', 
+                              fontSize: '0.72rem', 
+                              fontWeight: 700,
+                              padding: '0.3rem 0.55rem', 
+                              borderRadius: '6px', 
+                              background: 'rgba(79, 70, 229, 0.08)', 
+                              color: 'var(--accent-primary, #4F46E5)', 
+                              border: '1px dashed var(--accent-primary, #4F46E5)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Camera size={13} />
+                            <span>Add Photo</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, e.target.files[0]);
+                              }} 
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      {/* Right: Quantity & Remove */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Qty:</span>
                           <input
@@ -1187,7 +1321,7 @@ export default function BulkMobileVariantEntryModal({
                             value={variant.qty}
                             onChange={(e) => handleUpdateColorQty(variant.id, e.target.value)}
                             style={{
-                              width: '52px',
+                              width: '50px',
                               padding: '0.25rem 0.35rem',
                               fontSize: '0.82rem',
                               fontWeight: 800,
@@ -1439,6 +1573,15 @@ export default function BulkMobileVariantEntryModal({
                           }}>
                             #{unit.globalIndex}
                           </span>
+                          {unit.image && (
+                            <img 
+                              src={unit.image} 
+                              alt={unit.color}
+                              onClick={() => setPreviewImage({ url: unit.image, title: `${unit.color} - Unit #${unit.unitNo}` })}
+                              title="Click to zoom image"
+                              style={{ width: '26px', height: '26px', borderRadius: '4px', objectFit: 'cover', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', flexShrink: 0 }}
+                            />
+                          )}
                           <div style={{ overflow: 'hidden' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                               <span style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: unit.colorHex || getProductColorHex(unit.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
@@ -1947,6 +2090,53 @@ export default function BulkMobileVariantEntryModal({
                   <span>Print Sticker</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / Preview Image Modal */}
+      {previewImage && (
+        <div 
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface-primary, #FFFFFF)',
+              borderRadius: '12px',
+              padding: '1rem',
+              maxWidth: '460px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <strong style={{ fontSize: '0.9rem' }}>{previewImage.title || 'Colour Variant Photo'}</strong>
+              <button 
+                type="button" 
+                onClick={() => setPreviewImage(null)} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--text-muted)' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ borderRadius: '8px', overflow: 'hidden', maxHeight: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F3F4F6' }}>
+              <img src={previewImage.url} alt="Variant" style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain' }} />
             </div>
           </div>
         </div>
