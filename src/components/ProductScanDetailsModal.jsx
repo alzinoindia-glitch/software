@@ -371,13 +371,10 @@ export default function ProductScanDetailsModal({
                   </span>
                 )}
                 {discountPct > 0 && (
-                  <span style={{
-                    backgroundColor: '#FEE2E2',
-                    color: '#DC2626',
-                    border: '1px solid #FECACA',
+                  <span className="gold-discount-badge" style={{
                     fontSize: '0.75rem',
-                    fontWeight: 800,
-                    padding: '0.15rem 0.5rem',
+                    fontWeight: 850,
+                    padding: '0.18rem 0.55rem',
                     borderRadius: '6px'
                   }}>
                     {discountPct}% OFF

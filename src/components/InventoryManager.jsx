@@ -1137,13 +1137,10 @@ export default function InventoryManager({
                 </div>
 
                 {item.offer && (
-                  <div style={{
+                  <div className="gold-discount-badge" style={{
                     fontFamily: 'var(--font-mono)',
-                    fontWeight: 800,
+                    fontWeight: 850,
                     fontSize: '0.68rem',
-                    color: '#d97706',
-                    background: 'rgba(217, 119, 6, 0.12)',
-                    border: '1px solid rgba(217, 119, 6, 0.3)',
                     padding: '0.2rem 0.5rem',
                     borderRadius: '4px',
                     display: 'flex',
@@ -1533,11 +1530,12 @@ export default function InventoryManager({
                           ₹{item.sellPrice.toLocaleString()}
                         </span>
                         {item.offer && (
-                          <span style={{
+                          <span className="gold-discount-badge" style={{
                             fontFamily: 'var(--font-mono)',
                             fontSize: '0.62rem',
-                            fontWeight: 700,
-                            color: '#d97706'
+                            fontWeight: 850,
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '3px'
                           }}>
                             {item.offer.label || `${item.offer.pct}% Off`}
                           </span>

@@ -1672,15 +1672,12 @@ export default function CustomerStorefront({
                   }}
                 >
                   <div>
-                    {/* Top Badges (Discount Pill in Red, 15-30 Mins removed) */}
+                    {/* Top Badges (Discount Pill in Gold with 5-Second Shining Sweep) */}
                     <div className="storefront-card-top-badges" style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '0.45rem', minHeight: '1.25rem' }}>
                       {prod.discountPct > 0 ? (
-                        <span className="storefront-card-badge" style={{
-                          backgroundColor: '#FEE2E2',
-                          color: '#DC2626',
-                          border: '1px solid #FECACA',
+                        <span className="storefront-card-badge gold-discount-badge" style={{
                           fontSize: '0.65rem',
-                          fontWeight: 800,
+                          fontWeight: 850,
                           padding: '0.15rem 0.45rem',
                           borderRadius: '4px'
                         }}>
