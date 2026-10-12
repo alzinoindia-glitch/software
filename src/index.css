@@ -956,6 +956,73 @@ input, select, textarea {
   }
 }
 
+.storefront-footer-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.storefront-footer-business-info {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.storefront-footer-social-links {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.storefront-footer-social-links a {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #E5E7EB;
+  border-radius: 50%;
+  background: #FFFFFF;
+  text-decoration: none;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.storefront-footer-social-links a:hover {
+  background: #F3F7F4;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .storefront-footer {
+    padding: 1.2rem 0.8rem 1rem !important;
+  }
+
+  .storefront-footer-main {
+    align-items: flex-start !important;
+    gap: 0.75rem !important;
+    padding-bottom: 0.85rem !important;
+  }
+
+  .storefront-footer-identity {
+    max-width: min(58vw, 230px);
+  }
+
+  .storefront-footer-business-info {
+    font-size: 0.7rem;
+  }
+
+  .storefront-footer-social-links {
+    margin-left: auto;
+    gap: 0.32rem;
+  }
+
+  .storefront-footer-social-links a {
+    width: 34px;
+    height: 34px;
+  }
+}
+
 /* Insane HUD Glass & Cyber-Luxury Utilities */
 .hud-card {
   background: linear-gradient(135deg, rgba(20, 47, 39, 0.85) 0%, rgba(11, 23, 19, 0.95) 100%);

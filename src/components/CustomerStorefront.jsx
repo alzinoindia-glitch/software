@@ -3,15 +3,11 @@ import { ProductImageViewer } from './ProductImages';
 import { getAgingDays } from '../utils/stockOffers';
 import { 
   Smartphone, 
-  MapPin, 
-  Clock, 
   Phone, 
   Search, 
-  Wrench, 
   ShieldCheck, 
   Sparkles, 
   CheckCircle2, 
-  MessageCircle, 
   Navigation, 
   Layers, 
   Award, 
@@ -196,14 +192,12 @@ export default function CustomerStorefront({
   shopConfig = {},
   inventory = [],
   usedPurchases = [],
-  repairJobs = [],
   onNavigatePortal = () => {},
   theme = 'cream'
 }) {
   const [selectedCategory, setSelectedCategory] = useState('all'); 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('featured'); 
-  const [repairSearch, setRepairSearch] = useState('');
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
@@ -639,18 +633,6 @@ export default function CustomerStorefront({
     });
     return counts;
   }, [liveProducts, categoriesList]);
-
-  // Repair tracking status lookup
-  const trackedRepairs = useMemo(() => {
-    if (!repairSearch.trim()) return [];
-    const q = repairSearch.toLowerCase().trim();
-    return repairJobs.filter(job => 
-      (job.jobId && job.jobId.toLowerCase().includes(q)) ||
-      (job.phone && job.phone.includes(q)) ||
-      (job.customerName && job.customerName.toLowerCase().includes(q)) ||
-      (job.model && job.model.toLowerCase().includes(q))
-    );
-  }, [repairJobs, repairSearch]);
 
   const handleWhatsAppCheckout = () => {
     const targetPhone = '919121212292'; // Destination: 9121212292
@@ -1690,286 +1672,6 @@ export default function CustomerStorefront({
       </section>
 
       {/* ========================================================================= */}
-      {/* 4. LIVE DEVICE REPAIR TRACKER (QUICK-COMMERCE LIVE TIMELINE STYLE) */}
-      {/* ========================================================================= */}
-      <section style={{ maxWidth: '1280px', margin: '0 auto 3rem', padding: '0 1rem' }}>
-        <div style={{
-          backgroundColor: '#FFFFFF',
-          borderRadius: '16px',
-          border: '1px solid #E5E7EB',
-          padding: '1.75rem',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.03)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              backgroundColor: '#FEF3C7',
-              color: '#B45309',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <Wrench size={16} />
-            </div>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 900, margin: 0, color: '#111827' }}>
-              Track Device Repair in Real Time
-            </h3>
-          </div>
-          <p style={{ fontSize: '0.82rem', color: '#6B7280', margin: '0 0 1.25rem' }}>
-            Have a phone or TV in our Bodhan repair lab? Enter your Job ID (e.g. REP-1021) or mobile number:
-          </p>
-
-          <div style={{ display: 'flex', gap: '0.5rem', maxWidth: '520px', marginBottom: '1rem', flexWrap: 'wrap' }}>
-            <input 
-              type="text"
-              placeholder="Enter Job ID (REP-...) or 10-digit mobile number"
-              value={repairSearch}
-              onChange={(e) => setRepairSearch(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '0.65rem 1rem',
-                backgroundColor: '#F9FAFB',
-                border: '1px solid #D1D5DB',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                color: '#111827',
-                outline: 'none',
-                minWidth: '220px'
-              }}
-            />
-            {repairSearch && (
-              <button
-                onClick={() => setRepairSearch('')}
-                style={{
-                  backgroundColor: '#F3F4F6',
-                  color: '#374151',
-                  border: '1px solid #D1D5DB',
-                  borderRadius: '8px',
-                  padding: '0 0.85rem',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  fontWeight: 700
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          {/* Results Display */}
-          {repairSearch.trim() && (
-            <div>
-              {trackedRepairs.length === 0 ? (
-                <div style={{
-                  padding: '1rem',
-                  backgroundColor: '#F9FAFB',
-                  borderRadius: '8px',
-                  border: '1px dashed #D1D5DB',
-                  fontSize: '0.82rem',
-                  color: '#6B7280'
-                }}>
-                  No active repair job matched "{repairSearch}". Please check the Job ID on your receipt or call the counter desk.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {trackedRepairs.map(job => (
-                    <div 
-                      key={job.id || job.jobId}
-                      style={{
-                        backgroundColor: '#F9FAFB',
-                        border: '1.5px solid #0C5B43',
-                        borderRadius: '10px',
-                        padding: '1rem'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
-                        <div>
-                          <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0C5B43' }}>
-                            Job #{job.jobId}
-                          </span>
-                          <span style={{ fontWeight: 700, marginLeft: '0.5rem', color: '#111827', fontSize: '0.88rem' }}>
-                            {job.brand} {job.model}
-                          </span>
-                        </div>
-                        <span style={{
-                          backgroundColor: job.status === 'Delivered' ? '#D1FAE5' : '#FEF3C7',
-                          color: job.status === 'Delivered' ? '#065F46' : '#92400E',
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '4px',
-                          fontSize: '0.72rem',
-                          fontWeight: 800
-                        }}>
-                          {job.status || 'Diagnostic Lab'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: '#6B7280', marginTop: '0.35rem' }}>
-                        Customer: {job.customerName} • Issue: {job.issueDescription || job.problem || 'Hardware Diagnostic'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
-      {/* 5. SHOWROOM LOCATION & CONTACT CARDS */}
-      {/* ========================================================================= */}
-      <section style={{ maxWidth: '1280px', margin: '0 auto 3.5rem', padding: '0 1rem' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '1rem'
-        }}>
-          {/* Showroom Address */}
-          <div style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: '12px',
-            border: '1px solid #E5E7EB',
-            padding: '1.5rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
-              <MapPin size={18} color="#0C5B43" />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: '#111827' }}>
-                Flagship Showroom
-              </h3>
-            </div>
-            <p style={{ fontSize: '0.82rem', color: '#4B5563', lineHeight: 1.5, margin: '0 0 0.85rem' }}>
-              {shopConfig.address || 'Station Road, Near Old Bus Stand, Bodhan, Telangana - 503185'}<br />
-              <strong style={{ color: '#0C5B43' }}>Landmark:</strong> Opposite State Bank of India (SBI)
-            </p>
-            <div style={{ fontSize: '0.78rem', color: '#6B7280', marginBottom: '1rem' }}>
-              <strong>Hours:</strong> {shopConfig.storeTimings || '9:30 AM – 10:00 PM (All 7 Days)'}
-            </div>
-            <a
-              href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                backgroundColor: '#F3F4F6',
-                color: '#0C5B43',
-                padding: '0.5rem 0.85rem',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                textDecoration: 'none'
-              }}
-            >
-              <Navigation size={14} />
-              <span>Get GPS Directions (Locate Us)</span>
-            </a>
-          </div>
-
-          {/* Social Channels */}
-          <div style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: '12px',
-            border: '1px solid #E5E7EB',
-            padding: '1.5rem'
-          }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: '0 0 0.5rem', color: '#111827' }}>
-              Connect with ALZINO Bodhan
-            </h3>
-            <p style={{ fontSize: '0.78rem', color: '#6B7280', margin: '0 0 1rem' }}>
-              Follow unboxings, clearance drops and giveaways on our official channels:
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              <a
-                href={shopConfig.whatsappUrl || 'https://wa.me/919121212292'}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.5rem 0.65rem',
-                  backgroundColor: '#DCFCE7',
-                  color: '#15803D',
-                  borderRadius: '6px',
-                  textDecoration: 'none',
-                  fontSize: '0.76rem',
-                  fontWeight: 700
-                }}
-              >
-                <MessageCircle size={15} />
-                <span>WhatsApp</span>
-              </a>
-
-              <a
-                href={shopConfig.instagramUrl || 'https://instagram.com/alzino.bodhan'}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.5rem 0.65rem',
-                  backgroundColor: '#FDF2F8',
-                  color: '#BE185D',
-                  borderRadius: '6px',
-                  textDecoration: 'none',
-                  fontSize: '0.76rem',
-                  fontWeight: 700
-                }}
-              >
-                <InstagramIcon size={15} color="#BE185D" />
-                <span>Instagram</span>
-              </a>
-
-              <a
-                href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.5rem 0.65rem',
-                  backgroundColor: '#FEF3C7',
-                  color: '#92400E',
-                  borderRadius: '6px',
-                  textDecoration: 'none',
-                  fontSize: '0.76rem',
-                  fontWeight: 700
-                }}
-              >
-                <Navigation size={15} color="#D97706" />
-                <span>Locate Us (Maps)</span>
-              </a>
-
-              <a
-                href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.5rem 0.65rem',
-                  backgroundColor: '#FFFBEB',
-                  color: '#B45309',
-                  borderRadius: '6px',
-                  textDecoration: 'none',
-                  fontSize: '0.76rem',
-                  fontWeight: 700
-                }}
-              >
-                <Star size={15} color="#F59E0B" fill="#F59E0B" />
-                <span>Rate Us (5★)</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ========================================================================= */}
       {/* 6. BLINKIT / ZEPTO STYLE QUICK-COMMERCE CART DRAWER */}
       {/* ========================================================================= */}
       {isCartOpen && (
@@ -2397,14 +2099,14 @@ export default function CustomerStorefront({
       {/* ========================================================================= */}
       {/* 8. REFINED CLEAN FOOTER WITH DISCREET STAFF ACCESS */}
       {/* ========================================================================= */}
-      <footer style={{
+      <footer className="storefront-footer" style={{
         backgroundColor: '#FFFFFF',
         borderTop: '1px solid #E5E7EB',
         padding: '2.5rem 1rem 1.5rem',
         fontSize: '0.8rem',
         color: '#6B7280'
       }}>
-        <div style={{
+        <div className="storefront-footer-main" style={{
           maxWidth: '1280px',
           margin: '0 auto',
           display: 'flex',
@@ -2415,16 +2117,29 @@ export default function CustomerStorefront({
           paddingBottom: '1.5rem',
           borderBottom: '1px solid #F3F4F6'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <div className="storefront-footer-identity">
             <AlzinoLogo height={32} textColor="#0C5B43" swooshColor="#EAB308" />
-            <div>
+            <div className="storefront-footer-business-info">
               <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1F2937' }}>
                 Official Sales, Service & Accessories
               </div>
-              <div>Station Road, Bodhan, Telangana - 503185 • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
+              <div>{shopConfig.address || 'Station Road, Bodhan, Telangana - 503185'} • GSTIN: {shopConfig.gstin || '36AABCA1234M1Z8'}</div>
             </div>
           </div>
-
+          <nav className="storefront-footer-social-links" aria-label="ALZINO social and store links">
+            <a href={shopConfig.whatsappUrl || 'https://wa.me/919121212292'} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp">
+              <WhatsAppIcon size={19} color="#15803D" />
+            </a>
+            <a href={shopConfig.instagramUrl || 'https://instagram.com/alzino.bodhan'} target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">
+              <InstagramIcon size={19} color="#BE185D" />
+            </a>
+            <a href={shopConfig.mapsUrl || 'https://maps.app.goo.gl/dtJgpyb2mju1U3YM7'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
+              <Navigation size={19} color="#B45309" />
+            </a>
+            <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Rate ALZINO" title="Rate ALZINO">
+              <Star size={19} color="#D97706" fill="#F59E0B" />
+            </a>
+          </nav>
         </div>
 
         <div style={{
