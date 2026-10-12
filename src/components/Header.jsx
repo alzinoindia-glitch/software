@@ -21,7 +21,9 @@ import {
   ShieldCheck,
   Lock,
   Key,
-  UserCheck
+  UserCheck,
+  Copy,
+  Check
 } from 'lucide-react';
 import AlzinoLogo from './AlzinoLogo';
 
@@ -41,6 +43,8 @@ export default function Header({
   onNavigatePortal = () => {}
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [copiedPortalPath, setCopiedPortalPath] = useState('');
+  const [copyPortalError, setCopyPortalError] = useState(false);
 
   // Lock the page behind the drawer while keeping its own menu list scrollable.
   useEffect(() => {
@@ -110,6 +114,32 @@ export default function Header({
   const handleSelectTab = (id) => {
     setActiveTab(id);
     setMenuOpen(false);
+  };
+
+  const copyPortalUrl = async (path) => {
+    const url = new URL(path, window.location.origin).href;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = url;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand('copy');
+        input.remove();
+        if (!copied) throw new Error('Clipboard unavailable');
+      }
+      setCopiedPortalPath(path);
+      setCopyPortalError(false);
+      window.setTimeout(() => setCopiedPortalPath((current) => current === path ? '' : current), 1800);
+    } catch {
+      setCopiedPortalPath(path);
+      setCopyPortalError(true);
+      window.setTimeout(() => setCopiedPortalPath((current) => current === path ? '' : current), 1800);
+    }
   };
 
   return (
@@ -510,82 +540,61 @@ export default function Header({
               <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(241, 239, 229, 0.6)', textTransform: 'uppercase' }}>
                 Portals & URL Navigation
               </div>
-              <button 
-                onClick={() => { setMenuOpen(false); onNavigatePortal('/'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: '0.2rem 0',
-                  color: '#34D399',
-                  fontSize: '0.76rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontWeight: 600
-                }}
-              >
-                <span>🌐</span>
-                <span>Customer Storefront (alzino.shop)</span>
-              </button>
-              <button 
-                onClick={() => { setMenuOpen(false); onNavigatePortal('/cashier'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: '0.2rem 0',
-                  color: '#FEF08A',
-                  fontSize: '0.76rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontWeight: 600
-                }}
-              >
-                <span>💳</span>
-                <span>Cashier Counter (/cashier)</span>
-              </button>
-              <button 
-                onClick={() => { setMenuOpen(false); onNavigatePortal('/admin'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: '0.2rem 0',
-                  color: '#A9BC5C',
-                  fontSize: '0.76rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontWeight: 600
-                }}
-              >
-                <span>👑</span>
-                <span>Admin Management (/admin)</span>
-              </button>
-              <button 
-                onClick={() => { setMenuOpen(false); onNavigatePortal('/admin/customers'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: '0.2rem 0',
-                  color: '#93C5FD',
-                  fontSize: '0.76rem',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontWeight: 600
-                }}
-              >
-                <span>📁</span>
-                <span>Customer Data (/admin/customers)</span>
-              </button>
+              {[
+                { path: '/', icon: '🌐', label: 'Customer Storefront (alzino.shop)', color: '#34D399' },
+                { path: '/cashier', icon: '💳', label: 'Cashier Counter (/cashier)', color: '#FEF08A' },
+                { path: '/admin', icon: '👑', label: 'Admin Management (/admin)', color: '#A9BC5C' },
+                { path: '/admin/customers', icon: '📁', label: 'Customer Data (/admin/customers)', color: '#93C5FD' }
+              ].map((portal) => (
+                <div key={portal.path} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
+                  <button
+                    onClick={() => { setMenuOpen(false); onNavigatePortal(portal.path); }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      background: 'none',
+                      border: 'none',
+                      padding: '0.2rem 0',
+                      color: portal.color,
+                      fontSize: '0.76rem',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <span>{portal.icon}</span>
+                    <span>{portal.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyPortalUrl(portal.path)}
+                    aria-label={`Copy ${portal.label} URL`}
+                    title={copiedPortalPath === portal.path && !copyPortalError ? 'Copied!' : 'Copy URL'}
+                    style={{
+                      flexShrink: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '28px',
+                      height: '28px',
+                      padding: 0,
+                      borderRadius: '5px',
+                      border: '1px solid rgba(210, 222, 216, 0.18)',
+                      background: copiedPortalPath === portal.path && !copyPortalError ? 'rgba(52, 211, 153, 0.15)' : 'rgba(241, 239, 229, 0.06)',
+                      color: copiedPortalPath === portal.path && !copyPortalError ? '#34D399' : '#A9BC5C',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {copiedPortalPath === portal.path && !copyPortalError ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              ))}
+              <span role="status" aria-live="polite" style={{ minHeight: '0.9rem', fontSize: '0.65rem', color: copyPortalError ? '#FCA5A5' : '#34D399' }}>
+                {copiedPortalPath ? (copyPortalError ? 'Could not copy link' : 'URL copied to clipboard') : ''}
+              </span>
             </div>
 
             {/* Menu Footer with Role Switcher Dropdown */}
