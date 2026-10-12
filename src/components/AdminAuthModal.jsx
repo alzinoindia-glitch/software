@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Copy, KeyRound, Mail, QrCode, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Copy, KeyRound, QrCode, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { getActiveOrgId } from '../utils/cloudSyncService';
 
 export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
+  const [showAdminSignIn, setShowAdminSignIn] = useState(false);
   const [shopName, setShopName] = useState('ALZINO');
   const [shopSlug, setShopSlug] = useState('alzino');
   const [code, setCode] = useState('');
@@ -164,7 +165,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
 
   const signOut = async () => {
     await getSupabaseClient()?.auth.signOut();
-    setStep('email'); setCode(''); setError(''); setMessage('Signed out.');
+    setStep('email'); setCode(''); setError(''); setMessage('Signed out.'); setShowAdminSignIn(false);
   };
 
   const cancelAuthentication = async () => {
@@ -257,7 +258,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ShieldCheck color="var(--accent-primary)" />
-            <div><h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>Admin verification</h2><small style={{ color: 'var(--text-secondary)' }}>Google Authenticator required</small></div>
+            <h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>Admin access</h2>
           </div>
           {onClose && <button type="button" aria-label="Close" onClick={onClose} className="btn-secondary"><X size={16} /></button>}
         </div>
@@ -265,13 +266,18 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         {error && <div role="alert" style={{ display: 'flex', gap: 8, padding: 10, marginBottom: 12, borderRadius: 8, background: 'rgba(211,63,60,.1)', color: 'var(--status-red)' }}><AlertCircle size={17} /><span>{error}</span></div>}
         {message && <p role="status" style={{ display: 'flex', gap: 8, color: 'var(--status-green)', lineHeight: 1.45 }}><CheckCircle2 size={17} />{message}</p>}
 
-        {step === 'email' && <form onSubmit={sendSignInLink} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Admin accounts are invited by the shop owner in Supabase Auth. We’ll email a one-time sign-in link; new admin devices must verify Google Authenticator.</p>
-          <label>Email address<input autoComplete="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></label>
-          <button style={primaryStyle} disabled={busy}><Mail size={16} /> {busy ? 'Sending…' : 'Email sign-in link'}</button>
-        </form>}
+        {step === 'email' && <div style={{ display: 'grid', gap: 12 }}>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Continue with your invited admin account to verify Google Authenticator on this device.</p>
+          <details open={showAdminSignIn} onToggle={event => setShowAdminSignIn(event.currentTarget.open)}>
+            <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 700 }}>Admin device sign-in</summary>
+            <form onSubmit={sendSignInLink} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+              <label>Invited admin email<input autoComplete="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></label>
+              <button style={primaryStyle} disabled={busy}>{busy ? 'Sending…' : 'Continue'}</button>
+            </form>
+          </details>
+        </div>}
 
-        {step === 'sent' && <button type="button" style={primaryStyle} onClick={() => setStep('email')}>Use a different email</button>}
+        {step === 'sent' && <button type="button" className="btn-secondary" onClick={() => { setStep('email'); setShowAdminSignIn(true); }}>Use a different admin account</button>}
 
         {step === 'enroll-code' && <form onSubmit={verifyAuthenticatorCode} style={{ display: 'grid', gap: 12 }}>
           <p style={{ textAlign: 'center', margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>Enter the 6-digit code from Google Authenticator</p>
