@@ -329,9 +329,6 @@ export default function BarcodeGenerator({
             </div>
           </div>
 
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '300px' }}>
-            Ready to print on adhesive barcode labels. Scannable by any standard USB/Bluetooth handheld barcode reader.
-          </p>
 
           <button
             onClick={handlePrint}
