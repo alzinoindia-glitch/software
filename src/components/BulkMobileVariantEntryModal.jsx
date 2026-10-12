@@ -26,7 +26,7 @@ import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
 import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
 import { getProductSuggestions } from '../utils/productSuggestions';
-import { renderCodeSvg } from '../utils/barcode';
+import { renderCodeSvg, downloadStickerImage } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
 import { compressImageFile, saveProductImage } from '../utils/productImageStore';
@@ -1418,23 +1418,23 @@ export default function BulkMobileVariantEntryModal({
                 </div>
 
                 {/* Colour Variant Rows */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
                   {colourVariants.map((variant, idx) => (
                     <div 
                       key={variant.id}
                       style={{
-                        padding: '0.65rem 0.85rem',
+                        padding: '0.6rem 0.75rem',
                         borderRadius: '10px',
                         border: '1px solid var(--border-color, #E5E7EB)',
                         background: 'var(--bg-main, #F9FAFB)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '0.65rem'
+                        gap: '0.5rem'
                       }}
                     >
                       {/* Left: Swatch + Variant info */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: '1 1 auto' }}>
                         <label title="Click to adjust color shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
                           <span style={{ 
                             width: '20px', 
@@ -1453,10 +1453,22 @@ export default function BulkMobileVariantEntryModal({
                           />
                         </label>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                          <div style={{ fontWeight: 800, fontSize: '0.82rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          <div 
+                            title={variant.color}
+                            style={{ 
+                              fontWeight: 800, 
+                              fontSize: '0.8rem', 
+                              whiteSpace: 'nowrap', 
+                              textOverflow: 'ellipsis', 
+                              overflow: 'hidden',
+                              maxWidth: '120px',
+                              lineHeight: 1.25,
+                              color: 'var(--text-primary)'
+                            }}
+                          >
                             {variant.color}
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 600 }}>
                             Variant #{idx + 1}
                           </div>
                         </div>
@@ -1807,7 +1819,7 @@ export default function BulkMobileVariantEntryModal({
 
                   {/* Fast Helper Actions */}
                   <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {/* Admin Choice: Barcode vs QR Code */}
+                    {/* Admin Choice: Barcode vs QR Code vs Both */}
                     <div style={{ display: 'inline-flex', background: 'var(--bg-main, #F3F4F6)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color, #E5E7EB)' }}>
                       <button
                         type="button"
@@ -1847,7 +1859,28 @@ export default function BulkMobileVariantEntryModal({
                         }}
                       >
                         <QrCode size={12} />
-                        <span>QR Code</span>
+                        <span>QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('both')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'both' ? '#2563EB' : 'transparent',
+                          color: codeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Include both 1D Barcode & 2D QR Code"
+                      >
+                        <Layers size={12} />
+                        <span>Both</span>
                       </button>
                     </div>
 
@@ -2008,8 +2041,8 @@ export default function BulkMobileVariantEntryModal({
                                   border: 'none',
                                   borderRadius: '3px',
                                   cursor: 'pointer',
-                                  background: unit.codeFormat !== 'qr' ? '#10B981' : 'transparent',
-                                  color: unit.codeFormat !== 'qr' ? '#FFF' : 'var(--text-muted)',
+                                  background: (unit.codeFormat || 'barcode') === 'barcode' ? '#10B981' : 'transparent',
+                                  color: (unit.codeFormat || 'barcode') === 'barcode' ? '#FFF' : 'var(--text-muted)',
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '2px'
@@ -2039,6 +2072,27 @@ export default function BulkMobileVariantEntryModal({
                               >
                                 <QrCode size={10} />
                                 <span>QR</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'both')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: unit.codeFormat === 'both' ? '#2563EB' : 'transparent',
+                                  color: unit.codeFormat === 'both' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set Both 1D Barcode & 2D QR Code for this unit"
+                              >
+                                <Layers size={10} />
+                                <span>Both</span>
                               </button>
                             </div>
 
@@ -2426,6 +2480,25 @@ export default function BulkMobileVariantEntryModal({
               >
                 Close
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  downloadStickerImage({
+                    title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage} - ${previewUnit.color})`,
+                    barcode: previewUnit.barcode,
+                    codeFormat: previewUnit.codeFormat || codeFormat,
+                    price: modelDetails.sellPrice || 0,
+                    mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+                    shopName: 'ALZINO MOBILES • BODHAN'
+                  });
+                }}
+                className="btn-secondary"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                title="Download sticker as high-res PNG image"
+              >
+                <Download size={13} />
+                <span>Download</span>
+              </button>
               {onPrintBarcodeSheet && (
                 <button
                   type="button"
@@ -2433,7 +2506,7 @@ export default function BulkMobileVariantEntryModal({
                     onPrintBarcodeSheet({
                       title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage} - ${previewUnit.color})`,
                       barcode: previewUnit.barcode,
-                      codeFormat,
+                      codeFormat: previewUnit.codeFormat || codeFormat,
                       price: modelDetails.sellPrice || 0,
                       mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
                       copies: 1,

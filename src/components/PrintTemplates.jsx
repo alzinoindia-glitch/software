@@ -1117,8 +1117,10 @@ export default function PrintTemplates({
                 {printData.title}
               </div>
               {(() => {
+                const isBoth = printData.codeFormat === 'both';
                 const isQr = printData.codeFormat === 'qr' || printData.barcode?.includes('QR-');
-                const effectiveCode = isQr && !printData.barcode?.startsWith('http')
+                const effectiveFormat = isBoth ? 'both' : (isQr ? 'qr' : 'barcode');
+                const effectiveCode = (isQr || isBoth) && !printData.barcode?.startsWith('http')
                   ? buildProductScanUrl({ id: printData.id || printData.barcode, barcode: printData.barcode })
                   : printData.barcode;
 
@@ -1126,7 +1128,7 @@ export default function PrintTemplates({
                   <div 
                     style={{ margin: '1.5mm 0' }}
                     dangerouslySetInnerHTML={{ 
-                      __html: renderCodeSvg(effectiveCode, isQr ? 'qr' : 'barcode', 150, 48, true) 
+                      __html: renderCodeSvg(effectiveCode, effectiveFormat, 160, 48, true) 
                     }} 
                   />
                 );
@@ -1143,8 +1145,10 @@ export default function PrintTemplates({
                 gap: '4mm' 
               }}>
                 {(() => {
+                  const isBoth = printData.codeFormat === 'both';
                   const isQr = printData.codeFormat === 'qr' || printData.barcode?.includes('QR-');
-                  const effectiveCode = isQr && !printData.barcode?.startsWith('http')
+                  const effectiveFormat = isBoth ? 'both' : (isQr ? 'qr' : 'barcode');
+                  const effectiveCode = (isQr || isBoth) && !printData.barcode?.startsWith('http')
                     ? buildProductScanUrl({ id: printData.id || printData.barcode, barcode: printData.barcode })
                     : printData.barcode;
 
@@ -1167,7 +1171,7 @@ export default function PrintTemplates({
                       <div 
                         style={{ margin: '1mm 0' }}
                         dangerouslySetInnerHTML={{ 
-                          __html: renderCodeSvg(effectiveCode, isQr ? 'qr' : 'barcode', 160, 44, true) 
+                          __html: renderCodeSvg(effectiveCode, effectiveFormat, 160, 44, true) 
                         }} 
                       />
                       <div style={{ fontSize: '9px', fontWeight: 800 }}>

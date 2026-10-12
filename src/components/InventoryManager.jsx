@@ -25,12 +25,14 @@ import {
   Sparkles,
   Camera,
   RefreshCw,
-  QrCode
+  QrCode,
+  Download,
+  Layers
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
 import { ProductImagePicker, ProductImageViewer } from './ProductImages';
 import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
-import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
+import { renderBarcodeSvg, renderCodeSvg, downloadStickerImage } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
 import { getProductColorHex } from '../utils/colorUtils';
@@ -109,6 +111,8 @@ export default function InventoryManager({
   const [isCustomRam, setIsCustomRam] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
   const [quickBarcodeItem, setQuickBarcodeItem] = useState(null);
+  const [quickLabelFormat, setQuickLabelFormat] = useState(null);
+  const [quickLabelQty, setQuickLabelQty] = useState(1);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [barcodeMode, setBarcodeMode] = useState('scan'); // 'scan' | 'generate'
@@ -2249,7 +2253,7 @@ export default function InventoryManager({
                     <span>Barcode & QR Code</span>
                   </label>
 
-                  {/* Compact Pill Switcher: Barcode vs QR */}
+                  {/* Compact Pill Switcher: Barcode vs QR vs Both */}
                   <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.12)', padding: '2px', borderRadius: '6px' }}>
                     <button
                       type="button"
@@ -2267,8 +2271,8 @@ export default function InventoryManager({
                         border: 'none',
                         borderRadius: '4px',
                         cursor: 'pointer',
-                        background: (formData.codeFormat || 'barcode') !== 'qr' ? '#10B981' : 'transparent',
-                        color: (formData.codeFormat || 'barcode') !== 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                        background: (formData.codeFormat || 'barcode') === 'barcode' ? '#10B981' : 'transparent',
+                        color: (formData.codeFormat || 'barcode') === 'barcode' ? '#FFFFFF' : 'var(--text-muted)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '3px',
@@ -2308,6 +2312,34 @@ export default function InventoryManager({
                     >
                       <QrCode size={12} />
                       <span>QR</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (!nextCode) {
+                          nextCode = `ALZ-${Date.now().toString().slice(-6)}`;
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'both', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        background: formData.codeFormat === 'both' ? '#2563EB' : 'transparent',
+                        color: formData.codeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Include both 1D Barcode & 2D QR Code on the same sticker"
+                    >
+                      <Layers size={12} />
+                      <span>Both</span>
                     </button>
                   </div>
                 </div>
@@ -2372,6 +2404,35 @@ export default function InventoryManager({
                     <RefreshCw size={12} />
                     <span>New</span>
                   </button>
+
+                  {/* Download Sticker button */}
+                  {formData.barcode && (
+                    <button
+                      type="button"
+                      onClick={() => downloadStickerImage({
+                        title: formData.name || 'Product',
+                        barcode: formData.barcode,
+                        codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
+                        price: formData.sellPrice || 0,
+                        mrp: formData.mrp || formData.sellPrice || 0,
+                        shopName: shopConfig?.name || 'ALZINO MOBILES'
+                      })}
+                      className="btn-secondary"
+                      style={{
+                        padding: '0.42rem 0.65rem',
+                        fontSize: '0.74rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        color: '#2563EB',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Download 50x25mm label sticker as PNG image"
+                    >
+                      <Download size={12} />
+                      <span>Download</span>
+                    </button>
+                  )}
 
                   {/* Print Sticker button */}
                   {formData.barcode && onPrintBarcodeSheet && (
@@ -2449,7 +2510,7 @@ export default function InventoryManager({
                 <div style={{ marginTop: '0.45rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
                   <span style={{ fontSize: '0.68rem', color: formData.barcode ? 'var(--text-muted)' : '#EF4444', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                     {formData.barcode ? (
-                      `Format: ${formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode (Code-128)'} • Type custom code or scan`
+                      `Format: ${formData.codeFormat === 'both' ? 'Both (1D Barcode + 2D QR)' : formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode (Code-128)'} • Type custom code or scan`
                     ) : (
                       '⚠️ No barcode or QR code assigned (will be stored as empty in database)'
                     )}
@@ -2794,8 +2855,8 @@ export default function InventoryManager({
       {quickBarcodeItem && (
         <div 
           className="modal-backdrop no-print" 
-          onClick={() => setQuickBarcodeItem(null)}
-          style={{ zIndex: 2500 }}
+          onClick={() => { setQuickBarcodeItem(null); setQuickLabelFormat(null); setQuickLabelQty(1); }}
+          style={{ zIndex: 1200 }}
         >
           <div 
             className="modal-dialog animate-fade-in" 
@@ -2807,93 +2868,226 @@ export default function InventoryManager({
                 <QrCode size={18} color="var(--accent-primary)" />
                 <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Product Barcode / QR Label</h3>
               </div>
-              <button onClick={() => setQuickBarcodeItem(null)} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
+              <button onClick={() => { setQuickBarcodeItem(null); setQuickLabelFormat(null); setQuickLabelQty(1); }} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
                 <X size={15} />
               </button>
             </div>
 
-            {/* Sticker Preview Box (50x25mm styled sticker) */}
-            <div style={{
-              background: '#FFFFFF',
-              color: '#000000',
-              padding: '0.85rem 1rem',
-              borderRadius: '8px',
-              border: '2px dashed #CBD5E1',
-              textAlign: 'center',
-              boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
-              marginBottom: '1rem'
-            }}>
-              <div style={{ fontSize: '0.74rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0F251E', marginBottom: '2px' }}>
-                {shopConfig?.name || 'ALZINO MOBILES'}
-              </div>
-              <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#1E293B', marginBottom: '6px', lineHeight: 1.2 }}>
-                {quickBarcodeItem.name}
-              </div>
+            {(() => {
+              const activeFormat = quickLabelFormat || quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode');
+              const effectiveBarcode = quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`;
+              return (
+                <>
+                  {/* Selector: Barcode vs QR vs Both */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Label Format:
+                    </div>
+                    <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.08)', padding: '2px', borderRadius: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('barcode')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'barcode' ? '#10B981' : 'transparent',
+                          color: activeFormat === 'barcode' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Barcode size={12} />
+                        <span>Barcode</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('qr')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                          color: activeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <QrCode size={12} />
+                        <span>QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('both')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'both' ? '#2563EB' : 'transparent',
+                          color: activeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Include both 1D Barcode & 2D QR Code on the same sticker"
+                      >
+                        <Layers size={12} />
+                        <span>Both</span>
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Barcode / QR SVG Rendering */}
-              <div 
-                dangerouslySetInnerHTML={{ 
-                  __html: renderCodeSvg(
-                    quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`, 
-                    quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode'), 
-                    220, 
-                    60, 
-                    true
-                  ) 
-                }}
-                style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
-              />
+                  {/* Sticker Preview Box (50x25mm styled sticker) */}
+                  <div style={{
+                    background: '#FFFFFF',
+                    color: '#000000',
+                    padding: '0.85rem 1rem',
+                    borderRadius: '8px',
+                    border: '2px dashed #CBD5E1',
+                    textAlign: 'center',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
+                    marginBottom: '0.75rem'
+                  }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0F251E', marginBottom: '2px' }}>
+                      {shopConfig?.name || 'ALZINO MOBILES'}
+                    </div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#1E293B', marginBottom: '6px', lineHeight: 1.2 }}>
+                      {quickBarcodeItem.name}
+                    </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '6px', padding: '0 0.5rem' }}>
-                <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
-                  MRP: ₹{(quickBarcodeItem.mrp || quickBarcodeItem.sellPrice).toLocaleString()}
-                </span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43' }}>
-                  ₹{quickBarcodeItem.sellPrice.toLocaleString()}
-                </span>
-              </div>
-            </div>
+                    {/* Barcode / QR SVG Rendering */}
+                    <div 
+                      dangerouslySetInnerHTML={{ 
+                        __html: renderCodeSvg(
+                          effectiveBarcode, 
+                          activeFormat, 
+                          240, 
+                          activeFormat === 'both' ? 55 : (activeFormat === 'qr' ? 80 : 60), 
+                          true
+                        ) 
+                      }} 
+                      style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
+                    />
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                onClick={() => {
-                  if (onSelectBarcode) {
-                    onSelectBarcode(quickBarcodeItem);
-                  }
-                  setQuickBarcodeItem(null);
-                }}
-                className="btn-secondary"
-                style={{ flex: 1, padding: '0.55rem', fontSize: '0.8rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                title="Open Studio to print full 24 or 40 barcode label sheets"
-              >
-                <span>Full Sheet Studio ➔</span>
-              </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '6px', padding: '0 0.5rem' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
+                        MRP: ₹{(quickBarcodeItem.mrp || quickBarcodeItem.sellPrice).toLocaleString()}
+                      </span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43' }}>
+                        ₹{quickBarcodeItem.sellPrice.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
 
-              <button
-                onClick={() => {
-                  if (onPrintBarcodeSheet) {
-                    onPrintBarcodeSheet({
-                      title: quickBarcodeItem.name,
-                      barcode: quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`,
-                      codeFormat: quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode'),
-                      price: quickBarcodeItem.sellPrice,
-                      mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
-                      copies: 1,
-                      format: 'single',
-                    });
-                    setQuickBarcodeItem(null);
-                  } else {
-                    window.print();
-                  }
-                }}
-                className="btn-primary"
-                style={{ flex: 1.2, padding: '0.55rem', fontSize: '0.82rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-contrast, #FFFFFF)' }}
-              >
-                <Printer size={15} />
-                <span>Print Sticker</span>
-              </button>
-            </div>
+                  {/* Quantity Row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', padding: '0.45rem 0.65rem', background: 'var(--surface-secondary, rgba(0,0,0,0.03))', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Copies / Qty:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelQty(Math.max(1, quickLabelQty - 1))}
+                        className="btn-secondary"
+                        style={{ padding: '0.15rem 0.45rem', fontSize: '0.8rem', fontWeight: 800 }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={quickLabelQty}
+                        onChange={(e) => setQuickLabelQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        style={{ width: '48px', textAlign: 'center', padding: '0.2rem', fontSize: '0.82rem', fontWeight: 800, borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelQty(quickLabelQty + 1)}
+                        className="btn-secondary"
+                        style={{ padding: '0.15rem 0.45rem', fontSize: '0.8rem', fontWeight: 800 }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => {
+                        if (onSelectBarcode) {
+                          onSelectBarcode({ ...quickBarcodeItem, codeFormat: activeFormat });
+                        }
+                        setQuickBarcodeItem(null);
+                        setQuickLabelFormat(null);
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1, padding: '0.55rem', fontSize: '0.78rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                      title="Open Studio to print full 24 or 40 barcode label sheets"
+                    >
+                      <span>Full Sheet Studio ➔</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        downloadStickerImage({
+                          title: quickBarcodeItem.name,
+                          barcode: effectiveBarcode,
+                          codeFormat: activeFormat,
+                          price: quickBarcodeItem.sellPrice,
+                          mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
+                          shopName: shopConfig?.name || 'ALZINO MOBILES'
+                        });
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1, padding: '0.55rem', fontSize: '0.78rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#2563EB', whiteSpace: 'nowrap' }}
+                      title="Download sticker as high-resolution PNG image"
+                    >
+                      <Download size={14} />
+                      <span>Download</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (onPrintBarcodeSheet) {
+                          onPrintBarcodeSheet({
+                            title: quickBarcodeItem.name,
+                            barcode: effectiveBarcode,
+                            codeFormat: activeFormat,
+                            price: quickBarcodeItem.sellPrice,
+                            mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
+                            copies: quickLabelQty,
+                            format: 'single',
+                          });
+                          setQuickBarcodeItem(null);
+                          setQuickLabelFormat(null);
+                        } else {
+                          window.print();
+                        }
+                      }}
+                      className="btn-primary"
+                      style={{ flex: 1.1, padding: '0.55rem', fontSize: '0.8rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-contrast, #FFFFFF)', whiteSpace: 'nowrap' }}
+                    >
+                      <Printer size={14} />
+                      <span>Print Sticker</span>
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

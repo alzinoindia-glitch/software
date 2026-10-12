@@ -16,12 +16,10 @@ const CODE128_PATTERNS = [
   "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
 ];
 
-export function renderBarcodeSvg(value = "", width = 240, height = 70, showText = true) {
+export function getBarcodeBars(value = "") {
   if (!value) value = "ALZINO-000";
-  // Clean string to ASCII
   const str = String(value).trim();
   
-  // Start Code B is index 104
   let checksum = 104;
   const indices = [104];
 
@@ -35,7 +33,6 @@ export function renderBarcodeSvg(value = "", width = 240, height = 70, showText 
   indices.push(checksum % 103);
   indices.push(106); // Stop pattern
 
-  // Build binary string of bars (1 = black bar, 0 = white space)
   let binary = "";
   for (const idx of indices) {
     const pattern = CODE128_PATTERNS[idx] || "212222";
@@ -46,6 +43,12 @@ export function renderBarcodeSvg(value = "", width = 240, height = 70, showText 
       isBar = !isBar;
     }
   }
+
+  return { binary, str };
+}
+
+export function renderBarcodeSvg(value = "", width = 240, height = 70, showText = true) {
+  const { binary, str } = getBarcodeBars(value);
 
   // Generate SVG elements
   const barWidth = (width - 20) / binary.length;
@@ -89,9 +92,19 @@ export function renderQrSvg(value = "", size = 110) {
 }
 
 /**
- * Universal Code Renderer: Automatically dispatches to Barcode (Code-128) or QR Code
+ * Universal Code Renderer: Automatically dispatches to Barcode (Code-128), QR Code, or Both
  */
 export function renderCodeSvg(value = "", codeFormat = "barcode", width = 240, height = 70, showText = true) {
+  if (codeFormat === 'both') {
+    const qrSize = Math.max(50, Math.min(height + 15, 68));
+    const barcodeWidth = Math.max(120, width - qrSize - 12);
+    const qrSvg = renderQrSvg(value, qrSize);
+    const bcSvg = renderBarcodeSvg(value, barcodeWidth, height, showText);
+    return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:${width}px;margin:0 auto;">
+      <div style="flex-shrink:0;display:flex;align-items:center;justify-content:center;">${qrSvg}</div>
+      <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;">${bcSvg}</div>
+    </div>`;
+  }
   if (codeFormat === 'qr' || (typeof value === 'string' && value.includes('QR-'))) {
     return renderQrSvg(value, Math.min(width, height > 45 ? height : 90));
   }
@@ -103,4 +116,115 @@ export function getUpiQrUrl(upiId, shopName, amount, invoiceNo = "") {
   const note = `Bill_${invoiceNo || 'ALZINO'}`;
   const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(shopName)}&am=${amount > 0 ? amount.toFixed(2) : ''}&cu=INR&tn=${encodeURIComponent(note)}`;
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiString)}&margin=1`;
+}
+
+/**
+ * Download high-resolution label sticker (50x25mm / 500x260px) as PNG image
+ */
+export async function downloadStickerImage({
+  title = "Product",
+  barcode = "ALZ-000",
+  codeFormat = "barcode",
+  price = 0,
+  mrp = 0,
+  shopName = "ALZINO MOBILES • BODHAN"
+}) {
+  const width = 500;
+  const height = 260;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  // Background
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, width, height);
+
+  // Border (clean sticker border)
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(6, 6, width - 12, height - 12);
+
+  // Shop Banner
+  ctx.fillStyle = '#0F251E';
+  ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(shopName.toUpperCase(), width / 2, 30);
+
+  // Product Title (truncated to fit cleanly)
+  ctx.fillStyle = '#1E293B';
+  ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const cleanTitle = title.length > 40 ? title.substring(0, 38) + '...' : title;
+  ctx.fillText(cleanTitle, width / 2, 54);
+
+  // Helper to draw barcode on canvas
+  const drawBarcodeToCanvas = (val, x, y, w, h) => {
+    const { binary, str } = getBarcodeBars(val);
+    const barWidth = (w - 20) / binary.length;
+    let posX = x + 10;
+    ctx.fillStyle = '#0A0D14';
+    for (let i = 0; i < binary.length; i++) {
+      if (binary[i] === '1') {
+        ctx.fillRect(posX, y, barWidth + 0.15, h - 20);
+      }
+      posX += barWidth;
+    }
+    // Code text
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(str, x + w / 2, y + h - 4);
+  };
+
+  // Helper to draw QR code from data URL
+  const drawQrToCanvas = async (val, x, y, size) => {
+    try {
+      const qrDataUrl = await QRCode.toDataURL(val, { margin: 1, width: size });
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, x, y, size, size);
+          resolve();
+        };
+        img.onerror = resolve;
+        img.src = qrDataUrl;
+      });
+    } catch {
+      // fallback
+    }
+  };
+
+  // Render Code(s) based on format
+  if (codeFormat === 'both') {
+    const qrSize = 110;
+    await drawQrToCanvas(barcode, 30, 68, qrSize);
+    drawBarcodeToCanvas(barcode, 155, 68, width - 180, 110);
+  } else if (codeFormat === 'qr' || barcode.includes('QR-')) {
+    const qrSize = 125;
+    await drawQrToCanvas(barcode, (width - qrSize) / 2, 64, qrSize);
+  } else {
+    drawBarcodeToCanvas(barcode, 30, 68, width - 60, 110);
+  }
+
+  // Footer: MRP & Sell Price
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#64748B';
+  ctx.font = '13px sans-serif';
+  if (mrp && mrp > price) {
+    ctx.fillText(`MRP: ₹${Number(mrp).toLocaleString()}`, 30, height - 24);
+  }
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#0C5B43';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText(`₹${Number(price).toLocaleString()}`, width - 30, height - 22);
+
+  // Trigger Download
+  const link = document.createElement('a');
+  const safeName = String(barcode || title || 'sticker').replace(/[^a-zA-Z0-9_-]/g, '_');
+  link.download = `${safeName}_sticker.png`;
+  link.href = canvas.toDataURL('image/png');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }

@@ -388,33 +388,56 @@ export default function ProductScanDetailsModal({
                 </div>
               )}
 
-              {/* Stock & Location */}
+              {/* Stock & Location (Privacy guarded: customers see clean verified status, admin sees rack & exact units) */}
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                <span style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  color: activeVariant.stock > 0 ? '#065F46' : '#991B1B',
-                  backgroundColor: activeVariant.stock > 0 ? '#D1FAE5' : '#FEE2E2',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem'
-                }}>
-                  <Package size={12} />
-                  {activeVariant.stock > 0 ? `In Stock (${activeVariant.stock} available)` : 'Out of Stock'}
-                </span>
+                {(role === 'admin' || role === 'cashier') ? (
+                  <>
+                    <span style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      color: activeVariant.stock > 0 ? '#065F46' : '#991B1B',
+                      backgroundColor: activeVariant.stock > 0 ? '#D1FAE5' : '#FEE2E2',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem'
+                    }}>
+                      <Package size={12} />
+                      {activeVariant.stock > 0 ? `In Stock (${activeVariant.stock} available)` : 'Out of Stock'}
+                    </span>
 
-                {product.rack && (role === 'admin' || role === 'cashier') && (
+                    {product.rack && (
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        color: '#1F2937',
+                        backgroundColor: '#F3F4F6',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        <MapPin size={11} color="#4F46E5" />
+                        <span>Rack {product.rack} • Bin {product.bin}</span>
+                      </span>
+                    )}
+                  </>
+                ) : (
                   <span style={{
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    color: '#1F2937',
-                    backgroundColor: '#F3F4F6',
-                    padding: '0.2rem 0.55rem',
-                    borderRadius: '6px'
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    color: activeVariant.stock > 0 ? '#065F46' : '#991B1B',
+                    backgroundColor: activeVariant.stock > 0 ? '#D1FAE5' : '#FEE2E2',
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
                   }}>
-                    📍 Rack {product.rack} • Bin {product.bin}
+                    <CheckCircle2 size={12} />
+                    {activeVariant.stock > 0 ? 'Verified In Stock' : 'Currently Unavailable'}
                   </span>
                 )}
               </div>

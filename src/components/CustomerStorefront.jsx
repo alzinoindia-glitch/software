@@ -973,9 +973,6 @@ export default function CustomerStorefront({
       if (item.warranty) {
         message += `   • Warranty: ${item.warranty}\n`;
       }
-      if (item.rack) {
-        message += `   • Shelf: Rack ${item.rack}${item.bin ? `, Bin ${item.bin}` : ''}\n`;
-      }
     });
 
     message += `\n-----------------------------------\n`;
@@ -1014,8 +1011,7 @@ export default function CustomerStorefront({
 
     const variantText = variantParts.length > 0 ? `\n⚙️ *Details:* ${variantParts.join(' • ')}` : '';
     const warrantyText = `\n🛡️ *Warranty:* ${product.warranty || '1 Year Official Brand Warranty'}`;
-    const stockText = product.stock > 0 ? `\n✅ *Stock Status:* Available right now in Bodhan (${product.stock} units)` : `\n⚡ *Availability:* Same-day arrival at Bodhan store`;
-    const locText = product.rack ? `\n📍 *Shelf Location:* Rack ${product.rack}${product.bin ? `, Bin ${product.bin}` : ''}` : '';
+    const stockText = product.stock > 0 ? `\n✅ *Stock Status:* Available right now in Bodhan` : `\n⚡ *Availability:* Same-day arrival at Bodhan store`;
 
     const message = `Namaste ALZINO Mobiles & Home Appliances Bodhan! 👋\n\n` +
       `I am enquiring from your store website about this product:\n\n` +
@@ -1023,8 +1019,7 @@ export default function CustomerStorefront({
       `${variantText}\n` +
       `💰 *Special Online Price:* ${priceFormatted}${mrpFormatted}${discountText}` +
       `${warrantyText}` +
-      `${stockText}` +
-      `${locText}\n\n` +
+      `${stockText}\n\n` +
       `Please let me know if this is available for instant pickup/delivery at Station Road, Bodhan. Thank you!`;
 
     const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
@@ -1808,22 +1803,7 @@ export default function CustomerStorefront({
                       {prod.specs}
                     </div>
 
-                    {/* Showroom Rack Location */}
-                    {prod.rack && (
-                      <div className="storefront-card-rack" style={{
-                        fontSize: '0.65rem',
-                        color: '#4B5563',
-                        backgroundColor: '#F3F4F6',
-                        padding: '0.15rem 0.45rem',
-                        borderRadius: '4px',
-                        display: 'inline-block',
-                        marginBottom: '0.65rem',
-                        fontWeight: 600
-                      }}>
-                        Aisle: {prod.rack} • Bin: {prod.bin}
-                      </div>
-                    )}
-                  </div>
+                    </div>
 
                   {/* Pricing Row & Blinkit/Zepto-Style Actions */}
                   <div style={{
@@ -2394,11 +2374,6 @@ export default function CustomerStorefront({
                         <div style={{ fontSize: '0.72rem', color: '#6B7280' }}>
                           ₹{item.price.toLocaleString()} each
                         </div>
-                        {item.rack && (
-                          <div style={{ fontSize: '0.65rem', color: '#0C5B43', fontWeight: 700 }}>
-                            Rack: {item.rack} • Bin: {item.bin}
-                          </div>
-                        )}
                       </div>
 
                       {/* Stepper */}
