@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
-import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
+import { getAvailableBrandsForCategory, saveCustomBrand, getAvailableCategories, getAvailableSubcategories, saveCustomCategory, saveCustomSubcategory } from '../utils/customTaxonomy';
 import { getProductSuggestions } from '../utils/productSuggestions';
 import { renderCodeSvg, downloadStickerImage } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
@@ -44,7 +44,8 @@ export default function BulkMobileVariantEntryModal({
   isOpen, 
   onClose, 
   onSaveBatch, 
-  onPrintBarcodeSheet 
+  onPrintBarcodeSheet,
+  inventory = []
 }) {
   const [activeTab, setActiveTab] = useState('manual'); // 'manual' | 'excel'
 
@@ -57,6 +58,8 @@ export default function BulkMobileVariantEntryModal({
     storage: '256GB',
     customStorage: '',
     category: 'New Mobiles',
+    subCategory: '',
+    capacity: '',
     buyPrice: '',
     sellPrice: '',
     mrp: '',
@@ -73,9 +76,11 @@ export default function BulkMobileVariantEntryModal({
   const [customTermInput, setCustomTermInput] = useState('');
 
   const [isCustomBrand, setIsCustomBrand] = useState(false);
-  const availableBrands = useMemo(() => {
-    return getAvailableBrandsForCategory('New Mobiles');
-  }, []);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [isCustomSubcategory, setIsCustomSubcategory] = useState(false);
+  const availableBrands = useMemo(() => getAvailableBrandsForCategory(modelDetails.category, inventory), [modelDetails.category, inventory]);
+  const availableCategories = useMemo(() => getAvailableCategories(inventory), [inventory]);
+  const availableSubcategories = useMemo(() => getAvailableSubcategories(modelDetails.category, inventory), [modelDetails.category, inventory]);
 
   // Fast Model Auto-Suggestions
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
@@ -430,7 +435,7 @@ export default function BulkMobileVariantEntryModal({
     if (e) e.preventDefault();
 
     if (!modelDetails.model.trim()) {
-      alert('Please enter Mobile Model Name (e.g. Galaxy S24 5G, iPhone 15).');
+      alert('Please enter a product name or model.');
       return;
     }
     if (!modelDetails.sellPrice || parseFloat(modelDetails.sellPrice) <= 0) {
@@ -443,7 +448,9 @@ export default function BulkMobileVariantEntryModal({
     }
 
     const brandName = modelDetails.brand.trim() || 'Universal';
-    saveCustomBrand(brandName, 'New Mobiles');
+    saveCustomCategory(modelDetails.category);
+    saveCustomBrand(brandName, modelDetails.category);
+    saveCustomSubcategory(modelDetails.subCategory, modelDetails.category);
     const modelName = modelDetails.model.trim();
     const buyPrice = parseFloat(modelDetails.buyPrice) || 0;
     const sellPrice = parseFloat(modelDetails.sellPrice) || 0;
@@ -466,7 +473,9 @@ export default function BulkMobileVariantEntryModal({
         if (u.imei2) variantImeis.push(u.imei2.trim());
       });
 
-      const variantName = `${brandName} ${modelName} (${effectiveRam}/${effectiveStorage} - ${variant.color})`;
+      const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(modelDetails.category);
+      const specs = isPhoneCategory ? `${effectiveRam}/${effectiveStorage}` : [modelDetails.subCategory, modelDetails.capacity].filter(Boolean).join(' · ');
+      const variantName = `${brandName} ${modelName}${specs ? ` (${specs})` : ''}${variant.color ? ` - ${variant.color}` : ''}`;
       const primaryBarcode = variantUnits.find(u => u.barcode && u.barcode.trim())?.barcode?.trim() || '';
       const allBarcodes = variantUnits.map(u => (u.barcode || '').trim()).filter(Boolean);
       const variantCodeFormat = variantUnits.find(u => u.barcode)?.codeFormat || codeFormat;
@@ -493,6 +502,8 @@ export default function BulkMobileVariantEntryModal({
       newInventoryItems.push({
         id: prodId,
         category: modelDetails.category,
+        subCategory: modelDetails.subCategory,
+        capacity: modelDetails.capacity,
         brand: brandName,
         model: modelName,
         name: variantName,
@@ -504,7 +515,7 @@ export default function BulkMobileVariantEntryModal({
         frontImage: frontImg,
         backImage: backImg,
         images: (frontImg || backImg) ? { front: Boolean(frontImg), back: Boolean(backImg), v: Date.now() } : undefined,
-        description: `${brandName} ${modelName} ${effectiveRam}/${effectiveStorage} with ${variant.color} finish. Official GST Inward.`,
+        description: `${brandName} ${modelName}${specs ? ` ${specs}` : ''}${variant.color ? ` in ${variant.color}` : ''}. Bulk stock entry.`,
         isGst: finalGstRate > 0,
         hsn: modelDetails.hsn || '851712',
         gstRate: finalGstRate,
@@ -542,7 +553,7 @@ export default function BulkMobileVariantEntryModal({
     }
 
     onSaveBatch(newInventoryItems);
-    alert(`✓ Successfully added ${totalStockCount} mobiles across ${colourVariants.length} colour variants into inventory!`);
+    alert(`✓ Successfully added ${totalStockCount} ${modelDetails.category.toLowerCase()} units across ${colourVariants.length} variants into inventory!`);
     onClose();
   };
 
@@ -552,6 +563,8 @@ export default function BulkMobileVariantEntryModal({
   const handleDownloadSampleExcel = () => {
     const sampleData = [
       {
+        Category: 'New Mobiles',
+        Subcategory: 'Smartphones',
         Brand: 'Samsung',
         Model: 'Galaxy S24 5G',
         RAM: '8GB',
@@ -566,9 +579,13 @@ export default function BulkMobileVariantEntryModal({
         MRP: 79999,
         Rack: 'R-01',
         Bin: 'B-01',
+        HSN: '851712',
+        GSTRate: 18,
         Warranty: '1 Year Brand Warranty'
       },
       {
+        Category: 'New Mobiles',
+        Subcategory: 'Smartphones',
         Brand: 'Samsung',
         Model: 'Galaxy S24 5G',
         RAM: '8GB',
@@ -583,9 +600,13 @@ export default function BulkMobileVariantEntryModal({
         MRP: 79999,
         Rack: 'R-01',
         Bin: 'B-02',
+        HSN: '851712',
+        GSTRate: 18,
         Warranty: '1 Year Brand Warranty'
       },
       {
+        Category: 'New Mobiles',
+        Subcategory: 'Smartphones',
         Brand: 'Apple',
         Model: 'iPhone 15',
         RAM: '6GB',
@@ -600,14 +621,16 @@ export default function BulkMobileVariantEntryModal({
         MRP: 69900,
         Rack: 'R-02',
         Bin: 'B-01',
+        HSN: '851712',
+        GSTRate: 18,
         Warranty: '1 Year Apple Warranty'
       }
     ];
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Bulk_Mobiles_Template');
-    XLSX.writeFile(wb, 'ALZINO_Bulk_Mobiles_Template.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, 'Bulk_Products_Template');
+    XLSX.writeFile(wb, 'ALZINO_Bulk_Products_Template.xlsx');
   };
 
   const handleFileUpload = (e) => {
@@ -633,8 +656,13 @@ export default function BulkMobileVariantEntryModal({
 
         const errors = [];
         const parsedRows = json.map((row, idx) => {
+          const category = String(row.Category || row.category || modelDetails.category || 'New Mobiles').trim();
+          const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(category);
+          const subCategory = String(row.Subcategory || row.SubCategory || row.subCategory || row.subcategory || '').trim();
           const brand = row.Brand || row.brand || 'Universal';
-          saveCustomBrand(String(brand).trim(), 'New Mobiles');
+          saveCustomCategory(category);
+          saveCustomBrand(String(brand).trim(), category);
+          saveCustomSubcategory(subCategory, category);
           const model = row.Model || row.model || '';
           const sellPrice = parseFloat(row.SellingPrice || row.SellPrice || row.price || 0);
 
@@ -643,15 +671,20 @@ export default function BulkMobileVariantEntryModal({
 
           return {
             rowNo: idx + 2,
+            category,
+            subCategory,
+            capacity: String(row.Capacity || row.capacity || '').trim(),
             brand: String(brand).trim(),
             model: String(model).trim(),
-            ram: String(row.RAM || row.ram || '8GB').trim(),
-            storage: String(row.Storage || row.storage || '128GB').trim(),
+            ram: String(row.RAM || row.ram || (isPhoneCategory ? '8GB' : '')).trim(),
+            storage: String(row.Storage || row.storage || (isPhoneCategory ? '128GB' : '')).trim(),
             colour: String(row.Colour || row.Color || row.colour || row.color || 'Standard').trim(),
             quantity: Math.max(1, parseInt(row.Quantity || row.quantity || row.Qty || row.qty || 1, 10)),
             imei1: String(row.IMEI1 || row.imei1 || row.IMEI || row.imei || '').trim(),
             imei2: String(row.IMEI2 || row.imei2 || '').trim(),
             barcode: String(row.Barcode || row.barcode || `ALZ-EX-${Date.now().toString().slice(-4)}-${idx + 1}`).trim(),
+            hsn: String(row.HSN || row.hsn || (isPhoneCategory ? '851712' : '')).trim(),
+            gstRate: parseFloat(row.GSTRate || row.GstRate || row.gstRate || 18),
             purchasePrice: parseFloat(row.PurchasePrice || row.BuyPrice || row.buyPrice || 0),
             sellPrice,
             mrp: parseFloat(row.MRP || row.mrp || sellPrice),
@@ -687,14 +720,19 @@ export default function BulkMobileVariantEntryModal({
     // Group rows by Brand + Model + RAM + Storage + Colour
     const grouped = {};
     excelRows.forEach(row => {
-      const key = `${row.brand}|${row.model}|${row.ram}|${row.storage}|${row.colour}`.toLowerCase();
+      const key = `${row.category}|${row.subCategory}|${row.capacity}|${row.brand}|${row.model}|${row.ram}|${row.storage}|${row.colour}`.toLowerCase();
       if (!grouped[key]) {
         grouped[key] = {
+          category: row.category,
+          subCategory: row.subCategory,
+          capacity: row.capacity,
           brand: row.brand,
           model: row.model,
           ram: row.ram,
           storage: row.storage,
           colour: row.colour,
+          hsn: row.hsn,
+          gstRate: row.gstRate,
           purchasePrice: row.purchasePrice,
           sellPrice: row.sellPrice,
           mrp: row.mrp,
@@ -722,7 +760,9 @@ export default function BulkMobileVariantEntryModal({
     });
 
     const newInventoryItems = Object.values(grouped).map((group, gIdx) => {
-      const variantName = `${group.brand} ${group.model} (${group.ram}/${group.storage} - ${group.colour})`;
+      const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(group.category);
+      const specs = isPhoneCategory ? `${group.ram}/${group.storage}` : [group.subCategory, group.capacity].filter(Boolean).join(' · ');
+      const variantName = `${group.brand} ${group.model}${specs ? ` (${specs})` : ''}${group.colour ? ` - ${group.colour}` : ''}`;
       const variantImeis = [];
       group.units.forEach(u => {
         if (u.imei1) variantImeis.push(u.imei1);
@@ -731,17 +771,19 @@ export default function BulkMobileVariantEntryModal({
 
       return {
         id: `PROD-EX-${Date.now()}-${gIdx + 1}`,
-        category: 'New Mobiles',
+        category: group.category,
+        subCategory: group.subCategory,
+        capacity: group.capacity,
         brand: group.brand,
         model: group.model,
         name: variantName,
         ram: group.ram,
         storage: group.storage,
         color: group.colour,
-        description: `${group.brand} ${group.model} ${group.ram}/${group.storage} (${group.colour}) Imported via Excel.`,
-        isGst: true,
-        hsn: '851712',
-        gstRate: 18,
+        description: `${group.brand} ${group.model}${specs ? ` ${specs}` : ''}${group.colour ? ` (${group.colour})` : ''} imported from spreadsheet.`,
+        isGst: (Number(group.gstRate) || 0) > 0,
+        hsn: group.hsn,
+        gstRate: group.gstRate,
         buyPrice: group.purchasePrice,
         sellPrice: group.sellPrice,
         mrp: group.mrp,
@@ -763,7 +805,7 @@ export default function BulkMobileVariantEntryModal({
 
     onSaveBatch(newInventoryItems);
     setIsImporting(false);
-    alert(`✓ Successfully imported ${excelRows.reduce((acc, r) => acc + r.quantity, 0)} mobile units into ALZINO inventory!`);
+    alert(`✓ Successfully imported ${excelRows.reduce((acc, r) => acc + r.quantity, 0)} inventory units into ALZINO!`);
     onClose();
   };
 
@@ -918,15 +960,41 @@ export default function BulkMobileVariantEntryModal({
                       1
                     </span>
                     <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Common Model & Purchase Details (Enter Once)
+                      Common Product & Purchase Details (Enter Once)
                     </h4>
                   </div>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Applies automatically across all colour variants
+                    Applies across all product variants
                   </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                  {/* Product type and saved subcategory */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Type *</label>
+                    <select className="input-field" value={isCustomCategory ? 'Other' : modelDetails.category} onChange={(e) => {
+                      if (e.target.value === 'Other') { setIsCustomCategory(true); setIsCustomSubcategory(false); setModelDetails(prev => ({ ...prev, category: '', subCategory: '', capacity: '', ram: '', storage: '', brand: '' })); setIsCustomBrand(false); }
+                      else { setIsCustomCategory(false); setIsCustomSubcategory(false); const brands = getAvailableBrandsForCategory(e.target.value, inventory); setModelDetails(prev => ({ ...prev, category: e.target.value, subCategory: '', capacity: '', ram: ['New Mobiles', 'Used Mobiles'].includes(e.target.value) ? '8GB' : '', storage: ['New Mobiles', 'Used Mobiles'].includes(e.target.value) ? '128GB' : '', brand: brands[0] || 'Universal' })); setIsCustomBrand(false); }
+                    }}>
+                      {availableCategories.map(category => <option key={category} value={category}>{category}</option>)}
+                      <option value="Other">Other (Add Custom)</option>
+                    </select>
+                    {isCustomCategory && <input className="input-field" style={{ marginTop: '0.3rem' }} autoFocus required placeholder="Enter product type" aria-label="Custom product type" value={modelDetails.category} onChange={e => setModelDetails(prev => ({ ...prev, category: e.target.value }))} onBlur={e => { if (e.target.value.trim()) saveCustomCategory(e.target.value.trim()); }} />}
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Subcategory</label>
+                    <select className="input-field" value={isCustomSubcategory ? 'Other' : modelDetails.subCategory} onChange={e => {
+                      if (e.target.value === 'Other') { setIsCustomSubcategory(true); setModelDetails(prev => ({ ...prev, subCategory: '', capacity: '' })); }
+                      else { setIsCustomSubcategory(false); setModelDetails(prev => ({ ...prev, subCategory: e.target.value, capacity: '' })); }
+                    }}>
+                      <option value="">Select subcategory</option>
+                      {availableSubcategories.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                      <option value="Other">Other (Add Custom)</option>
+                    </select>
+                    {isCustomSubcategory && <input className="input-field" style={{ marginTop: '0.3rem' }} placeholder="Enter subcategory" aria-label="Custom subcategory" value={modelDetails.subCategory} onChange={e => setModelDetails(prev => ({ ...prev, subCategory: e.target.value }))} onBlur={e => { if (e.target.value.trim()) saveCustomSubcategory(e.target.value, modelDetails.category); }} />}
+                    {modelDetails.category === 'Home Appliances' && <input className="input-field" style={{ marginTop: '0.3rem' }} placeholder="Capacity / size (e.g. 250L, 1.5 Ton, 7kg)" value={modelDetails.capacity} onChange={e => setModelDetails(prev => ({ ...prev, capacity: e.target.value }))} />}
+                  </div>
+
                   {/* Brand */}
                   <div>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand *</label>
@@ -961,7 +1029,7 @@ export default function BulkMobileVariantEntryModal({
                         onChange={(e) => setModelDetails({ ...modelDetails, brand: e.target.value })}
                         onBlur={(e) => {
                           if (e.target.value.trim()) {
-                            saveCustomBrand(e.target.value.trim(), 'New Mobiles');
+                            saveCustomBrand(e.target.value.trim(), modelDetails.category);
                           }
                         }}
                         required
@@ -975,7 +1043,7 @@ export default function BulkMobileVariantEntryModal({
                   {/* Model Name */}
                   <div style={{ gridColumn: 'span 2', position: 'relative' }}>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
-                      Model Name * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
+                      Product Name / Model * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
                     </label>
                     <input
                       type="text"
@@ -1077,8 +1145,8 @@ export default function BulkMobileVariantEntryModal({
                     )}
                   </div>
 
-                  {/* RAM */}
-                  <div>
+                  {/* Phones use RAM and storage; other types use their subcategory and appliance size. */}
+                  {['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <><div>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM *</label>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>
                       <select
@@ -1128,6 +1196,8 @@ export default function BulkMobileVariantEntryModal({
                       )}
                     </div>
                   </div>
+
+                  </>}
 
                   {/* Buy Price */}
                   <div>
@@ -1809,7 +1879,7 @@ export default function BulkMobileVariantEntryModal({
                     </span>
                     <div>
                       <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Unit-by-Unit IMEI 1 & IMEI 2 Matrix ({units.length} Physical Phones)
+                        Unit-by-Unit IMEI 1 & IMEI 2 Matrix ({units.length} Physical Units)
                       </h4>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                         Type or laser scan IMEIs • Alzino auto-generates 100% scannable Barcodes or QR Codes
@@ -1914,7 +1984,7 @@ export default function BulkMobileVariantEntryModal({
                 {/* Units List */}
                 {units.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    No physical units configured. Please add colour variants and quantities above.
+                    No physical units configured. Please add product variants and quantities above.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '0.2rem' }}>
@@ -2234,10 +2304,10 @@ export default function BulkMobileVariantEntryModal({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Bulk Mobile Stock Import via Excel / CSV
+                      Bulk Product Stock Import via Excel / CSV
                     </h4>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                      Import large distributor purchase invoices with Model, RAM, Storage, Colours, and IMEIs in 1 second.
+                      Import products by category and subcategory, with matching brand, specifications, variants, prices, and optional serial numbers.
                     </p>
                   </div>
 
@@ -2301,7 +2371,7 @@ export default function BulkMobileVariantEntryModal({
                     {excelFileName ? `Selected: ${excelFileName}` : 'Click or Drag & Drop Excel (.xlsx, .xls) or .csv File'}
                   </div>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Supports distributor purchase bills with Brand, Model, Colour, RAM, Storage, and IMEIs
+                    Supports Category, Subcategory, Brand, Product Name, Quantity, Pricing, Colour, and optional IMEIs
                   </div>
                 </div>
 
@@ -2344,7 +2414,7 @@ export default function BulkMobileVariantEntryModal({
                           <tr>
                             <th style={{ padding: '0.5rem' }}>#</th>
                             <th style={{ padding: '0.5rem' }}>Brand & Model</th>
-                            <th style={{ padding: '0.5rem' }}>Variant (RAM/ROM)</th>
+                            <th style={{ padding: '0.5rem' }}>Variant / specifications</th>
                             <th style={{ padding: '0.5rem' }}>Colour</th>
                             <th style={{ padding: '0.5rem', textAlign: 'center' }}>Qty</th>
                             <th style={{ padding: '0.5rem' }}>IMEI 1</th>

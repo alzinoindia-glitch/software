@@ -53,7 +53,9 @@ import {
   getAvailableCategories,
   getAvailableBrandsForCategory,
   saveCustomCategory,
-  saveCustomBrand
+  saveCustomBrand,
+  getAvailableSubcategories,
+  saveCustomSubcategory
 } from '../utils/customTaxonomy';
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { purgeAllLegacyOfflineData } from '../utils/cloudSyncService';
@@ -107,6 +109,7 @@ export default function InventoryManager({
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const [isCustomSubcategory, setIsCustomSubcategory] = useState(false);
   const [isCustomStorage, setIsCustomStorage] = useState(false);
   const [isCustomRam, setIsCustomRam] = useState(false);
   const [compareProduct, setCompareProduct] = useState(null);
@@ -132,6 +135,8 @@ export default function InventoryManager({
   // Form state
   const [formData, setFormData] = useState({
     category: 'New Mobiles',
+    subCategory: '',
+    capacity: '',
     brand: 'Samsung',
     name: '',
     model: '',
@@ -226,6 +231,7 @@ export default function InventoryManager({
     });
     setIsCustomCategory(false);
     setIsCustomBrand(false);
+    setIsCustomSubcategory(false);
     setIsCustomStorage(false);
     setIsCustomRam(false);
     setShowNameSuggestions(false);
@@ -357,6 +363,8 @@ export default function InventoryManager({
         item.name || '',
         item.brand || '',
         item.category || '',
+        item.subCategory || '',
+        item.capacity || '',
         item.model || '',
         item.color || '',
         item.ram || '',
@@ -394,6 +402,8 @@ export default function InventoryManager({
     const defaultBrand = validBrands.includes('Samsung') ? 'Samsung' : (validBrands[0] || 'Universal');
     setFormData({
       category: defaultCat,
+      subCategory: '',
+      capacity: '',
       brand: defaultBrand,
       name: '',
       model: '',
@@ -440,6 +450,8 @@ export default function InventoryManager({
     const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
     setFormData({
       category: item.category || 'New Mobiles',
+      subCategory: item.subCategory || item.applianceType || item.accessoryType || item.partType || '',
+      capacity: item.capacity || '',
       brand: item.brand || 'Universal',
       name: item.name,
       model: item.model || '',
@@ -614,6 +626,8 @@ export default function InventoryManager({
           return {
             ...item,
             category: formData.category,
+            subCategory: formData.subCategory.trim(),
+            capacity: formData.capacity,
             brand: formData.brand,
             name: formData.name,
             model: formData.model || item.model,
@@ -650,6 +664,8 @@ export default function InventoryManager({
       const newItem = {
         id: productId,
         category: formData.category,
+        subCategory: formData.subCategory.trim(),
+        capacity: formData.capacity,
         brand: formData.brand,
         name: formData.name,
         model: formData.model,
@@ -688,6 +704,9 @@ export default function InventoryManager({
     }
     if (formData.brand && formData.brand.trim()) {
       saveCustomBrand(formData.brand.trim(), formData.category ? formData.category.trim() : 'General');
+    }
+    if (formData.category && formData.subCategory.trim()) {
+      saveCustomSubcategory(formData.subCategory.trim(), formData.category.trim());
     }
     setTaxonomyVer(v => v + 1);
 
@@ -899,10 +918,10 @@ export default function InventoryManager({
                   fontWeight: 800,
                   boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
                 }}
-                title="Bulk Mobile Stock Entry with Colour Variants"
+                title="Bulk Add products with variants and optional serial tracking"
               >
                 <Smartphone size={14} />
-                <span>Bulk Mobile</span>
+                <span>Bulk Add</span>
               </button>
 
               <button 
@@ -1205,6 +1224,7 @@ export default function InventoryManager({
 
                 {/* Variant Specs: Colour / RAM / Storage / IMEIs */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {(item.subCategory || item.capacity) && <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'rgba(12, 91, 67, 0.08)', color: 'var(--accent-primary)', padding: '0.12rem 0.45rem', borderRadius: '12px' }}>{[item.subCategory, item.capacity].filter(Boolean).join(' · ')}</span>}
                   {item.color && (
                     <span style={{
                       fontSize: '0.68rem',
@@ -1730,14 +1750,22 @@ export default function InventoryManager({
                     const val = e.target.value;
                     if (val === 'Other') {
                       setIsCustomCategory(true);
-                      setFormData(prev => ({ ...prev, category: '' }));
+                      setIsCustomSubcategory(false);
+                      setIsCustomBrand(false);
+                      setFormData(prev => ({ ...prev, category: '', subCategory: '', capacity: '', ram: '', storage: '' }));
                     } else {
                       setIsCustomCategory(false);
+                      setIsCustomSubcategory(false);
+                      setIsCustomBrand(false);
                       const validBrands = getAvailableBrandsForCategory(val, inventory);
-                      const brandStillValid = validBrands.includes(formData.brand) || isCustomBrand;
+                      const brandStillValid = validBrands.includes(formData.brand);
                       setFormData(prev => ({
                         ...prev,
                         category: val,
+                        subCategory: '',
+                        capacity: '',
+                        ram: ['New Mobiles', 'Used Mobiles'].includes(val) ? (prev.ram || '8GB') : '',
+                        storage: ['New Mobiles', 'Used Mobiles'].includes(val) ? (prev.storage || '128GB') : '',
                         brand: brandStillValid ? prev.brand : (validBrands.includes('Universal') ? 'Universal' : validBrands[0])
                       }));
                     }
@@ -1768,6 +1796,19 @@ export default function InventoryManager({
                     autoFocus
                   />
                 )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Subcategory</label>
+                <select className="input-field" value={isCustomSubcategory ? 'Other' : formData.subCategory} onChange={(e) => {
+                  if (e.target.value === 'Other') { setIsCustomSubcategory(true); setFormData(prev => ({ ...prev, subCategory: '', capacity: '' })); }
+                  else { setIsCustomSubcategory(false); setFormData(prev => ({ ...prev, subCategory: e.target.value, capacity: '' })); }
+                }}>
+                  <option value="">Select subcategory</option>
+                  {getAvailableSubcategories(formData.category, inventory).map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                  <option value="Other">Other (Add Custom)</option>
+                </select>
+                {isCustomSubcategory && <input type="text" placeholder="Enter custom subcategory..." aria-label="Custom subcategory name" value={formData.subCategory} onChange={(e) => setFormData(prev => ({ ...prev, subCategory: e.target.value }))} onBlur={(e) => { if (e.target.value.trim()) { saveCustomSubcategory(e.target.value, formData.category); setTaxonomyVer(v => v + 1); } }} required className="input-field animate-fade-in" style={{ marginTop: '0.3rem' }} />}
               </div>
 
               <div>
@@ -1825,8 +1866,8 @@ export default function InventoryManager({
                 })()}
               </div>
 
-              {/* Product Specifications: RAM, Storage & Colour */}
-              <div>
+              {/* Product Specifications: only phones use RAM and storage */}
+              {['New Mobiles', 'Used Mobiles'].includes(formData.category) && <><div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM</label>
                 <select
                   value={
@@ -1902,6 +1943,13 @@ export default function InventoryManager({
                 )}
               </div>
 
+              </>}
+
+              {formData.category === 'Home Appliances' && <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Capacity / Size</label>
+                <input className="input-field" type="text" placeholder="e.g. 240L, 1.5 Ton, 7kg, 55 inch" value={formData.capacity} onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))} />
+              </div>}
+
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Colour</label>
                 <select
@@ -1935,7 +1983,7 @@ export default function InventoryManager({
               </div>
 
               <div style={{ position: 'relative' }}>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Model Name</label>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Name / Model</label>
                 <input
                   type="text"
                   placeholder="e.g. Galaxy S24 5G, iPhone 18 Pro"
@@ -3105,13 +3153,14 @@ export default function InventoryManager({
         />
       )}
 
-      {/* Bulk Add Mobiles / Variants / IMEI Batch Entry Modal */}
+      {/* Bulk Add products, variants, and optional serial tracking */}
       {showBulkModal && (
         <BulkMobileVariantEntryModal
           isOpen={showBulkModal}
           onClose={() => setShowBulkModal(false)}
           onSaveBatch={handleSaveBatchMobiles}
           onPrintBarcodeSheet={onPrintBarcodeSheet}
+          inventory={inventory}
         />
       )}
 

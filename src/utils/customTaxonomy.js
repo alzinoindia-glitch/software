@@ -86,6 +86,43 @@ export const BASE_SPARE_PARTS_BRANDS = [
 
 const CUSTOM_CATEGORIES_KEY = 'ALZINO_CUSTOM_CATEGORIES';
 const CUSTOM_BRANDS_KEY = 'ALZINO_CUSTOM_BRANDS_BY_CAT';
+const CUSTOM_SUBCATEGORIES_KEY = 'ALZINO_CUSTOM_SUBCATEGORIES_BY_CAT';
+export const BASE_SUBCATEGORIES_BY_CATEGORY = {
+  'New Mobiles': ['Smartphones', 'Feature Phones', 'Tablets'],
+  'Used Mobiles': ['Refurbished Mobiles', 'Pre-owned Mobiles', 'Refurbished Tablets'],
+  'Mobile Accessories': ['Phone Cases', 'Screen Protectors', 'Chargers', 'Cables', 'Earphones & Headphones', 'Power Banks', 'Mobile Pouches', 'Smartwatches'],
+  'Home Appliances': ['Refrigerators & Freezers', 'Washing Machines', 'Air Conditioners', 'Air Coolers', 'Televisions', 'Kitchen Appliances', 'Fans', 'Water Heaters', 'Water Purifiers', 'Irons'],
+  'Spare Parts': ['Displays', 'Batteries', 'Charging Parts', 'Cameras', 'Speakers', 'Motherboards', 'Connectors'],
+  Universal: ['General']
+};
+
+export function getCustomSubcategoriesMap() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_SUBCATEGORIES_KEY) || '{}'); } catch { return {}; }
+}
+
+export function saveCustomSubcategory(subcategory, category = 'General') {
+  const value = String(subcategory || '').trim();
+  const catKey = String(category || 'General').trim() || 'General';
+  if (!value || ['other', 'all'].includes(value.toLowerCase())) return;
+  try {
+    const map = getCustomSubcategoriesMap();
+    const existing = map[catKey] || [];
+    if (!existing.some(item => item.toLowerCase() === value.toLowerCase())) {
+      map[catKey] = [...existing, value];
+      localStorage.setItem(CUSTOM_SUBCATEGORIES_KEY, JSON.stringify(map));
+      window.dispatchEvent(new CustomEvent('alzino:taxonomy-updated', { detail: { type: 'subcategory', category: catKey, subcategory: value } }));
+    }
+  } catch (e) { console.error('Failed to save custom subcategory:', e); }
+}
+
+export function getAvailableSubcategories(category, inventory = []) {
+  const catKey = String(category || 'General').trim() || 'General';
+  const values = new Set([...(BASE_SUBCATEGORIES_BY_CATEGORY[catKey] || []), ...(getCustomSubcategoriesMap()[catKey] || [])]);
+  if (Array.isArray(inventory)) inventory.forEach(item => {
+    if (item?.category === catKey && item?.subCategory?.trim()) values.add(item.subCategory.trim());
+  });
+  return [...values];
+}
 
 /**
  * Get all custom user-added categories from localStorage
