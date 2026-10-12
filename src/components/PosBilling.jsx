@@ -1158,13 +1158,13 @@ export default function PosBilling({
                     borderRadius: '8px',
                     whiteSpace: 'nowrap',
                     background: 'var(--accent-primary)',
-                    color: '#000',
+                    color: '#FFFFFF',
                     fontWeight: 700
                   }}
                   title="Scan product barcode directly using your mobile phone camera or webcam without barcode reader"
                 >
-                  <Camera size={15} />
-                  <span>Mobile Scan</span>
+                  <Camera size={15} color="#FFFFFF" />
+                  <span style={{ color: '#FFFFFF' }}>Mobile Scan</span>
                 </button>
 
                 {/* Tax Mode Segmented Pills */}
