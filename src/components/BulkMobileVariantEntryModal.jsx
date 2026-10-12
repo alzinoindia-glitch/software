@@ -106,11 +106,6 @@ export default function BulkMobileVariantEntryModal({
   const [codeFormat, setCodeFormat] = useState('barcode'); // 'barcode' | 'qr'
   const [previewUnit, setPreviewUnit] = useState(null);
 
-  // Batch paste modal state
-  const [showPasteModal, setShowPasteModal] = useState(false);
-  const [pasteText, setPasteText] = useState('');
-  const [pasteTargetField, setPasteTargetField] = useState('imei1'); // 'imei1' | 'imei2'
-
   // Camera scanner state
   const [activeScanUnitIndex, setActiveScanUnitIndex] = useState(null);
   const [activeScanField, setActiveScanField] = useState('imei1'); // 'imei1' | 'imei2' | 'barcode'
@@ -326,16 +321,6 @@ export default function BulkMobileVariantEntryModal({
     }
   };
 
-  // Auto-Fill Mock IMEIs for rapid testing
-  const handleAutoFillMockImeis = () => {
-    const timestampPrefix = Date.now().toString().slice(-9);
-    setUnits(prev => prev.map((unit, idx) => ({
-      ...unit,
-      imei1: unit.imei1 || `86345${timestampPrefix}${String(idx + 1).padStart(2, '0')}`,
-      imei2: unit.imei2 || `86346${timestampPrefix}${String(idx + 1).padStart(2, '0')}`
-    })));
-  };
-
   // Toggle Admin Choice: Barcode (Code-128) vs QR Code (2D) for all units
   const handleToggleCodeFormat = (newFormat) => {
     setCodeFormat(newFormat);
@@ -403,32 +388,6 @@ export default function BulkMobileVariantEntryModal({
       copies: units.length,
       format: 'sheet24'
     });
-  };
-
-  // Batch paste IMEIs from clipboard or supplier list
-  const handleApplyPasteImeis = () => {
-    const lines = pasteText
-      .split(/[\n,\t\r]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) {
-      alert('Please enter or paste at least one IMEI.');
-      return;
-    }
-
-    setUnits(prev => {
-      const copy = [...prev];
-      lines.forEach((line, idx) => {
-        if (copy[idx]) {
-          copy[idx] = { ...copy[idx], [pasteTargetField]: line };
-        }
-      });
-      return copy;
-    });
-
-    setShowPasteModal(false);
-    setPasteText('');
   };
 
   // =========================================================================
@@ -1603,28 +1562,6 @@ export default function BulkMobileVariantEntryModal({
 
                     <button
                       type="button"
-                      onClick={() => setShowPasteModal(true)}
-                      className="btn-secondary"
-                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                      title="Paste multi-line IMEIs from invoice or email"
-                    >
-                      <Copy size={12} />
-                      <span>Batch Paste IMEIs</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleAutoFillMockImeis}
-                      className="btn-secondary"
-                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#10B981' }}
-                      title="Generate mock 15-digit IMEIs for testing"
-                    >
-                      <Sparkles size={12} />
-                      <span>Auto-Generate Demo IMEIs</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={handleRegenerateBarcodes}
                       className="btn-secondary"
                       style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
@@ -2116,67 +2053,6 @@ export default function BulkMobileVariantEntryModal({
           )}
         </div>
       </div>
-
-      {/* BATCH PASTE IMEIS MODAL */}
-      {showPasteModal && (
-        <div className="modal-backdrop no-print" style={{ zIndex: 1300 }}>
-          <div className="modal-dialog" style={{ maxWidth: '480px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.4rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Copy size={16} color="#10B981" />
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>Paste Multi-Line IMEIs</h4>
-              </div>
-              <button onClick={() => setShowPasteModal(false)} className="btn-secondary" style={{ padding: '0.2rem 0.4rem' }}>
-                <X size={14} />
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '0.65rem' }}>
-              <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.25rem' }}>
-                Paste Target Field:
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <label style={{ fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="pasteField"
-                    checked={pasteTargetField === 'imei1'}
-                    onChange={() => setPasteTargetField('imei1')}
-                  />
-                  <span>IMEI 1 (SIM 1)</span>
-                </label>
-                <label style={{ fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="pasteField"
-                    checked={pasteTargetField === 'imei2'}
-                    onChange={() => setPasteTargetField('imei2')}
-                  />
-                  <span>IMEI 2 (SIM 2)</span>
-                </label>
-              </div>
-            </div>
-
-            <textarea
-              rows={8}
-              placeholder="Paste IMEIs here (1 per line or separated by commas)...&#10;863456051234561&#10;863456051234562&#10;863456051234563"
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              className="input-field"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', marginBottom: '0.8rem' }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button type="button" onClick={() => setShowPasteModal(false)} className="btn-secondary">
-                Cancel
-              </button>
-              <button type="button" onClick={handleApplyPasteImeis} className="btn-primary" style={{ padding: '0.45rem 1rem', background: '#10B981' }}>
-                Apply to Units
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* CAMERA SCANNER MODAL */}
       {activeScanUnitIndex !== null && (
