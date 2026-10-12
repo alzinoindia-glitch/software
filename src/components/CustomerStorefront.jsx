@@ -1281,8 +1281,10 @@ export default function CustomerStorefront({
             .storefront-mobile-more-menu { display: block; }
             .storefront-cart-cta { bottom: 70px !important; }
             .storefront-catalog-section {
-              padding: 0 0.5rem !important;
+              padding: 0.75rem 0.5rem !important;
               margin: 1.25rem auto 2.5rem !important;
+              background-color: #F1EFE5 !important;
+              border-radius: 12px;
             }
             .storefront-products-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -1523,7 +1525,7 @@ export default function CustomerStorefront({
       {/* ========================================================================= */}
       {/* 3. PRODUCT CATALOG GRID WITH QUICK-COMMERCE CATEGORY PILLS */}
       {/* ========================================================================= */}
-      <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '0 1rem' }}>
+      <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '1rem', backgroundColor: '#F1EFE5', borderRadius: '16px' }}>
         {/* Mobile category dropdown */}
         <select className="storefront-mobile-category-select" aria-label="Filter products by category" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} id="storefront-mobile-category">
           {categoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}{categoryCounts[cat.id] !== undefined ? ' (' + categoryCounts[cat.id] + ')' : ''}</option>)}
