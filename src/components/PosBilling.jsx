@@ -1666,30 +1666,6 @@ export default function PosBilling({
               </div>
             </div>
 
-            {/* 1-Tap Payment Selector */}
-            <div style={{ marginTop: '0.55rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.25rem' }}>
-                {[
-                  { id: 'UPI', label: '📱 UPI' },
-                  { id: 'Cash', label: '💵 Cash' },
-                  { id: 'Card', label: '💳 Card' },
-                  { id: 'Khata', label: '📒 Khata' },
-                ].map(pm => {
-                  const isSelected = paymentMode === pm.id;
-                  return (
-                    <button
-                      key={pm.id}
-                      onClick={() => setPaymentMode(pm.id)}
-                      className={`hud-pill ${isSelected ? 'active' : ''}`}
-                      style={{ justifyContent: 'center', padding: '0.3rem 0.2rem', fontSize: '0.72rem' }}
-                    >
-                      {pm.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* Express 5-Second Checkout Toolbar (Zero Popups • 1-Hit Thermal Print) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.1fr 1.2fr', gap: '0.45rem', marginTop: '0.65rem' }}>
               <button
@@ -1804,8 +1780,8 @@ export default function PosBilling({
               }}
               title="Open full split payment, EMI, or custom Khata modal"
             >
-              <CheckCircle2 size={15} />
-              <span>Custom / Split / EMI Modal (₹{grandTotal.toLocaleString()})</span>
+              <CreditCard size={15} />
+              <span>Pay / Make Payment (₹{grandTotal.toLocaleString()})</span>
             </button>
           </div>
         </div>
