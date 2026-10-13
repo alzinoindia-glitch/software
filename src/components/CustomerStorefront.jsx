@@ -57,7 +57,7 @@ import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
-import { getAvailableCategories, normalizeProductCategory } from '../utils/customTaxonomy';
+import { getAvailableCategories, isUsedMobileProduct, normalizeProductCategory } from '../utils/customTaxonomy';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -386,11 +386,7 @@ export default function CustomerStorefront({
         if (item.imei1) seenImeis.add(item.imei1);
 
         const normalizedCategory = normalizeProductCategory(item.category);
-        const isUsedMobile = normalizedCategory === 'Used Mobiles' ||
-                             item.type === 'refurbished' || 
-                             cleanName.toLowerCase().startsWith('used ') || 
-                             cleanName.toLowerCase().includes('refurbished') ||
-                             cleanName.toLowerCase().includes('pre-owned');
+        const isUsedMobile = isUsedMobileProduct(item);
 
         const isAppliance = !isUsedMobile && (item.category === 'Home Appliances' || 
                             (cleanName && (cleanName.toLowerCase().includes('tv') || 

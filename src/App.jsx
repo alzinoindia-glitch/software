@@ -661,6 +661,7 @@ export default function App() {
             onQuickBill={handleQuickBill}
             initialSearchTerm={inventorySearchTerm}
             onClearInitialSearchTerm={() => setInventorySearchTerm('')}
+            onOpenUsedMobileIntake={() => handleSelectTab('used-phones')}
           />
         )}
 

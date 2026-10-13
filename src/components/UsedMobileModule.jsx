@@ -27,7 +27,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import MarketPriceCompareModal from './MarketPriceCompareModal';
-import { getAvailableBrandsForCategory, saveCustomBrand } from '../utils/customTaxonomy';
+import { getAvailableBrandsForCategory, isUsedMobileProduct, saveCustomBrand } from '../utils/customTaxonomy';
 import { saveProductImage, compressImageFile } from '../utils/productImageStore';
 
 export default function UsedMobileModule({ 
@@ -490,7 +490,7 @@ export default function UsedMobileModule({
   // =========================================================================
   // All Used Mobiles in inventory
   const usedInventory = useMemo(() => {
-    return inventory.filter(item => item.category === 'Used Mobiles');
+    return inventory.filter(isUsedMobileProduct);
   }, [inventory]);
 
   const inStockMobiles = useMemo(() => {

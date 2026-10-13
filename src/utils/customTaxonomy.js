@@ -14,12 +14,25 @@ export const BASE_CATEGORIES = [
 // Treat singular and plural spellings as one canonical inventory category.
 export function normalizeProductCategory(category) {
   const value = String(category || '').trim();
-  if (/^used mobiles?$/i.test(value)) return 'Used Mobiles';
+  if (/^(used mobiles?|refurbished mobiles?|pre[- ]owned mobiles?)$/i.test(value)) return 'Used Mobiles';
   return value;
 }
 
 export function productCategoriesMatch(left, right) {
   return normalizeProductCategory(left).toLowerCase() === normalizeProductCategory(right).toLowerCase();
+}
+
+// Older inventory imports may identify a used handset by its refurbished type
+// or name while retaining a legacy category. Keep those rows in the same used
+// mobile workflows without changing their persisted category value.
+export function isUsedMobileProduct(item) {
+  if (!item || typeof item !== 'object') return false;
+  const name = String(item.name || item.model || '').trim().toLowerCase();
+  return normalizeProductCategory(item.category).toLowerCase() === 'used mobiles' ||
+    String(item.type || '').toLowerCase() === 'refurbished' ||
+    item.isRefurbishedResale === true ||
+    /^(used\s|refurbished\s|pre[- ]owned\s)/i.test(name) ||
+    name.includes('refurbished') || name.includes('pre-owned');
 }
 
 export const BASE_MOBILE_BRANDS = [
