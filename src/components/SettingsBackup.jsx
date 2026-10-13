@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Database, 
   Download, 
@@ -11,11 +11,13 @@ import {
   Landmark, 
   Image as ImageIcon, 
   Star,
-  QrCode
+  QrCode,
+  Smartphone
 } from 'lucide-react';
 import { buildSsdArchive, openSsdArchive, saveSsdArchive } from '../utils/localArchive';
 import { purgeArchivedCloudRecords } from '../utils/cloudSyncService';
 import { compressImageFile } from '../utils/productImageStore';
+import { promptToInstallApp, subscribeToInstallState } from '../utils/pwaInstall';
 
 const parseInvoiceTerms = (value) => {
   const normalized = String(value || '').replace(/\.\s+(?=\d+\.\s)/g, '.\n');
@@ -91,6 +93,42 @@ export default function SettingsBackup({
   const [archiveSearch, setArchiveSearch] = useState('');
   const [archiveDomain, setArchiveDomain] = useState('all');
   const [deletePhrase, setDeletePhrase] = useState('');
+  const [installAvailable, setInstallAvailable] = useState(false);
+  const [appInstalled, setAppInstalled] = useState(false);
+  const [isIosDevice, setIsIosDevice] = useState(false);
+  const [installMessage, setInstallMessage] = useState('');
+
+  useEffect(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    setAppInstalled(standalone);
+    setIsIosDevice(/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    return subscribeToInstallState(({ canInstall, installed }) => {
+      setInstallAvailable(canInstall);
+      if (installed) setAppInstalled(true);
+    });
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (appInstalled) {
+      setInstallMessage('ALZINO is already installed on this device.');
+      return;
+    }
+    if (isIosDevice) {
+      setInstallMessage('iPhone and iPad do not let a website create a Home Screen app directly. Use your browser’s Share button → Add to Home Screen.');
+      return;
+    }
+    if (!installAvailable) {
+      setInstallMessage('This browser has not made an install prompt available. Open ALZINO in Chrome or Edge, then choose Install App here.');
+      return;
+    }
+
+    try {
+      const outcome = await promptToInstallApp();
+      setInstallMessage(outcome === 'accepted' ? 'ALZINO installation started.' : 'Installation was cancelled.');
+    } catch {
+      setInstallMessage('The browser could not open its install prompt. Please try again.');
+    }
+  };
 
   const handleCreateSsdArchive = async () => {
     if (archivePassword.length < 12) {
@@ -404,6 +442,20 @@ export default function SettingsBackup({
             <span>Saved successfully!</span>
           </div>
         )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', padding: '0.9rem 1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card, #FEFDFA)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <img src="/alzino-mark.svg" alt="" aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 10 }} />
+          <div>
+            <strong style={{ display: 'block' }}>Install App</strong>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Add ALZINO to this device and open it from its own app icon.</span>
+          </div>
+        </div>
+        <button type="button" className="btn-primary" onClick={handleInstallApp} disabled={appInstalled} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+          <Smartphone size={16} /> {appInstalled ? 'App Installed' : 'Install App'}
+        </button>
+        {installMessage && <p role="status" style={{ flexBasis: '100%', margin: 0, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{installMessage}</p>}
       </div>
 
       <div className="settings-layout-grid">
