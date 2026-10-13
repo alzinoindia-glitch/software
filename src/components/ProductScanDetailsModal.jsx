@@ -71,6 +71,7 @@ export default function ProductScanDetailsModal({
   }, [availableColors, selectedColorKey, product]);
 
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
 
   // Parse terms and conditions
   const termsList = useMemo(() => {
@@ -87,13 +88,60 @@ export default function ProductScanDetailsModal({
   // Active display image
   const displayImage = activeVariant.image || product.image || getRealProductImage(product);
 
-  const handleCopyScanUrl = () => {
+  const copyScanUrl = async () => {
     const scanUrl = buildProductScanUrl(product);
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(scanUrl);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(scanUrl);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = scanUrl;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        input.remove();
+      }
       setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
+      window.setTimeout(() => setCopiedLink(false), 2500);
+      return scanUrl;
+    } catch (error) {
+      console.error('Could not copy product link', error);
+      return null;
     }
+  };
+
+  const handleWhatsAppShare = () => {
+    const scanUrl = buildProductScanUrl(product);
+    const text = `Check out ${product.brand || ''} ${product.name || ''} at ALZINO: ${scanUrl}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    setShowShareOptions(false);
+  };
+
+  const handleInstagramShare = async () => {
+    const scanUrl = await copyScanUrl();
+    if (!scanUrl) return;
+    setShowShareOptions(false);
+    window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
+  };
+
+  const handleMoreShare = async () => {
+    const scanUrl = buildProductScanUrl(product);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${product.brand || ''} ${product.name || ''}`.trim(),
+          text: 'View this product at ALZINO',
+          url: scanUrl
+        });
+      } catch (error) {
+        if (error.name !== 'AbortError') console.error('Could not share product link', error);
+      }
+    } else {
+      await copyScanUrl();
+    }
+    setShowShareOptions(false);
   };
 
   const handleWhatsAppEnquiry = () => {
@@ -189,11 +237,13 @@ export default function ProductScanDetailsModal({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
             <button
               type="button"
-              onClick={handleCopyScanUrl}
-              title="Copy Product Scan Link"
+              onClick={() => setShowShareOptions((open) => !open)}
+              title="Share product"
+              aria-label="Share product"
+              aria-expanded={showShareOptions}
               style={{
                 background: 'rgba(255, 255, 255, 0.12)',
                 border: 'none',
@@ -210,6 +260,53 @@ export default function ProductScanDetailsModal({
             >
               {copiedLink ? <Check size={16} color="#6EE7B7" /> : <Share2 size={16} />}
             </button>
+
+            {showShareOptions && (
+              <div role="menu" aria-label="Share product" style={{
+                position: 'absolute',
+                zIndex: 5,
+                top: '42px',
+                right: '42px',
+                width: '210px',
+                padding: '0.4rem',
+                borderRadius: '12px',
+                background: '#FFFFFF',
+                color: '#17241F',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.24)',
+                border: '1px solid #E2E8E5'
+              }}>
+                {[
+                  { label: copiedLink ? 'Link copied' : 'Copy product link', action: async () => { await copyScanUrl(); setShowShareOptions(false); } },
+                  { label: 'Share on WhatsApp', action: handleWhatsAppShare },
+                  { label: 'Share on Instagram', action: handleInstagramShare },
+                  { label: 'More sharing apps', action: handleMoreShare }
+                ].map(({ label, action }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    role="menuitem"
+                    onClick={action}
+                    style={{
+                      width: '100%',
+                      padding: '0.65rem 0.7rem',
+                      border: 'none',
+                      borderRadius: '8px',
+                      background: 'transparent',
+                      color: '#17382E',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <div style={{ padding: '0.35rem 0.7rem 0.5rem', color: '#64746D', fontSize: '0.68rem', lineHeight: 1.35 }}>
+                  Instagram opens with the link copied. Paste it into a message or your profile.
+                </div>
+              </div>
+            )}
 
             <button
               type="button"
