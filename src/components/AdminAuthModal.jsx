@@ -168,7 +168,10 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
   };
 
   const cancelAuthentication = async () => {
-    await signOut();
+    // Keep the Supabase session so a cancelled setup or verification does not
+    // force the invited-email first factor again on this browser.
+    setCode('');
+    setError('');
     if (onClose) onClose();
     else {
       window.history.pushState(null, '', '/');
@@ -257,7 +260,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ShieldCheck color="var(--accent-primary)" />
-            <div><h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>Admin verification</h2><small style={{ color: 'var(--text-secondary)' }}>Authenticator app required</small></div>
+            <div><h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>{step === 'email' || step === 'sent' ? 'Admin sign-in' : 'Admin Authenticator'}</h2></div>
           </div>
           {onClose && <button type="button" aria-label="Close" onClick={onClose} className="btn-secondary"><X size={16} /></button>}
         </div>
@@ -266,7 +269,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         {message && <p role="status" style={{ display: 'flex', gap: 8, color: 'var(--status-green)', lineHeight: 1.45 }}><CheckCircle2 size={17} />{message}</p>}
 
         {step === 'email' && <form onSubmit={sendSignInLink} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Admin accounts are invited by the shop owner. We’ll email a one-time sign-in link; new devices then verify your authenticator app.</p>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Use your invited admin email to sign in on this browser. After that, use your authenticator code.</p>
           <label>Email address<input autoComplete="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></label>
           <button style={primaryStyle} disabled={busy}><Mail size={16} /> {busy ? 'Sending…' : 'Email sign-in link'}</button>
         </form>}
