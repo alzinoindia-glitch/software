@@ -579,8 +579,12 @@ export default function PrintTemplates({
                   </thead>
                   <tbody>
                     {printData.items.map((item, idx) => {
-                      const rateVal = printData.isNonGst ? item.rate : (item.rate / (1 + (item.gstRate / 100)));
-                      const taxVal = item.taxable || (item.total / (1 + (item.gstRate / 100)));
+                      const rateVal = printData.isNonGst || printData.priceIncludesGst === false
+                        ? item.rate
+                        : (item.rate / (1 + (item.gstRate / 100)));
+                      const taxVal = item.taxable || (printData.priceIncludesGst === false
+                        ? item.rate * item.qty
+                        : (item.total / (1 + (item.gstRate / 100))));
                       const cgstVal = (item.total - taxVal) / 2;
                       const sgstVal = cgstVal;
 

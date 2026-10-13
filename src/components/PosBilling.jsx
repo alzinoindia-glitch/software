@@ -603,19 +603,13 @@ export default function PosBilling({
 
   // Calculations
   const isNonGst = billingType === 'non-gst';
-  const subtotalInclusive = cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
-  
-  const totalTaxable = isNonGst 
-    ? subtotalInclusive 
-    : cart.reduce((sum, item) => {
-        const itemTotal = item.rate * item.qty;
-        const rateToUse = item.gstRate || 18;
-        const base = itemTotal / (1 + (rateToUse / 100));
-        return sum + base;
-      }, 0);
-
-  const totalGst = isNonGst ? 0 : (subtotalInclusive - totalTaxable);
-  const grandTotal = Math.max(0, Math.round(subtotalInclusive - Number(discount)));
+  const subtotalBeforeTax = cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
+  const totalTaxable = subtotalBeforeTax;
+  const totalGst = isNonGst ? 0 : cart.reduce((sum, item) => {
+    const itemTaxable = item.rate * item.qty;
+    return sum + itemTaxable * ((item.gstRate || 18) / 100);
+  }, 0);
+  const grandTotal = Math.max(0, subtotalBeforeTax + totalGst - Number(discount));
   
   // Total line profit (for admin mode)
   const totalProfit = cart.reduce((sum, item) => {
@@ -790,6 +784,7 @@ export default function PosBilling({
       invoiceNo,
       date: today,
       isNonGst,
+      priceIncludesGst: false,
       invoiceType: isNonGst ? 'Non-GST Cash Memo / Estimate' : 'GST Tax Invoice',
       customerName: customerName.trim() || 'Counter Customer',
       customerPhone: customerPhone.trim(),
@@ -816,8 +811,8 @@ export default function PosBilling({
         rate: item.rate,
         buyPrice: item.buyPrice,
         gstRate: isNonGst ? 0 : item.gstRate,
-        taxable: isNonGst ? (item.rate * item.qty) : (item.rate * item.qty) / (1 + (item.gstRate / 100)),
-        total: item.rate * item.qty,
+        taxable: item.rate * item.qty,
+        total: item.rate * item.qty + (isNonGst ? 0 : item.rate * item.qty * ((item.gstRate || 18) / 100)),
         profit: (item.rate - item.buyPrice) * item.qty,
         warranty: item.warranty || '',
         rack: item.rack || 'R-01',
@@ -936,15 +931,17 @@ export default function PosBilling({
     const isNonGstInv = invoiceToEdit.isNonGst;
     const subtotal = invoiceToEdit.items.reduce((s, it) => s + (Number(it.rate) * Number(it.qty)), 0);
     const disc = Number(invoiceToEdit.discount) || 0;
-    const grand = Math.max(0, Math.round(subtotal - disc));
-    
-    const taxable = isNonGstInv ? subtotal : invoiceToEdit.items.reduce((sum, item) => {
+    const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
+    const taxable = isNonGstInv || usesExclusivePrices ? subtotal : invoiceToEdit.items.reduce((sum, item) => {
       const itTot = Number(item.rate) * Number(item.qty);
       const rate = item.gstRate || 18;
       return sum + (itTot / (1 + (rate / 100)));
     }, 0);
 
-    const gst = isNonGstInv ? 0 : (subtotal - taxable);
+    const gst = isNonGstInv ? 0 : usesExclusivePrices
+      ? invoiceToEdit.items.reduce((sum, item) => sum + (Number(item.rate) * Number(item.qty) * ((item.gstRate || 18) / 100)), 0)
+      : (subtotal - taxable);
+    const grand = Math.max(0, subtotal + (usesExclusivePrices ? gst : 0) - disc);
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
@@ -955,7 +952,9 @@ export default function PosBilling({
       ...invoiceToEdit,
       items: invoiceToEdit.items.map(it => ({
         ...it,
-        total: Number(it.rate) * Number(it.qty),
+        total: Number(it.rate) * Number(it.qty) + (usesExclusivePrices && !isNonGstInv
+          ? Number(it.rate) * Number(it.qty) * ((it.gstRate || 18) / 100)
+          : 0),
         profit: (Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)
       })),
       taxableAmount: taxable,
@@ -1611,14 +1610,14 @@ export default function PosBilling({
               fontSize: '0.78rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                <span>Subtotal:</span>
-                <span className="font-mono">₹{subtotalInclusive.toFixed(2)}</span>
+                <span>{isNonGst ? 'Subtotal:' : 'Subtotal (before GST):'}</span>
+                <span className="font-mono">₹{subtotalBeforeTax.toFixed(2)}</span>
               </div>
 
               {!isNonGst ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>
-                    GST (18%):
+                    GST added:
                     <button 
                       onClick={() => setIsInterstate(!isInterstate)}
                       style={{ marginLeft: '0.25rem', fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', border: 'none', background: 'none' }}
@@ -1626,7 +1625,7 @@ export default function PosBilling({
                       {isInterstate ? '[IGST]' : '[CGST+SGST]'}
                     </button>
                   </span>
-                  <span className="font-mono">₹{totalGst.toFixed(2)}</span>
+                  <span className="font-mono">+₹{totalGst.toFixed(2)}</span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
