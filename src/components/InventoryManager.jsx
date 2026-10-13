@@ -951,32 +951,6 @@ export default function InventoryManager({
                 <span>Add</span>
               </button>
 
-              {inventory.length > 0 && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (window.confirm(`Remove all ${inventory.length} products from this inventory? This clears product images on this device. The empty inventory will sync to the shop cloud when an authorized shop account is connected.`)) {
-                      await Promise.all(inventory.map(item => deleteProductImages(item.id).catch(() => {})));
-                      setInventory([]);
-                    }
-                  }}
-                  className="btn-secondary"
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    fontSize: '0.74rem',
-                    height: '32px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    color: 'var(--color-danger)',
-                    borderColor: 'rgba(239, 68, 68, 0.35)'
-                  }}
-                  title="Clear All Test Products & Reset Catalog"
-                >
-                  <Trash2 size={13} color="var(--color-danger)" />
-                  <span className="hide-on-mobile">Clear Test Stock</span>
-                </button>
-              )}
             </>
           )}
         </div>
