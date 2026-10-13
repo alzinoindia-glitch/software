@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
 import { clearAllProductImages, syncAllProductImagesToCloud } from './productImageStore';
 
@@ -61,16 +62,16 @@ let publicCatalogRevision = 0;
 
 export const getActiveOrgId = async (client = getSupabaseClient()) => {
   if (!client) return null;
-  const { data: { user }, error: authError } = await client.auth.getUser();
-  if (authError || !user) return null;
+  const identity = getAuthenticatorIdentity();
+  if (!identity) return null;
 
   const { data: profile, error } = await client
     .from('profiles')
     .select('organization_id, is_active')
-    .eq('id', user.id)
+    .eq('id', identity.id)
     .maybeSingle();
 
-  if (error || !profile?.is_active || !profile.organization_id) return null;
+  if (error || !profile?.is_active || !profile.organization_id || profile.organization_id !== identity.organizationId) return null;
   return profile.organization_id;
 };
 
@@ -81,9 +82,9 @@ export const purgeArchivedCloudRecords = async (archiveOrganizationId, archiveCu
   if (!client || !isSupabaseConfigured()) return { success: false, reason: 'Supabase is not configured.' };
   const orgId = await getActiveOrgId(client);
   if (!orgId) return { success: false, reason: 'Sign in with an authorized shop account to archive cloud data.' };
-  const { data: { user } } = await client.auth.getUser();
-  const { data: profile, error: profileError } = await client.from('profiles').select('role, is_active').eq('id', user?.id).maybeSingle();
-  if (profileError || !profile?.is_active || profile.role !== 'admin') return { success: false, reason: 'Only an active admin account can permanently remove archived records.' };
+  const identity = getAuthenticatorIdentity();
+  const { data: profile, error: profileError } = await client.from('profiles').select('role, is_active').eq('id', identity?.id).maybeSingle();
+  if (profileError || !profile?.is_active || profile.role !== 'admin' || identity?.portal !== 'admin') return { success: false, reason: 'Only an active admin account can permanently remove archived records.' };
   if (String(archiveOrganizationId) !== String(orgId)) return { success: false, reason: 'This archive belongs to a different shop and cannot be used to delete this shop’s data.' };
 
   const domainNames = Object.keys(purgePlan || {});
@@ -265,7 +266,7 @@ export const pushCollectionToCloud = (key, data) => {
         pendingCloudWrites.delete(key);
         return;
       }
-      const { data: { user } } = await client.auth.getUser();
+      const identity = getAuthenticatorIdentity();
       let expectedVersion = currentPending.baseVersion ?? versionByScope.get(scope);
       if (expectedVersion === undefined) {
         const { data: current, error: readError } = await client
@@ -294,7 +295,7 @@ export const pushCollectionToCloud = (key, data) => {
           domain: KEY_TO_DOMAIN[key],
           payload: cloudData ?? [],
           updated_at: new Date().toISOString(),
-          updated_by: user?.id ?? null
+          updated_by: identity?.id ?? null
         }).select('version').maybeSingle();
         error = result.error;
         savedVersion = result.data?.version;
@@ -302,7 +303,7 @@ export const pushCollectionToCloud = (key, data) => {
         const result = await client.from(STORE_STATE_TABLE).update({
           payload: cloudData ?? [],
           updated_at: new Date().toISOString(),
-          updated_by: user?.id ?? null
+          updated_by: identity?.id ?? null
         })
           .eq('organization_id', orgId)
           .eq('domain', KEY_TO_DOMAIN[key])
@@ -453,7 +454,7 @@ export const pushAllToCloud = async (stateObj = {}) => {
   if (hasExistingBusinessData) {
     return { success: false, reason: 'The shop cloud already has data. Pull it to this device before syncing more changes.' };
   }
-  const { data: { user } } = await client.auth.getUser();
+  const identity = getAuthenticatorIdentity();
 
   const rows = Object.entries(KEY_TO_DOMAIN)
     .filter(([key]) => stateObj[key] !== undefined)
@@ -462,7 +463,7 @@ export const pushAllToCloud = async (stateObj = {}) => {
       domain,
       payload: compactCloudPayload(key, stateObj[key]) ?? [],
       updated_at: new Date().toISOString(),
-      updated_by: user?.id ?? null
+      updated_by: identity?.id ?? null
     }));
 
   if (!rows.length) return { success: true, count: 0, target: STORE_STATE_TABLE };
@@ -562,16 +563,14 @@ export const subscribeRealtimeSync = (setters = {}) => {
       .subscribe();
   };
   subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
-  const { data: authListener } = client.auth.onAuthStateChange(() => {
-    setTimeout(() => subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err)), 0);
-  });
   const handleAuthReady = () => subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
   window.addEventListener('alzino-cloud-auth-ready', handleAuthReady);
+  window.addEventListener('alzino-cloud-auth-changed', handleAuthReady);
 
   return () => {
     cancelled = true;
-    authListener.subscription.unsubscribe();
     window.removeEventListener('alzino-cloud-auth-ready', handleAuthReady);
+    window.removeEventListener('alzino-cloud-auth-changed', handleAuthReady);
     if (channel) client.removeChannel(channel);
   };
 };

@@ -1,6 +1,7 @@
 import { getActiveOrgId } from './cloudSyncService';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { exportAllProductImages } from './productImageStore';
+import { getAuthenticatorIdentity } from './authenticatorSession';
 
 const ARCHIVE_FORMAT = 'alzino-ssd-archive';
 const ARCHIVE_VERSION = 1;
@@ -80,9 +81,9 @@ export const buildSsdArchive = async ({ cutoff, password }) => {
   const client = getSupabaseClient();
   const organizationId = await getActiveOrgId(client);
   if (!organizationId) throw new Error('Sign in with an authorized admin shop account before creating an archive.');
-  const { data: { user } } = await client.auth.getUser();
-  const { data: profile, error: profileError } = await client.from('profiles').select('role, is_active').eq('id', user?.id).maybeSingle();
-  if (profileError || !profile?.is_active || profile.role !== 'admin') throw new Error('Only an active admin account can create a shop archive.');
+  const identity = getAuthenticatorIdentity();
+  const { data: profile, error: profileError } = await client.from('profiles').select('role, is_active').eq('id', identity?.id).maybeSingle();
+  if (profileError || !profile?.is_active || profile.role !== 'admin' || identity?.portal !== 'admin') throw new Error('Only an active admin account can create a shop archive.');
   const { data: rows, error } = await client.from('store_state')
     .select('domain, payload, version, updated_at')
     .eq('organization_id', organizationId);

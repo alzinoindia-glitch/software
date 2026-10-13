@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
+import { getAuthenticatorIdentity } from './authenticatorSession';
 
 const DB_NAME = 'ALZINO_PRODUCT_IMAGES';
 const STORE = 'images';
@@ -13,8 +14,6 @@ export const IMAGE_SIDES = ['front', 'back'];
 
 let dbPromise = null;
 let authorizedOrgCache = { orgId: null, expiresAt: 0, pending: null };
-let authorizedOrgAuthClient = null;
-let authorizedOrgAuthSubscription = null;
 let authCacheGeneration = 0;
 const signedImageUrls = new Map();
 const openDb = () => {
@@ -44,27 +43,14 @@ const getAuthorizedOrganization = async () => {
   if (authorizedOrgCache.pending) return authorizedOrgCache.pending;
   const client = getSupabaseClient();
   if (!client) return null;
-  if (authorizedOrgAuthClient !== client) {
-    authorizedOrgAuthSubscription?.unsubscribe();
-    authorizedOrgAuthClient = client;
-    const { data } = client.auth.onAuthStateChange(() => {
-      authCacheGeneration++;
-      authorizedOrgCache = { orgId: null, expiresAt: 0, pending: null };
-      signedImageUrls.clear();
-    });
-    authorizedOrgAuthSubscription = data.subscription;
-  }
   const generation = authCacheGeneration;
   const pending = (async () => {
     let orgId = null;
     try {
-      const [{ data: { user } }, { data: assurance }] = await Promise.all([
-        client.auth.getUser(),
-        client.auth.mfa.getAuthenticatorAssuranceLevel()
-      ]);
-      if (!user || assurance?.currentLevel !== 'aal2') return null;
-      const { data: profile } = await client.from('profiles').select('organization_id, is_active').eq('id', user.id).maybeSingle();
-      orgId = profile?.is_active ? profile.organization_id : null;
+      const identity = getAuthenticatorIdentity();
+      if (!identity) return null;
+      const { data: profile } = await client.from('profiles').select('organization_id, is_active').eq('id', identity.id).maybeSingle();
+      orgId = profile?.is_active && profile.organization_id === identity.organizationId ? profile.organization_id : null;
       return orgId;
     } finally {
       if (generation === authCacheGeneration) authorizedOrgCache = { orgId, expiresAt: Date.now() + 15_000, pending: null };
@@ -73,6 +59,14 @@ const getAuthorizedOrganization = async () => {
   authorizedOrgCache.pending = pending;
   return pending;
 };
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('alzino-cloud-auth-changed', () => {
+    authCacheGeneration++;
+    authorizedOrgCache = { orgId: null, expiresAt: 0, pending: null };
+    signedImageUrls.clear();
+  });
+}
 
 const uploadRemoteImage = async (organizationId, productId, side, dataUrl) => {
   const blob = await fetch(dataUrl).then(response => response.blob());

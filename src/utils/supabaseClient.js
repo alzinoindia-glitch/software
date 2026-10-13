@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatorAccessToken } from './authenticatorSession';
 
 export const DEFAULT_SUPABASE_URL = 'https://iaugdtkalwjcwnjadony.supabase.co';
 
@@ -52,9 +53,13 @@ export const getSupabaseClient = () => {
   lastUrl = url;
   lastKey = anonKey;
   cachedClient = createClient(url, anonKey, {
+    // Supabase issues an access token only after the server verifies the TOTP.
+    // The browser keeps that token in memory-backed sessionStorage for RLS.
+    accessToken: async () => getAuthenticatorAccessToken(),
     auth: {
-      persistSession: true,
-      autoRefreshToken: true
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
     }
   });
 
