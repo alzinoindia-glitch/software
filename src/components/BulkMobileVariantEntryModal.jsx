@@ -673,8 +673,8 @@ export default function BulkMobileVariantEntryModal({
 
         const errors = [];
         if (isAlzinoMaster) {
-          errors.push('Stock quantities are left at 0 because the workbook marks all units as not physically counted.');
-          errors.push('Selling price, MRP, GST, warranty and actual inward date are left blank until verified by an admin.');
+          errors.push('Workbook stock quantities are imported as listed, but the sheet marks them NOT PHYSICALLY COUNTED. Verify the physical count before billing.');
+          errors.push('Suggested selling prices are imported as listed. Box MRP is blank in this workbook; GST, warranty and actual inward date stay blank until verified.');
         }
         const usedCodes = new Set(inventory.flatMap(item => [item.barcode, ...(item.barcodes || []), ...((item.units || []).map(unit => unit.barcode))]).filter(Boolean).map(code => String(code).toUpperCase()));
         let codeSequence = (Date.now() % 900000) + 100000;
@@ -701,15 +701,14 @@ export default function BulkMobileVariantEntryModal({
           saveCustomSubcategory(subCategory, category);
           const model = row.Model || row.model || row['Product Name / Model'] || row['Invoice Product Name'] || '';
           const suggestedPrice = Number.parseFloat(row.SellingPrice ?? row.SellPrice ?? row.price ?? row['Suggested Selling ₹']) || 0;
-          const sellPrice = isMasterRow ? 0 : suggestedPrice;
+          const sellPrice = suggestedPrice;
 
           if (!model) errors.push(`Row ${idx + 2}: Missing Model name`);
           if (!isMasterRow && (!sellPrice || sellPrice <= 0)) errors.push(`Row ${idx + 2}: Selling Price is blank and will remain 0 until edited`);
 
           const rawQuantity = row.Quantity ?? row.quantity ?? row.Qty ?? row.qty ?? row['Stock Units'];
           const parsedQuantity = Number.parseInt(rawQuantity, 10);
-          const stockNotVerified = isMasterRow && String(row['Stock Verification'] || '').toLowerCase().includes('not physically counted');
-          const quantity = isMasterRow && stockNotVerified ? 0 : (Number.isFinite(parsedQuantity) ? Math.max(0, parsedQuantity) : 0);
+          const quantity = Number.isFinite(parsedQuantity) ? Math.max(0, parsedQuantity) : 0;
           const sourceBarcode = row.Barcode || row.barcode || row['Barcode / SKU'];
 
           return {
@@ -732,7 +731,7 @@ export default function BulkMobileVariantEntryModal({
             gstRate: isMasterRow ? 0 : (Number.parseFloat(row.GSTRate ?? row.GstRate ?? row.gstRate ?? row['System Tax % (verify)']) || 0),
             purchasePrice: Number.parseFloat(row.PurchasePrice ?? row.BuyPrice ?? row.buyPrice ?? row['Buy Cost ₹']) || 0,
             sellPrice,
-            mrp: isMasterRow ? 0 : (Number.parseFloat(row.MRP ?? row.mrp ?? sellPrice) || 0),
+            mrp: Number.parseFloat(row.MRP ?? row.mrp ?? row['Box MRP ₹'] ?? 0) || 0,
             rack: String(isMasterRow ? '' : (row.Rack || row.rack || 'R-01')).trim().toUpperCase(),
             bin: String(isMasterRow ? '' : (row.Bin || row.bin || 'B-01')).trim().toUpperCase(),
             warranty: String(row.Warranty || row.warranty || '').trim(),
