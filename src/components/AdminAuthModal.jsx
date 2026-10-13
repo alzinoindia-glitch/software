@@ -41,7 +41,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
     }
     const { data, error: enrollError } = await client.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: 'ALZINO Admin Google Authenticator'
+      friendlyName: 'ALZINO Admin Authenticator'
     });
     if (enrollError) throw enrollError;
     setFactorId(data.id);
@@ -71,7 +71,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
     if (verified) {
       setFactorId(verified.id);
       setStep('verify-code');
-      setMessage('Enter the current code from Google Authenticator.');
+      setMessage('Enter the current code from your authenticator app.');
       return;
     }
     const pending = factors?.totp?.find(item => item.status === 'unverified');
@@ -123,7 +123,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
       });
       if (authError) throw authError;
       setStep('sent');
-      setMessage('Sign-in link sent. Open it on this device, then set up Google Authenticator if prompted.');
+      setMessage('Sign-in link sent. Open it on this device, then set up your authenticator app if prompted.');
     } catch (err) {
       setError(err.message || 'Could not send sign-in link. Confirm this email has been invited in Supabase Auth.');
     } finally { setBusy(false); }
@@ -257,7 +257,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ShieldCheck color="var(--accent-primary)" />
-            <div><h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>Admin verification</h2><small style={{ color: 'var(--text-secondary)' }}>Google Authenticator required</small></div>
+            <div><h2 id="admin-auth-title" style={{ margin: 0, fontSize: '1.05rem' }}>Admin verification</h2><small style={{ color: 'var(--text-secondary)' }}>Authenticator app required</small></div>
           </div>
           {onClose && <button type="button" aria-label="Close" onClick={onClose} className="btn-secondary"><X size={16} /></button>}
         </div>
@@ -266,7 +266,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         {message && <p role="status" style={{ display: 'flex', gap: 8, color: 'var(--status-green)', lineHeight: 1.45 }}><CheckCircle2 size={17} />{message}</p>}
 
         {step === 'email' && <form onSubmit={sendSignInLink} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Admin accounts are invited by the shop owner in Supabase Auth. We’ll email a one-time sign-in link; new admin devices must verify Google Authenticator.</p>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.45 }}>Admin accounts are invited by the shop owner. We’ll email a one-time sign-in link; new devices then verify your authenticator app.</p>
           <label>Email address<input autoComplete="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></label>
           <button style={primaryStyle} disabled={busy}><Mail size={16} /> {busy ? 'Sending…' : 'Email sign-in link'}</button>
         </form>}
@@ -274,15 +274,15 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         {step === 'sent' && <button type="button" style={primaryStyle} onClick={() => setStep('email')}>Use a different email</button>}
 
         {step === 'enroll-code' && <form onSubmit={verifyAuthenticatorCode} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ textAlign: 'center', margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>Enter the 6-digit code from Google Authenticator</p>
+          <p style={{ textAlign: 'center', margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>Enter the 6-digit code from your authenticator app</p>
           {renderCodeInputs('Authenticator setup code')}
           <div style={{ border: '2px solid var(--border-color)', borderRadius: 14, padding: 'clamp(0.85rem, 3vw, 1.4rem)', textAlign: 'center', background: 'var(--surface-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '1px dashed var(--border-color)', paddingBottom: 12, marginBottom: 12 }}>
-              <strong style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><QrCode size={19} /> Scan QR in Google Authenticator</strong>
+              <strong style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><QrCode size={19} /> Scan QR in your authenticator app</strong>
               <button type="button" className="btn-secondary" onClick={() => setQrVisible(visible => !visible)}>{qrVisible ? 'Hide QR code' : 'Show QR code'}</button>
             </div>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0.25rem 0 1rem' }}>Open Google Authenticator on your phone, tap <strong>+</strong>, then scan this QR code.</p>
-            {qrVisible && qrCode && <img src={qrCode} alt="Private Google Authenticator setup QR code" style={{ display: 'block', width: 'min(240px, 70vw)', height: 'auto', aspectRatio: '1', margin: '0 auto 1rem', padding: 8, background: '#fff', border: '2px solid var(--border-color)', borderRadius: 12, boxSizing: 'border-box' }} />}
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0.25rem 0 1rem' }}>Open Microsoft or Google Authenticator on your phone, tap <strong>+</strong>, then scan this QR code.</p>
+            {qrVisible && qrCode && <img src={qrCode} alt="Private authenticator setup QR code" style={{ display: 'block', width: 'min(240px, 70vw)', height: 'auto', aspectRatio: '1', margin: '0 auto 1rem', padding: 8, background: '#fff', border: '2px solid var(--border-color)', borderRadius: 12, boxSizing: 'border-box' }} />}
             {secret && <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: 'var(--text-secondary)' }}>
               <span>Can’t scan? Setup key:</span>
               <code style={{ fontWeight: 750, overflowWrap: 'anywhere', color: 'var(--text-primary)' }}>{secret}</code>
@@ -297,7 +297,7 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
         </form>}
 
         {step === 'verify-code' && <form onSubmit={verifyAuthenticatorCode} style={{ display: 'grid', gap: 12 }}>
-          <p style={{ textAlign: 'center', margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>Enter your current Google Authenticator code.</p>
+          <p style={{ textAlign: 'center', margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>Enter your current code from Microsoft or Google Authenticator.</p>
           {renderCodeInputs('Authenticator code')}
           <button style={primaryStyle} disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Verify & Unlock Admin'}</button>
         </form>}
