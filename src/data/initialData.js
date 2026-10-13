@@ -34,6 +34,7 @@ export const defaultShopConfig = {
   normalPrintCopies: 1,
   oldStockReminderMonths: 3,
   oldStockReminderCustomMonths: 6,
+  oldStockReminderCustomUnit: 'months',
   barcodeScannerBeep: true,
   barcodeScannerAutoAdd: true,
   // SSD Hardware Storage Settings

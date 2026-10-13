@@ -128,8 +128,9 @@ export default function ExecutiveDashboard({
     () => inventory.map(item => ({ ...item, computedAgingDays: getAgingDays(item) })),
     [inventory]
   );
-  const oldStockReminderMonths = Number(shopConfig.oldStockReminderMonths === 'custom' ? shopConfig.oldStockReminderCustomMonths : shopConfig.oldStockReminderMonths) || 3;
-  const oldStockReminderDays = oldStockReminderMonths === 12 ? 365 : oldStockReminderMonths * 30;
+  const oldStockReminderDays = shopConfig.oldStockReminderMonths === 'custom'
+    ? (Number(shopConfig.oldStockReminderCustomMonths) || 1) * ({ days: 1, months: 30, years: 365 }[shopConfig.oldStockReminderCustomUnit] || 30)
+    : (Number(shopConfig.oldStockReminderMonths) === 12 ? 365 : (Number(shopConfig.oldStockReminderMonths) || 3) * 30);
 
   const agingStockItems = useMemo(() => {
     return agedInventory.filter(item => {

@@ -68,6 +68,7 @@ export default function SettingsBackup({
       normalPrintCopies: shopConfig.normalPrintCopies || 1,
       oldStockReminderMonths: shopConfig.oldStockReminderMonths || 3,
       oldStockReminderCustomMonths: shopConfig.oldStockReminderCustomMonths || 6,
+      oldStockReminderCustomUnit: shopConfig.oldStockReminderCustomUnit || 'months',
       barcodeScannerBeep: shopConfig.barcodeScannerBeep !== false,
       barcodeScannerAutoAdd: shopConfig.barcodeScannerAutoAdd !== false,
       storageMode: shopConfig.storageMode || 'ssd-local',
@@ -745,8 +746,14 @@ export default function SettingsBackup({
                   <option value="12">1 year</option>
                   <option value="custom">Custom</option>
                 </select>
-                {formData.oldStockReminderMonths === 'custom' && <input className="input-field" type="number" min="1" max="120" value={formData.oldStockReminderCustomMonths} onChange={e => setFormData({ ...formData, oldStockReminderCustomMonths: Math.max(1, Number(e.target.value) || 1) })} aria-label="Custom old stock reminder months" style={{ width: '150px' }} />}
-                {formData.oldStockReminderMonths === 'custom' && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>months</span>}
+                {formData.oldStockReminderMonths === 'custom' && <>
+                  <input className="input-field" type="number" min="1" max="3650" value={formData.oldStockReminderCustomMonths} onChange={e => setFormData({ ...formData, oldStockReminderCustomMonths: Math.max(1, Number(e.target.value) || 1) })} aria-label="Custom old stock reminder duration" style={{ width: '120px' }} />
+                  <select className="input-field" value={formData.oldStockReminderCustomUnit} onChange={e => setFormData({ ...formData, oldStockReminderCustomUnit: e.target.value })} aria-label="Custom old stock reminder unit" style={{ width: 'auto', minWidth: '130px' }}>
+                    <option value="days">Days</option>
+                    <option value="months">Months</option>
+                    <option value="years">Years</option>
+                  </select>
+                </>}
               </div>
             </div>
           </div>
