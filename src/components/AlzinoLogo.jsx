@@ -14,7 +14,9 @@ export default function AlzinoLogo({
 }) {
   const iconHeight = height;
   const iconWidth = Math.round(height * 0.96); // aspect ratio for 'A'
-  const fontSize = Math.round(height * 0.92);
+  // The SVG mark includes transparent viewBox padding. Slightly enlarge the
+  // wordmark so its visible capital height aligns with the visible A mark.
+  const fontSize = Math.round(height * 1.14);
 
   return (
     <div 
