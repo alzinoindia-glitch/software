@@ -981,8 +981,9 @@ export default function PrintTemplates({
                   />
                 );
               })()}
-              <div className="product-sticker-price" style={{ fontSize: '9px', lineHeight: 1, fontWeight: 900 }}>
-                ₹{Number(printData.price || 0).toLocaleString()} {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7.5px', color: '#666', marginLeft: '4px' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
+              <div className="product-sticker-price" style={{ fontSize: '8px', lineHeight: 1, fontWeight: 900, display: 'flex', justifyContent: 'space-between', gap: '2px', whiteSpace: 'nowrap' }}>
+                <span>Our Price: ₹{Number(printData.price || 0).toLocaleString()}</span>
+                {printData.mrp && printData.mrp > printData.price ? <span style={{ textDecoration: 'line-through', fontSize: '7px', color: '#666' }}>MRP: ₹{Number(printData.mrp).toLocaleString()}</span> : null}
               </div>
             </div>
           ) : (

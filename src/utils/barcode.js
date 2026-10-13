@@ -214,7 +214,7 @@ export async function downloadStickerImage({
     drawBarcodeToCanvas(barcode, 30, 68, width - 60, 110);
   }
 
-  // Footer: MRP & Sell Price
+  // Footer: show both reference MRP and the actual customer selling price.
   ctx.textAlign = 'left';
   ctx.fillStyle = '#64748B';
   ctx.font = '13px sans-serif';
@@ -222,10 +222,14 @@ export async function downloadStickerImage({
     ctx.fillText(`MRP: ₹${Number(mrp).toLocaleString()}`, 30, height - 24);
   }
 
+  const priceText = `₹${Number(price).toLocaleString()}`;
   ctx.textAlign = 'right';
   ctx.fillStyle = '#0C5B43';
   ctx.font = 'bold 22px sans-serif';
-  ctx.fillText(`₹${Number(price).toLocaleString()}`, width - 30, height - 22);
+  const priceWidth = ctx.measureText(priceText).width;
+  ctx.fillText(priceText, width - 30, height - 22);
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText('OUR PRICE', width - 38 - priceWidth, height - 22);
 
   // Trigger Download
   const link = document.createElement('a');
