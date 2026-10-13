@@ -415,6 +415,24 @@ export default function App() {
     setCloudHydrated(false);
   }, [cashierTargetPath]);
 
+  useEffect(() => {
+    const handleExpiredSession = event => {
+      const expiredPortal = event.detail?.portal || role;
+      setCloudHydrated(false);
+      if (expiredPortal === 'cashier') {
+        setRole('cashier');
+        setPortal('cashier');
+        setIsCashierAuthOpen(true);
+      } else {
+        setRole('admin');
+        setPortal('admin');
+        setIsAdminAuthModalOpen(true);
+      }
+    };
+    window.addEventListener('alzino-cloud-auth-expired', handleExpiredSession);
+    return () => window.removeEventListener('alzino-cloud-auth-expired', handleExpiredSession);
+  }, [role]);
+
   // Apply theme class to <body>
   useEffect(() => {
     document.body.className = theme === 'cream' ? 'theme-cream' : 'theme-dark';
