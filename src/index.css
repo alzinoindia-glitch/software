@@ -644,7 +644,9 @@ input, select, textarea {
 
 .pos-product-catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: stretch;
+  grid-auto-rows: minmax(116px, auto);
   gap: 0.65rem;
 }
 
@@ -939,7 +941,8 @@ input, select, textarea {
 
 @media (max-width: 640px) {
   .pos-product-catalog-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)) !important;
+    grid-auto-rows: minmax(116px, auto);
     gap: 0.45rem !important;
   }
 

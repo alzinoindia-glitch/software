@@ -65,6 +65,7 @@ export default function PosBilling({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cart, setCart] = useState([]);
+  const [catalogLimit, setCatalogLimit] = useState(80);
   
   // Billing Type: GST Invoice vs Non-GST Estimate
   const [billingType, setBillingType] = useState('gst'); // 'gst' | 'non-gst'
@@ -169,10 +170,9 @@ export default function PosBilling({
   const [editingInvoiceModal, setEditingInvoiceModal] = useState(false);
   const [invoiceToEdit, setInvoiceToEdit] = useState(null);
   const [scanNotification, setScanNotification] = useState('');
-  const [scanCandidate, setScanCandidate] = useState(null);
-  const [scanQuantity, setScanQuantity] = useState('1');
   
   const searchInputRef = useRef(null);
+  const scanHandlerRef = useRef(null);
 
   // Tax Filter: 'all' | 'gst' | 'non-gst'
   const [posTaxFilter, setPosTaxFilter] = useState('all');
@@ -221,19 +221,62 @@ export default function PosBilling({
     });
   }, [inventory, selectedCategory, posTaxFilter, searchTerm]);
 
+  useEffect(() => {
+    setCatalogLimit(80);
+  }, [selectedCategory, posTaxFilter, searchTerm]);
+
+  const visibleProducts = useMemo(
+    () => filteredProducts.slice(0, catalogLimit),
+    [filteredProducts, catalogLimit]
+  );
+
+  const getTrackedUnits = (product) => {
+    if (Array.isArray(product.units) && product.units.length > 0) {
+      return product.units.map(unit => ({
+        id: unit.imei1 || unit.imei2 || unit.barcode || '',
+        imei: unit.imei1 || unit.imei2 || '',
+        barcode: unit.barcode || ''
+      })).filter(unit => unit.id);
+    }
+    return (product.imeis || []).map(imei => ({ id: imei, imei, barcode: '' }));
+  };
+
   // Add product to cart
-  const addToCart = (product, specificImei = null, requestedQty = 1) => {
+  const addToCart = (product, specificImei = null, requestedQty = 1, specificUnitId = null) => {
     const quantity = Math.max(1, Math.floor(Number(requestedQty) || 1));
+    const trackedUnits = getTrackedUnits(product);
     if (product.stock <= 0) {
       alert(`"${product.name}" is currently out of stock!`);
-      return;
+      return false;
+    }
+    const currentLine = cart.find(item => item.id === product.id);
+    if (specificUnitId && currentLine?.selectedUnitIds?.includes(specificUnitId)) {
+      setScanNotification(`⚠️ This unit was already scanned: ${product.name}.`);
+      setTimeout(() => setScanNotification(''), 2500);
+      return false;
+    }
+    if ((currentLine?.qty || 0) + quantity > product.stock) {
+      setScanNotification(`⚠️ Only ${product.stock} ${product.name} unit(s) are in stock.`);
+      setTimeout(() => setScanNotification(''), 2500);
+      return false;
+    }
+    if (trackedUnits.length > 0) {
+      const availableUnits = trackedUnits.filter(unit => !currentLine?.selectedUnitIds?.includes(unit.id));
+      const requestedUnits = specificUnitId
+        ? trackedUnits.some(unit => unit.id === specificUnitId && !currentLine?.selectedUnitIds?.includes(unit.id)) ? 1 : 0
+        : availableUnits.length;
+      if (requestedUnits < quantity) {
+        setScanNotification(`⚠️ No additional individually identified ${product.name} unit is available.`);
+        setTimeout(() => setScanNotification(''), 2500);
+        return false;
+      }
     }
 
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
-      const hasImeis = product.imeis && product.imeis.length > 0;
+      const hasTrackedUnits = trackedUnits.length > 0;
       if (existing) {
-        if (specificImei && existing.selectedImeis.includes(specificImei)) {
+        if (specificUnitId && existing.selectedUnitIds?.includes(specificUnitId)) {
           alert('This exact IMEI/unit is already in the bill. Scan a different unit.');
           return prev;
         }
@@ -242,23 +285,26 @@ export default function PosBilling({
           return prev;
         }
         
-        const availableImeis = hasImeis
-          ? product.imeis.filter(im => !existing.selectedImeis.includes(im))
+        const availableUnits = hasTrackedUnits
+          ? trackedUnits.filter(unit => !existing.selectedUnitIds?.includes(unit.id))
           : [];
-        const assignedImeis = specificImei
-          ? [specificImei]
-          : availableImeis.slice(0, quantity);
-        if (hasImeis && assignedImeis.length < quantity) {
-          alert(`Only ${existing.qty + assignedImeis.length} serialized unit(s) are available to add.`);
+        const assignedUnits = specificUnitId
+          ? trackedUnits.filter(unit => unit.id === specificUnitId)
+          : availableUnits.slice(0, quantity);
+        if (hasTrackedUnits && assignedUnits.length < quantity) {
+          alert(`Only ${existing.qty + assignedUnits.length} individually identified unit(s) are available to add.`);
           return prev;
         }
+
+        const assignedImeis = assignedUnits.map(unit => unit.imei).filter(Boolean);
 
         return prev.map(item => {
           if (item.id === product.id) {
             return {
               ...item,
               qty: item.qty + quantity,
-              selectedImeis: [...item.selectedImeis, ...assignedImeis]
+              selectedImeis: [...item.selectedImeis, ...assignedImeis],
+              selectedUnitIds: [...(item.selectedUnitIds || []), ...assignedUnits.map(unit => unit.id)]
             };
           }
           return item;
@@ -268,11 +314,16 @@ export default function PosBilling({
           alert(`Cannot add more than available stock (${product.stock} pcs).`);
           return prev;
         }
-        const initialImeis = specificImei ? [specificImei] : (hasImeis ? product.imeis.slice(0, quantity) : []);
-        if (hasImeis && initialImeis.length < quantity) {
-          alert(`Only ${initialImeis.length} serialized unit(s) are available to add.`);
+        const initialUnits = specificUnitId
+          ? trackedUnits.filter(unit => unit.id === specificUnitId)
+          : (hasTrackedUnits ? trackedUnits.slice(0, quantity) : []);
+        if (hasTrackedUnits && initialUnits.length < quantity) {
+          alert(`Only ${initialUnits.length} individually identified unit(s) are available to add.`);
           return prev;
         }
+        const initialImeis = specificImei
+          ? [specificImei]
+          : initialUnits.map(unit => unit.imei).filter(Boolean);
         return [
           ...prev,
           {
@@ -289,6 +340,8 @@ export default function PosBilling({
             availableStock: product.stock,
             allImeis: product.imeis || [],
             selectedImeis: initialImeis,
+            allTrackedUnits: trackedUnits,
+            selectedUnitIds: initialUnits.map(unit => unit.id),
             color: product.color || '',
             ram: product.ram || '',
             storage: product.storage || '',
@@ -297,14 +350,10 @@ export default function PosBilling({
         ];
       }
     });
+    return true;
   };
 
   const handleProcessBarcodeScan = (scannedCode) => {
-    if (scanCandidate) {
-      setScanNotification('Finish the current scan quantity before scanning another item.');
-      setTimeout(() => setScanNotification(''), 3000);
-      return;
-    }
     const clean = scannedCode.trim().toLowerCase();
     const exactMatch = findProductFromScan(scannedCode, inventory);
 
@@ -315,19 +364,24 @@ export default function PosBilling({
         setTimeout(() => setScanNotification(''), 3500);
         return;
       }
+      let matchedUnit = (exactMatch.units || []).find(un =>
+        [un.barcode, un.imei1, un.imei2].some(value => value && value.trim().toLowerCase() === clean)
+      );
       let matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
       if (!matchedImei && exactMatch.units) {
-        const u = exactMatch.units.find(un => 
-          (un.barcode && un.barcode.trim().toLowerCase() === clean) ||
-          (un.imei1 && un.imei1.trim().toLowerCase() === clean) ||
-          (un.imei2 && un.imei2.trim().toLowerCase() === clean)
-        );
-        if (u) matchedImei = u.imei1 || u.imei2;
+        if (matchedUnit) matchedImei = matchedUnit.imei1 || matchedUnit.imei2;
       }
-      setScanCandidate({ product: exactMatch, specificImei: matchedImei, scannedCode });
-      setScanQuantity('1');
-      playDeviceBeep('double');
-      setScanNotification(`✓ Found ${exactMatch.name}. Enter quantity to add it to the bill.`);
+      const trackedUnitId = matchedUnit
+        ? (matchedUnit.imei1 || matchedUnit.imei2 || matchedUnit.barcode || null)
+        : (matchedImei || null);
+      const added = addToCart(exactMatch, matchedImei, 1, trackedUnitId);
+      if (!added) {
+        playDeviceBeep('error');
+        return;
+      }
+      playDeviceBeep('success');
+      setScanNotification(`✓ Added 1 × ${exactMatch.name}. Scan each unit; matching scans combine in the bill.`);
+      setTimeout(() => setScanNotification(''), 2500);
     } else {
       playDeviceBeep('error');
       const catalogMatch = lookupProductByBarcodeOrImei(scannedCode, inventory);
@@ -340,18 +394,20 @@ export default function PosBilling({
     }
   };
 
+  scanHandlerRef.current = handleProcessBarcodeScan;
+
   // Global Hardware Barcode Scanner Listener for POS Billing Counter
   useEffect(() => {
     const scanner = new HardwareBarcodeScannerEngine({
       soundEnabled: shopConfig?.barcodeScannerBeep !== false,
       onScan: (scannedCode) => {
-        handleProcessBarcodeScan(scannedCode);
+        scanHandlerRef.current?.(scannedCode);
       }
     });
 
     scanner.start();
     return () => scanner.stop();
-  }, [inventory, shopConfig?.barcodeScannerBeep, scanCandidate]);
+  }, [inventory, shopConfig?.barcodeScannerBeep]);
 
   // Handle Barcode scanner auto-enter inside manual search box
   const handleSearchKeyDown = (e) => {
@@ -385,15 +441,27 @@ export default function PosBilling({
           return item;
         }
         
+        const trackedUnits = item.allTrackedUnits || [];
+        let selectedUnitIds = [...(item.selectedUnitIds || [])];
         let updatedImeis = [...item.selectedImeis];
-        if (delta > 0 && item.allImeis.length > 0) {
+        if (delta > 0 && trackedUnits.length > 0) {
+          const nextUnit = trackedUnits.find(unit => !selectedUnitIds.includes(unit.id));
+          if (!nextUnit) return item;
+          selectedUnitIds.push(nextUnit.id);
+          if (nextUnit.imei) updatedImeis.push(nextUnit.imei);
+        } else if (delta < 0 && selectedUnitIds.length > 0) {
+          const removedId = selectedUnitIds.pop();
+          const removedUnit = trackedUnits.find(unit => unit.id === removedId);
+          if (removedUnit?.imei) updatedImeis = updatedImeis.filter(imei => imei !== removedUnit.imei);
+        } else if (delta > 0 && item.allImeis.length > 0) {
           const nextAvailable = item.allImeis.find(im => !updatedImeis.includes(im));
-          if (nextAvailable) updatedImeis.push(nextAvailable);
+          if (!nextAvailable) return item;
+          updatedImeis.push(nextAvailable);
         } else if (delta < 0) {
           updatedImeis.pop();
         }
 
-        return { ...item, qty: newQty, selectedImeis: updatedImeis };
+        return { ...item, qty: newQty, selectedImeis: updatedImeis, selectedUnitIds };
       }
       return item;
     }).filter(Boolean));
@@ -771,11 +839,20 @@ export default function PosBilling({
     setInventory(prev => prev.map(invItem => {
       const cartItem = cart.find(c => c.id === invItem.id);
       if (cartItem) {
+        const removedUnitImeis = (invItem.units || [])
+          .filter(unit => cartItem.selectedUnitIds?.includes(unit.imei1 || unit.imei2 || unit.barcode))
+          .flatMap(unit => [unit.imei1, unit.imei2].filter(Boolean));
         const remainingImeis = (invItem.imeis || []).filter(
-          im => !cartItem.selectedImeis.includes(im)
+          im => !cartItem.selectedImeis.includes(im) &&
+            !cartItem.selectedUnitIds?.includes(im) &&
+            !removedUnitImeis.includes(im)
         );
         const remainingUnits = (invItem.units || []).filter(
-          u => !cartItem.selectedImeis.includes(u.imei1) && !cartItem.selectedImeis.includes(u.imei2)
+          u => !cartItem.selectedUnitIds?.includes(u.imei1) &&
+            !cartItem.selectedUnitIds?.includes(u.imei2) &&
+            !cartItem.selectedUnitIds?.includes(u.barcode) &&
+            !cartItem.selectedImeis.includes(u.imei1) &&
+            !cartItem.selectedImeis.includes(u.imei2)
         );
         return {
           ...invItem,
@@ -1167,9 +1244,10 @@ export default function PosBilling({
             <div className="pos-product-catalog-grid" style={{
               maxHeight: 'calc(100vh - 230px)',
               overflowY: 'auto',
-              paddingRight: '0.25rem'
+              padding: '0 0.35rem 0.35rem 0',
+              alignContent: 'start'
             }}>
-              {filteredProducts.map(prod => {
+              {visibleProducts.map(prod => {
                 const isOut = prod.stock <= 0;
                 const isLowStock = prod.stock > 0 && prod.stock <= (prod.lowStockThreshold || 2);
                 const inCartItem = cart.find(c => c.id === prod.id);
@@ -1181,6 +1259,8 @@ export default function PosBilling({
                     onClick={() => !isOut && addToCart(prod)}
                     style={{ 
                       padding: '0.75rem', 
+                      minHeight: '116px',
+                      boxSizing: 'border-box',
                       display: 'flex', 
                       flexDirection: 'column', 
                       justifyContent: 'space-between',
@@ -1271,6 +1351,21 @@ export default function PosBilling({
                   </div>
                 );
               })}
+              {visibleProducts.length < filteredProducts.length && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setCatalogLimit(limit => Math.min(limit + 80, filteredProducts.length))}
+                  style={{ gridColumn: '1 / -1', justifySelf: 'center', margin: '0.25rem 0 0.5rem' }}
+                >
+                  Show more products ({filteredProducts.length - visibleProducts.length} remaining)
+                </button>
+              )}
+              {filteredProducts.length === 0 && (
+                <div style={{ gridColumn: '1 / -1', padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No products match this category or search.
+                </div>
+              )}
             </div>
           </div>
 
@@ -3234,68 +3329,6 @@ export default function PosBilling({
         </div>
       )}
 
-      {scanCandidate && (() => {
-        const product = scanCandidate.product;
-        const existing = cart.find(item => item.id === product.id);
-        const alreadyInCart = existing?.qty || 0;
-        const unselectedImeis = (product.imeis || []).filter(imei => !existing?.selectedImeis?.includes(imei));
-        const maxQuantity = Math.max(0, Math.min(
-          Number(product.stock || 0) - alreadyInCart,
-          scanCandidate.specificImei
-            ? (existing?.selectedImeis?.includes(scanCandidate.specificImei) ? 0 : 1)
-            : ((product.imeis || []).length ? unselectedImeis.length : Number(product.stock || 0))
-        ));
-        const confirmScannedQuantity = () => {
-          const quantity = Number(scanQuantity);
-          if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
-            setScanNotification(`⚠️ Enter a quantity from 1 to ${maxQuantity}.`);
-            return;
-          }
-          addToCart(product, scanCandidate.specificImei, quantity);
-          setScanNotification(`✓ Added ${quantity} × ${product.name} to the bill.`);
-          setTimeout(() => setScanNotification(''), 3500);
-          setScanCandidate(null);
-        };
-
-        return (
-          <div className="modal-backdrop no-print" style={{ zIndex: 10000 }} onClick={() => setScanCandidate(null)}>
-            <div className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="scan-quantity-title" onClick={event => event.stopPropagation()} style={{ width: 'min(420px, calc(100vw - 2rem))', padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <h2 id="scan-quantity-title" style={{ margin: 0, fontSize: '1.1rem' }}>Add scanned product</h2>
-                  <p style={{ margin: '0.35rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{product.name} • {product.stock} in stock</p>
-                </div>
-                <button type="button" className="btn-outline" aria-label="Cancel scan" onClick={() => setScanCandidate(null)}><X size={17} /></button>
-              </div>
-              <label htmlFor="scanned-product-quantity" style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 700 }}>Quantity to add</label>
-              <input
-                id="scanned-product-quantity"
-                type="number"
-                min="1"
-                max={maxQuantity}
-                step="1"
-                value={scanQuantity}
-                onChange={event => setScanQuantity(event.target.value)}
-                onKeyDown={event => { if (event.key === 'Enter') confirmScannedQuantity(); }}
-                className="input-field"
-                autoFocus
-                disabled={maxQuantity < 1}
-                style={{ width: '100%', boxSizing: 'border-box', fontSize: '1.25rem', textAlign: 'center', marginBottom: '0.5rem' }}
-              />
-              <p style={{ margin: '0 0 1rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                {maxQuantity > 0 ? `Up to ${maxQuantity} can be added without scanning each item again.` : 'No additional quantity is available in stock.'}
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                <button type="button" className="btn-outline" onClick={() => setScanCandidate(null)}>Cancel</button>
-                <button type="button" className="btn-primary" disabled={maxQuantity < 1} onClick={confirmScannedQuantity}>
-                  Add to bill
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Mobile / Webcam Barcode Scanner for POS Billing */}
       {showPosCameraScanner && (
         <CameraBarcodeScannerModal
@@ -3304,8 +3337,9 @@ export default function PosBilling({
           onScan={(scannedCode) => {
             handleProcessBarcodeScan(scannedCode);
           }}
+          continuous
           title="POS Camera Barcode Scanner"
-          description="Scan product barcode to instantly add to billing cart"
+          description="Scan every unit barcode; matching items combine as quantities in the cart"
         />
       )}
 

@@ -34,6 +34,7 @@ export default function CameraBarcodeScannerModal({
   const scannerRef = useRef(null);
   const html5QrCodeRef = useRef(null);
   const isHandlingScanRef = useRef(false);
+  const lastContinuousScanRef = useRef({ code: '', at: 0 });
   const containerId = 'alzino-camera-scanner-view';
 
   // Initialize and enumerate video devices
@@ -43,6 +44,7 @@ export default function CameraBarcodeScannerModal({
     setErrorMsg('');
     setLastScanned(null);
     isHandlingScanRef.current = false;
+    lastContinuousScanRef.current = { code: '', at: 0 };
     let isCancelled = false;
 
     Html5Qrcode.getCameras()
@@ -146,6 +148,12 @@ export default function CameraBarcodeScannerModal({
     const clean = decodedText.trim();
     if (!clean) return;
     if (isHandlingScanRef.current && !continuous) return;
+    if (continuous) {
+      const now = Date.now();
+      const key = clean.toLowerCase();
+      if (lastContinuousScanRef.current.code === key && now - lastContinuousScanRef.current.at < 900) return;
+      lastContinuousScanRef.current = { code: key, at: now };
+    }
     isHandlingScanRef.current = true;
 
     // Trigger audio beep confirmation
