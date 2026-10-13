@@ -43,6 +43,7 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
+import { findProductFromScan } from '../utils/productTerms';
 
 
 export default function PosBilling({ 
@@ -168,6 +169,8 @@ export default function PosBilling({
   const [editingInvoiceModal, setEditingInvoiceModal] = useState(false);
   const [invoiceToEdit, setInvoiceToEdit] = useState(null);
   const [scanNotification, setScanNotification] = useState('');
+  const [scanCandidate, setScanCandidate] = useState(null);
+  const [scanQuantity, setScanQuantity] = useState('1');
   
   const searchInputRef = useRef(null);
 
@@ -219,7 +222,8 @@ export default function PosBilling({
   }, [inventory, selectedCategory, posTaxFilter, searchTerm]);
 
   // Add product to cart
-  const addToCart = (product, specificImei = null) => {
+  const addToCart = (product, specificImei = null, requestedQty = 1) => {
+    const quantity = Math.max(1, Math.floor(Number(requestedQty) || 1));
     if (product.stock <= 0) {
       alert(`"${product.name}" is currently out of stock!`);
       return;
@@ -228,30 +232,47 @@ export default function PosBilling({
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       const hasImeis = product.imeis && product.imeis.length > 0;
-      
       if (existing) {
-        if (existing.qty >= product.stock) {
+        if (specificImei && existing.selectedImeis.includes(specificImei)) {
+          alert('This exact IMEI/unit is already in the bill. Scan a different unit.');
+          return prev;
+        }
+        if (existing.qty + quantity > product.stock) {
           alert(`Cannot add more than available stock (${product.stock} pcs).`);
           return prev;
         }
         
-        let assignedImei = specificImei;
-        if (hasImeis && !assignedImei) {
-          assignedImei = product.imeis.find(im => !existing.selectedImeis.includes(im)) || '';
+        const availableImeis = hasImeis
+          ? product.imeis.filter(im => !existing.selectedImeis.includes(im))
+          : [];
+        const assignedImeis = specificImei
+          ? [specificImei]
+          : availableImeis.slice(0, quantity);
+        if (hasImeis && assignedImeis.length < quantity) {
+          alert(`Only ${existing.qty + assignedImeis.length} serialized unit(s) are available to add.`);
+          return prev;
         }
 
         return prev.map(item => {
           if (item.id === product.id) {
             return {
               ...item,
-              qty: item.qty + 1,
-              selectedImeis: assignedImei ? [...item.selectedImeis, assignedImei] : item.selectedImeis
+              qty: item.qty + quantity,
+              selectedImeis: [...item.selectedImeis, ...assignedImeis]
             };
           }
           return item;
         });
       } else {
-        const initialImei = specificImei || (hasImeis ? product.imeis[0] : '');
+        if (quantity > product.stock) {
+          alert(`Cannot add more than available stock (${product.stock} pcs).`);
+          return prev;
+        }
+        const initialImeis = specificImei ? [specificImei] : (hasImeis ? product.imeis.slice(0, quantity) : []);
+        if (hasImeis && initialImeis.length < quantity) {
+          alert(`Only ${initialImeis.length} serialized unit(s) are available to add.`);
+          return prev;
+        }
         return [
           ...prev,
           {
@@ -264,10 +285,10 @@ export default function PosBilling({
             mrp: product.mrp,
             buyPrice: product.buyPrice,
             gstRate: product.gstRate || 18,
-            qty: 1,
+            qty: quantity,
             availableStock: product.stock,
             allImeis: product.imeis || [],
-            selectedImeis: initialImei ? [initialImei] : [],
+            selectedImeis: initialImeis,
             color: product.color || '',
             ram: product.ram || '',
             storage: product.storage || '',
@@ -279,17 +300,13 @@ export default function PosBilling({
   };
 
   const handleProcessBarcodeScan = (scannedCode) => {
+    if (scanCandidate) {
+      setScanNotification('Finish the current scan quantity before scanning another item.');
+      setTimeout(() => setScanNotification(''), 3000);
+      return;
+    }
     const clean = scannedCode.trim().toLowerCase();
-    const exactMatch = inventory.find(item => 
-      (item.barcode && item.barcode.trim().toLowerCase() === clean) ||
-      (item.barcodes && item.barcodes.some(b => b && b.trim().toLowerCase() === clean)) ||
-      (item.imeis && item.imeis.some(imei => imei && imei.trim().toLowerCase() === clean)) ||
-      (item.units && item.units.some(u => 
-        (u.barcode && u.barcode.trim().toLowerCase() === clean) ||
-        (u.imei1 && u.imei1.trim().toLowerCase() === clean) ||
-        (u.imei2 && u.imei2.trim().toLowerCase() === clean)
-      ))
-    );
+    const exactMatch = findProductFromScan(scannedCode, inventory);
 
     if (exactMatch) {
       if (exactMatch.stock <= 0) {
@@ -307,10 +324,10 @@ export default function PosBilling({
         );
         if (u) matchedImei = u.imei1 || u.imei2;
       }
-      addToCart(exactMatch, matchedImei);
+      setScanCandidate({ product: exactMatch, specificImei: matchedImei, scannedCode });
+      setScanQuantity('1');
       playDeviceBeep('double');
-      setScanNotification(`✓ Auto-Added to Cart: ${exactMatch.name} [Code: ${scannedCode}]`);
-      setTimeout(() => setScanNotification(''), 3500);
+      setScanNotification(`✓ Found ${exactMatch.name}. Enter quantity to add it to the bill.`);
     } else {
       playDeviceBeep('error');
       const catalogMatch = lookupProductByBarcodeOrImei(scannedCode, inventory);
@@ -334,27 +351,15 @@ export default function PosBilling({
 
     scanner.start();
     return () => scanner.stop();
-  }, [inventory, shopConfig?.barcodeScannerBeep]);
+  }, [inventory, shopConfig?.barcodeScannerBeep, scanCandidate]);
 
   // Handle Barcode scanner auto-enter inside manual search box
   const handleSearchKeyDown = (e) => {
     if (e.key === 'Enter') {
       const q = searchTerm.trim().toLowerCase();
-      const exactMatch = inventory.find(item => 
-        (item.barcode && item.barcode.toLowerCase() === q) ||
-        (item.imeis && item.imeis.some(imei => imei.toLowerCase() === q))
-      );
-      if (exactMatch && exactMatch.stock > 0) {
-        const matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.toLowerCase() === q) : null;
-        addToCart(exactMatch, matchedImei);
-        playDeviceBeep('double');
-        setScanNotification(`✓ Scanned: ${exactMatch.name}`);
-        setTimeout(() => setScanNotification(''), 3000);
+      if (q) {
+        handleProcessBarcodeScan(searchTerm.trim());
         setSearchTerm('');
-      } else if (exactMatch && exactMatch.stock <= 0) {
-        playDeviceBeep('error');
-        setScanNotification(`⚠️ OUT OF STOCK: ${exactMatch.name}`);
-        setTimeout(() => setScanNotification(''), 3500);
       }
     }
   };
@@ -651,6 +656,15 @@ export default function PosBilling({
       alert('Enter the card terminal approval / transaction ID before completing the sale.');
       return;
     }
+    const stockChanged = cart.find(cartItem => {
+      const currentProduct = inventory.find(item => item.id === cartItem.id);
+      return !currentProduct || Number(currentProduct.stock) < Number(cartItem.qty);
+    });
+    if (stockChanged) {
+      const liveStock = Number(inventory.find(item => item.id === stockChanged.id)?.stock || 0);
+      alert(`Sale not completed: ${stockChanged.name} has only ${liveStock} unit(s) in stock now. Update the bill quantity and try again.`);
+      return;
+    }
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
     const today = new Date().toISOString().split('T')[0];
@@ -765,7 +779,7 @@ export default function PosBilling({
         );
         return {
           ...invItem,
-          stock: Math.max(0, invItem.stock - cartItem.qty),
+          stock: Number(invItem.stock || 0) - Number(cartItem.qty || 0),
           imeis: remainingImeis,
           units: remainingUnits.length > 0 ? remainingUnits : (invItem.units ? [] : undefined)
         };
@@ -3219,6 +3233,68 @@ export default function PosBilling({
           </div>
         </div>
       )}
+
+      {scanCandidate && (() => {
+        const product = scanCandidate.product;
+        const existing = cart.find(item => item.id === product.id);
+        const alreadyInCart = existing?.qty || 0;
+        const unselectedImeis = (product.imeis || []).filter(imei => !existing?.selectedImeis?.includes(imei));
+        const maxQuantity = Math.max(0, Math.min(
+          Number(product.stock || 0) - alreadyInCart,
+          scanCandidate.specificImei
+            ? (existing?.selectedImeis?.includes(scanCandidate.specificImei) ? 0 : 1)
+            : ((product.imeis || []).length ? unselectedImeis.length : Number(product.stock || 0))
+        ));
+        const confirmScannedQuantity = () => {
+          const quantity = Number(scanQuantity);
+          if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
+            setScanNotification(`⚠️ Enter a quantity from 1 to ${maxQuantity}.`);
+            return;
+          }
+          addToCart(product, scanCandidate.specificImei, quantity);
+          setScanNotification(`✓ Added ${quantity} × ${product.name} to the bill.`);
+          setTimeout(() => setScanNotification(''), 3500);
+          setScanCandidate(null);
+        };
+
+        return (
+          <div className="modal-backdrop no-print" style={{ zIndex: 10000 }} onClick={() => setScanCandidate(null)}>
+            <div className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="scan-quantity-title" onClick={event => event.stopPropagation()} style={{ width: 'min(420px, calc(100vw - 2rem))', padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <h2 id="scan-quantity-title" style={{ margin: 0, fontSize: '1.1rem' }}>Add scanned product</h2>
+                  <p style={{ margin: '0.35rem 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{product.name} • {product.stock} in stock</p>
+                </div>
+                <button type="button" className="btn-outline" aria-label="Cancel scan" onClick={() => setScanCandidate(null)}><X size={17} /></button>
+              </div>
+              <label htmlFor="scanned-product-quantity" style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 700 }}>Quantity to add</label>
+              <input
+                id="scanned-product-quantity"
+                type="number"
+                min="1"
+                max={maxQuantity}
+                step="1"
+                value={scanQuantity}
+                onChange={event => setScanQuantity(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') confirmScannedQuantity(); }}
+                className="input-field"
+                autoFocus
+                disabled={maxQuantity < 1}
+                style={{ width: '100%', boxSizing: 'border-box', fontSize: '1.25rem', textAlign: 'center', marginBottom: '0.5rem' }}
+              />
+              <p style={{ margin: '0 0 1rem', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                {maxQuantity > 0 ? `Up to ${maxQuantity} can be added without scanning each item again.` : 'No additional quantity is available in stock.'}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button type="button" className="btn-outline" onClick={() => setScanCandidate(null)}>Cancel</button>
+                <button type="button" className="btn-primary" disabled={maxQuantity < 1} onClick={confirmScannedQuantity}>
+                  Add to bill
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mobile / Webcam Barcode Scanner for POS Billing */}
       {showPosCameraScanner && (
