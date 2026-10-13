@@ -208,6 +208,15 @@ export default function CustomerStorefront({
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [isMobileCategoriesOpen, setIsMobileCategoriesOpen] = useState(false);
   const [publicCatalog, setPublicCatalog] = useState([]);
+  const storePhoneDigits = String(shopConfig.phone || '9121212292').replace(/\D/g, '');
+  const storePhoneHref = storePhoneDigits.length === 10 ? `+91${storePhoneDigits}` : `+${storePhoneDigits}`;
+  const storePhoneLabel = storePhoneDigits.length === 10
+    ? `+91 ${storePhoneDigits}`
+    : storePhoneDigits.startsWith('91')
+      ? `+91 ${storePhoneDigits.slice(2)}`
+      : `+${storePhoneDigits}`;
+  const storeWhatsAppDigits = String(shopConfig.whatsappNumber || shopConfig.phone || '9121212292').replace(/\D/g, '');
+  const storeWhatsAppHref = `https://wa.me/${storeWhatsAppDigits.length === 10 ? `91${storeWhatsAppDigits}` : storeWhatsAppDigits}`;
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return undefined;
@@ -794,13 +803,34 @@ export default function CustomerStorefront({
           gap: '1rem'
         }}>
           {/* Brand + Location Selector (Blinkit Style) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexShrink: 0 }}>
+          <div className="storefront-brand-location-group" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexShrink: 0 }}>
             {/* Logo */}
             <div 
               onClick={() => { setSelectedCategory('all'); setSearchTerm(''); }}
               style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
             >
               <AlzinoLogo height={28} textColor="#0C5B43" swooshColor="#EAB308" />
+            </div>
+            <div className="storefront-mobile-contact-actions" aria-label="Contact ALZINO">
+              <a
+                href={storeWhatsAppHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="storefront-mobile-whatsapp-link"
+                aria-label="Chat with ALZINO on WhatsApp"
+                title="Chat with ALZINO on WhatsApp"
+              >
+                <WhatsAppIcon size={20} color="#FFFFFF" />
+              </a>
+              <a
+                href={`tel:${storePhoneHref}`}
+                className="storefront-mobile-call-link"
+                aria-label={`Call ALZINO at ${storePhoneLabel}`}
+                title={`Call ALZINO at ${storePhoneLabel}`}
+              >
+                <Phone size={16} aria-hidden="true" />
+                <span>{storePhoneLabel}</span>
+              </a>
             </div>
           </div>
 
@@ -1007,8 +1037,13 @@ export default function CustomerStorefront({
             }
           }
           .storefront-mobile-category-select, .storefront-mobile-bottom-nav, .storefront-mobile-more-menu { display: none; }
+          .storefront-mobile-contact-actions { display: none; }
           @media (max-width: 768px) {
             .storefront-search-bar, .storefront-header-actions { display: none !important; }
+            .storefront-brand-location-group { flex: 1; justify-content: space-between; gap: 0.45rem !important; min-width: 0; }
+            .storefront-mobile-contact-actions { display: flex !important; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+            .storefront-mobile-whatsapp-link { width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #25D366; color: #FFFFFF; text-decoration: none; box-shadow: 0 2px 6px rgba(37,211,102,0.25); }
+            .storefront-mobile-call-link { min-height: 36px; padding: 0 0.5rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem; background: #F3F4F6; color: #0C5B43; text-decoration: none; font-size: 0.7rem; line-height: 1; font-weight: 800; white-space: nowrap; }
             .storefront-mobile-category-select { display: block !important; width: 100%; margin-bottom: 0.75rem; padding: 0.7rem 0.8rem; border: 1px solid #D1D5DB; border-radius: 10px; background: #FFFFFF; color: #1F2937; font-size: 0.9rem; font-weight: 700; }
             .storefront-category-pills { display: none !important; }
             .storefront-mobile-bottom-nav { display: flex !important; }
