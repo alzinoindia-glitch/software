@@ -1,32 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, QrCode, RefreshCw, ShieldCheck, X } from 'lucide-react';
-import QRCode from 'qrcode';
-import { generateBase32Secret, getOtpAuthUri, verifyTotpToken } from '../utils/totp';
+import { RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { generateBase32Secret, verifyTotpToken } from '../utils/totp';
 
 const getRoleStorageKeys = role => ({
   secret: `ALZINO_ERP_TOTP_SECRET_${role.toUpperCase()}`,
   enrolled: `ALZINO_ERP_TOTP_ENROLLED_${role.toUpperCase()}`
 });
 
-export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSuccess, shopName = 'ALZINO' }) {
+export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSuccess }) {
   const [secret, setSecret] = useState('');
-  const [qrDataUrl, setQrDataUrl] = useState('');
   const [code, setCode] = useState('');
-  const [setupComplete, setSetupComplete] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState(30 - (Math.floor(Date.now() / 1000) % 30));
   const isAdmin = role === 'admin';
   const portalName = isAdmin ? 'Admin' : 'Cashier';
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    let active = true;
     const keys = getRoleStorageKeys(role);
     let savedSecret = localStorage.getItem(keys.secret);
-    const isEnrolled = localStorage.getItem(keys.enrolled) === 'true';
-
     // Preserve the earlier admin authenticator setup on this browser.
     if (!savedSecret && isAdmin) {
       savedSecret = localStorage.getItem('ALZINO_ERP_TOTP_SECRET');
@@ -38,18 +31,10 @@ export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSucc
     }
 
     setSecret(savedSecret);
-    setSetupComplete(isEnrolled);
     setCode('');
     setError('');
 
-    const account = `${role}@alzino.shop`;
-    const otpAuthUri = getOtpAuthUri(savedSecret, account, shopName || 'ALZINO');
-    QRCode.toDataURL(otpAuthUri, { width: 220, margin: 1, errorCorrectionLevel: 'M' })
-      .then(dataUrl => { if (active) setQrDataUrl(dataUrl); })
-      .catch(() => { if (active) setError('Could not create the setup QR code. You can enter the setup key manually.'); });
-
-    return () => { active = false; };
-  }, [isOpen, role, isAdmin, shopName]);
+  }, [isOpen, role, isAdmin]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -81,25 +66,12 @@ export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSucc
         setCode('');
         return;
       }
-      if (!setupComplete) {
-        localStorage.setItem(getRoleStorageKeys(role).enrolled, 'true');
-        setSetupComplete(true);
-      }
+      localStorage.setItem(getRoleStorageKeys(role).enrolled, 'true');
       await onSuccess?.();
     } catch (err) {
       setError(err.message || 'Could not verify the authenticator code.');
     } finally {
       setBusy(false);
-    }
-  };
-
-  const copySecret = async () => {
-    try {
-      await navigator.clipboard.writeText(secret);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError('Could not copy the setup key. You can select and copy it manually.');
     }
   };
 
@@ -136,18 +108,6 @@ export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSucc
               style={{ fontSize: '1.5rem', letterSpacing: '0.35em', textAlign: 'center', fontWeight: 800 }}
             />
           </div>
-
-          {!setupComplete && <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-color)', borderRadius: 10, padding: 12, textAlign: 'center' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderBottom: '1px dashed var(--border-color)', paddingBottom: 10, marginBottom: 10 }}>
-              <strong style={{ display: 'flex', alignItems: 'center', gap: 8 }}><QrCode size={17} /> Scan QR in Microsoft Authenticator</strong>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', margin: '4px 0 10px' }}>Open Microsoft Authenticator, tap +, choose Other account, then scan this QR code.</p>
-            {qrDataUrl ? <img src={qrDataUrl} alt={`${portalName} authenticator setup QR code`} style={{ width: 220, height: 220, maxWidth: '100%', background: '#fff', borderRadius: 8, border: '1px solid var(--border-color)' }} /> : <p>Preparing QR code…</p>}
-            <p style={{ color: 'var(--text-secondary)', margin: '10px 0 0', overflowWrap: 'anywhere' }}>
-              Setup key: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}>{secret}</strong>
-              <button type="button" onClick={copySecret} className="btn-secondary" style={{ marginLeft: 8, padding: '0.25rem 0.45rem' }}><Copy size={13} /> {copied ? 'Copied' : 'Copy'}</button>
-            </p>
-          </div>}
 
           {error && <p role="alert" style={{ color: 'var(--status-red)', margin: 0 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 10 }}>
