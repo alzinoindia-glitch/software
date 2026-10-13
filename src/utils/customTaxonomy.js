@@ -11,6 +11,17 @@ export const BASE_CATEGORIES = [
   'Universal'
 ];
 
+// Treat singular and plural spellings as one canonical inventory category.
+export function normalizeProductCategory(category) {
+  const value = String(category || '').trim();
+  if (/^used mobiles?$/i.test(value)) return 'Used Mobiles';
+  return value;
+}
+
+export function productCategoriesMatch(left, right) {
+  return normalizeProductCategory(left).toLowerCase() === normalizeProductCategory(right).toLowerCase();
+}
+
 export const BASE_MOBILE_BRANDS = [
   'Samsung',
   'Apple',
@@ -252,7 +263,7 @@ export function getAvailableCategories(inventory = []) {
   const custom = getCustomCategories();
   custom.forEach(c => {
     if (c && c.toLowerCase() !== 'other' && c.toLowerCase() !== 'all') {
-      catSet.add(c);
+      catSet.add(normalizeProductCategory(c));
     }
   });
 
@@ -262,7 +273,7 @@ export function getAvailableCategories(inventory = []) {
       if (item?.category && item.category.trim() &&
           item.category.toLowerCase() !== 'other' &&
           item.category.toLowerCase() !== 'all') {
-        catSet.add(item.category.trim());
+        catSet.add(normalizeProductCategory(item.category));
       }
     });
   }

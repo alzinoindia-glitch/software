@@ -51,6 +51,8 @@ import {
   BASE_ACCESSORY_BRANDS,
   BASE_SPARE_PARTS_BRANDS,
   getAvailableCategories,
+  normalizeProductCategory,
+  productCategoriesMatch,
   getAvailableBrandsForCategory,
   saveCustomCategory,
   saveCustomBrand,
@@ -349,7 +351,7 @@ export default function InventoryManager({
   // Fast Filter
   const filteredProducts = useMemo(() => {
     return inventory.filter(item => {
-      const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
+      const matchesCategory = categoryFilter === 'All' || productCategoriesMatch(item.category, categoryFilter);
       const matchesBrand = brandFilter === 'All' || item.brand === brandFilter;
 
       const isLow = item.stock > 0 && item.stock <= (item.lowStockThreshold || 2);
@@ -447,9 +449,10 @@ export default function InventoryManager({
 
   const openEditModal = (item) => {
     setEditingItem(item);
-    const isCatCustom = Boolean(item.category && !availableCategories.includes(item.category));
+    const normalizedCategory = normalizeProductCategory(item.category);
+    const isCatCustom = Boolean(normalizedCategory && !availableCategories.includes(normalizedCategory));
     setIsCustomCategory(isCatCustom);
-    const validBrands = getAvailableBrandsForCategory(item.category, inventory);
+    const validBrands = getAvailableBrandsForCategory(normalizedCategory, inventory);
     const isBrCustom = Boolean(item.brand && !validBrands.includes(item.brand));
     setIsCustomBrand(isBrCustom);
     setIsCustomStorage(Boolean(item.storage && !COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(item.storage)));
@@ -459,7 +462,7 @@ export default function InventoryManager({
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
     const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
     setFormData({
-      category: item.category || 'New Mobiles',
+      category: normalizedCategory || 'New Mobiles',
       subCategory: item.subCategory || item.applianceType || item.accessoryType || item.partType || '',
       capacity: item.capacity || '',
       brand: item.brand || 'Universal',

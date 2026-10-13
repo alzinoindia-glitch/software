@@ -57,6 +57,7 @@ import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
+import { getAvailableCategories, normalizeProductCategory } from '../utils/customTaxonomy';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -341,7 +342,7 @@ export default function CustomerStorefront({
   const liveProducts = useMemo(() => {
     const cloudProducts = isSupabaseConfigured()
       ? publicCatalog.map(item => {
-        const category = item.category || 'New Mobiles';
+        const category = normalizeProductCategory(item.category || 'New Mobiles');
         const isUsed = category === 'Used Mobiles';
         const isAppliance = category === 'Home Appliances';
         const isAccessory = category === 'Mobile Accessories';
@@ -382,7 +383,8 @@ export default function CustomerStorefront({
         if (item.imeis && Array.isArray(item.imeis)) item.imeis.forEach(im => seenImeis.add(im));
         if (item.imei1) seenImeis.add(item.imei1);
 
-        const isUsedMobile = item.category === 'Used Mobiles' || 
+        const normalizedCategory = normalizeProductCategory(item.category);
+        const isUsedMobile = normalizedCategory === 'Used Mobiles' ||
                              item.type === 'refurbished' || 
                              cleanName.toLowerCase().startsWith('used ') || 
                              cleanName.toLowerCase().includes('refurbished') ||
@@ -424,7 +426,7 @@ export default function CustomerStorefront({
         list.push({
           id: item.id,
           name: cleanName,
-          category: isUsedMobile ? 'Used Mobiles' : (item.category || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles'))),
+          category: isUsedMobile ? 'Used Mobiles' : (normalizedCategory || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles'))),
           department,
           brand: item.brand || cleanName.split(' ')[0] || (isUsedMobile ? 'Refurbished' : 'Samsung'),
           price: sellPrice,
@@ -541,6 +543,7 @@ export default function CustomerStorefront({
                         item.category !== 'Mobile Accessories';
         if (!isSmart) return false;
       }
+      if (selectedCategory === 'used-mobiles' && item.category !== 'Used Mobiles' && item.type !== 'refurbished') return false;
       if (selectedCategory === 'audio') {
         const name = (item.name || '').toLowerCase();
         const cat = (item.category || '').toLowerCase();
@@ -573,6 +576,10 @@ export default function CustomerStorefront({
       }
       if (selectedCategory === 'refurbished') {
         if (item.type !== 'refurbished' && item.category !== 'Used Mobiles') return false;
+      }
+      if (selectedCategory.startsWith('category:')) {
+        const category = selectedCategory.slice('category:'.length);
+        if (normalizeProductCategory(item.category).toLowerCase() !== normalizeProductCategory(category).toLowerCase()) return false;
       }
       if (selectedCategory === 'accessories') {
         if (item.department !== 'accessories' && item.category !== 'Mobile Accessories') return false;
@@ -609,9 +616,10 @@ export default function CustomerStorefront({
   }, [liveProducts, selectedCategory, searchTerm, sortBy]);
 
   // Quick Category Pills
-  const categoriesList = [
+  const fixedCategories = [
     { id: 'all', label: 'All Products', icon: LayoutGrid },
     { id: 'smartphones', label: 'Smartphones & 5G', icon: Smartphone },
+    { id: 'used-mobiles', label: 'Used Mobiles', icon: RefreshCw },
     { id: 'audio', label: 'Earbuds & Audio', icon: Headphones },
     { id: 'chargers', label: 'Fast Chargers & Cables', icon: Cable },
     { id: 'wearables', label: 'Smartwatches', icon: Watch },
@@ -620,6 +628,11 @@ export default function CustomerStorefront({
     { id: 'appliances', label: '4K TVs & Appliances', icon: Tv },
     { id: 'clearance', label: 'Clearance Hub', icon: Flame },
   ];
+  const coveredCategories = new Set(['new mobiles', 'used mobiles', 'home appliances', 'mobile accessories']);
+  const dynamicCategories = getAvailableCategories(liveProducts)
+    .filter(category => !coveredCategories.has(category.trim().toLowerCase()))
+    .map(category => ({ id: `category:${category}`, label: category, icon: Package, productCategory: category }));
+  const categoriesList = [...fixedCategories, ...dynamicCategories];
 
   // Category item counts for badges
   const categoryCounts = useMemo(() => {
@@ -629,6 +642,7 @@ export default function CustomerStorefront({
       counts[cat.id] = liveProducts.filter(item => {
         const cleanName = (item.name || '').toLowerCase();
         if (cat.id === 'smartphones') return (item.department === 'mobiles' || item.category === 'New Mobiles') && item.type !== 'refurbished';
+        if (cat.id === 'used-mobiles') return item.type === 'refurbished' || item.category === 'Used Mobiles';
         if (cat.id === 'audio') return cleanName.includes('earbuds') || cleanName.includes('airpods') || cleanName.includes('airdopes') || cleanName.includes('audio') || cleanName.includes('headphone');
         if (cat.id === 'chargers') return cleanName.includes('charger') || cleanName.includes('adapter') || cleanName.includes('cable') || cleanName.includes('power bank');
         if (cat.id === 'wearables') return cleanName.includes('watch') || cleanName.includes('band') || cleanName.includes('pulse');
@@ -636,6 +650,7 @@ export default function CustomerStorefront({
         if (cat.id === 'appliances') return item.type === 'appliance' || item.department === 'appliances' || item.category === 'Home Appliances';
         if (cat.id === 'refurbished') return item.type === 'refurbished' || item.category === 'Used Mobiles';
         if (cat.id === 'clearance') return (item.discountPct && item.discountPct >= 10) || (item.condition && (item.condition.includes('Clearance') || item.condition.includes('Deal')));
+        if (cat.productCategory) return normalizeProductCategory(item.category).toLowerCase() === normalizeProductCategory(cat.productCategory).toLowerCase();
         return false;
       }).length;
     });
