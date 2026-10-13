@@ -84,6 +84,7 @@ export default function UsedMobileModule({
   const [idImage, setIdImage] = useState(null);
   const [billImage, setBillImage] = useState(null);
   const [deviceImages, setDeviceImages] = useState([]);
+  const [linkingInventoryId, setLinkingInventoryId] = useState(null);
 
   // =========================================================================
   // 2. RESELL / GENERATE BILL MODAL STATE
@@ -217,8 +218,8 @@ export default function UsedMobileModule({
   // =========================================================================
   const handleInwardSubmit = async (e) => {
     e.preventDefault();
-    if (!sellerName || !mobile || !imei1 || !imei2 || !buyPrice || !model) {
-      alert("Please fill in Seller Name, Mobile, Model, both IMEI numbers and Buy Price.");
+    if (!sellerName || !mobile || !imei1 || !buyPrice || !model) {
+      alert("Please fill in Seller Name, Mobile, Model, IMEI 1 and Buy Price.");
       return;
     }
 
@@ -230,20 +231,28 @@ export default function UsedMobileModule({
     }
     const cleanBuy = parseFloat(buyPrice);
     const calculatedSell = targetSellPrice ? parseFloat(targetSellPrice) : Math.round(cleanBuy * 1.18);
-    const prodId = `PROD-USED-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const existingDevice = linkingInventoryId
+      ? inventory.find(item => item.id === linkingInventoryId)
+      : null;
+    if (linkingInventoryId && !existingDevice) {
+      alert('This stock item is no longer available. Refresh Used Mobiles and select it again.');
+      return;
+    }
+    const prodId = existingDevice?.id || `PROD-USED-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
-    const frontImg = (deviceImages && deviceImages[0]) || null;
-    const backImg = (deviceImages && deviceImages[1]) || null;
+    const frontImg = (deviceImages && deviceImages[0]) || existingDevice?.frontImage || null;
+    const backImg = (deviceImages && deviceImages[1]) || existingDevice?.backImage || null;
 
-    if (frontImg) {
+    if (deviceImages?.[0]) {
       try { await saveProductImage(prodId, 'front', frontImg); } catch (e) {}
     }
-    if (backImg) {
+    if (deviceImages?.[1]) {
       try { await saveProductImage(prodId, 'back', backImg); } catch (e) {}
     }
 
     const newPurchase = {
       id: prodId,
+      inventoryId: prodId,
       voucherNo,
       date: today,
       sellerName: sellerName.trim(),
@@ -268,8 +277,8 @@ export default function UsedMobileModule({
       documentAttached: docAttached || Boolean(idImage) || Boolean(billImage),
       idImage: idImage || null,
       billImage: billImage || null,
-      deviceImages: deviceImages || [],
-      image: frontImg || null,
+      deviceImages: deviceImages?.length ? deviceImages : (existingDevice?.deviceImages || []),
+      image: frontImg || existingDevice?.image || null,
       addedToInventory: true,
       status: 'In Stock',
       warranty: '15 Days ALZINO Testing Warranty'
@@ -277,19 +286,20 @@ export default function UsedMobileModule({
 
     // Add this device directly to Inventory under "Used Mobiles"
     const newInventoryItem = {
+      ...(existingDevice || {}),
       id: prodId,
       category: 'Used Mobiles',
       brand: effectiveBrand,
       model: model.trim(),
-      name: `Used ${effectiveBrand} ${model.trim()} (${color || 'Standard'})`,
+      name: existingDevice?.name || `Used ${effectiveBrand} ${model.trim()} (${color || 'Standard'})`,
       hsn: '851712',
       gstRate: 18,
       buyPrice: cleanBuy,
       sellPrice: calculatedSell,
-      mrp: Math.round(calculatedSell * 1.1),
-      stock: 1,
+      mrp: Number(existingDevice?.mrp) || Math.round(calculatedSell * 1.1),
+      stock: existingDevice ? Math.max(1, Number(existingDevice.stock) || 0) : 1,
       lowStockThreshold: 1,
-      barcode: `ALZ-USED-${imei1.slice(-6)}`,
+      barcode: existingDevice?.barcode || `ALZ-USED-${imei1.slice(-6)}`,
       imeis: imei2 ? [imei1.trim(), imei2.trim()] : [imei1.trim()],
       imei1: imei1.trim(),
       imei2: imei2 ? imei2.trim() : '',
@@ -300,14 +310,18 @@ export default function UsedMobileModule({
       color: color.trim() || 'Standard',
       department: 'mobiles',
       type: 'refurbished',
-      image: frontImg || backImg || (deviceImages && deviceImages[0]) || null,
-      deviceImages: deviceImages || [],
-      images: (frontImg || backImg) ? { front: Boolean(frontImg), back: Boolean(backImg), v: Date.now() } : undefined,
+      image: frontImg || backImg || existingDevice?.image || null,
+      deviceImages: deviceImages?.length ? deviceImages : (existingDevice?.deviceImages || []),
+      images: deviceImages?.length
+        ? { front: Boolean(deviceImages[0]), back: Boolean(deviceImages[1]), v: Date.now() }
+        : existingDevice?.images,
       description: `Certified Pre-Owned ${effectiveBrand} ${model.trim()} with ${condition} (Battery Health: ${batteryHealth}%). Tested 24-point diagnostic QC check with 15-day ALZINO testing warranty.`,
       addedAt: new Date().toISOString()
     };
 
-    setInventory(prev => [newInventoryItem, ...prev]);
+    setInventory(prev => existingDevice
+      ? prev.map(item => item.id === prodId ? newInventoryItem : item)
+      : [newInventoryItem, ...prev]);
     setUsedPurchases(prev => [newPurchase, ...prev]);
 
     // Reset Form
@@ -323,18 +337,47 @@ export default function UsedMobileModule({
     setImei1('');
     setImei2('');
     setBuyPrice('');
+    setLinkingInventoryId(null);
     setTargetSellPrice('');
     setIdImage(null);
     setBillImage(null);
     setDeviceImages([]);
 
-    showToast(`Device ${effectiveBrand} ${model} inwarded successfully and added to Refurbished Stock!`);
+    showToast(existingDevice
+      ? `Seller KYC saved and linked to ${existingDevice.name}; the existing stock listing was updated.`
+      : `Device ${effectiveBrand} ${model} inwarded successfully and added to Refurbished Stock!`);
     
     // Auto-trigger print of legal voucher
     onPrintVoucher(newPurchase);
 
     // Switch to Stock tab to see newly inwarded device
     setActiveSubTab('stock');
+  };
+
+  const handleCompleteSellerKyc = (device) => {
+    const existingImeis = device.imeis || [];
+    setLinkingInventoryId(device.id);
+    setSellerName('');
+    setFatherName('');
+    setMobile('');
+    setIdType('Aadhaar Card');
+    setAadhaarNo('');
+    setAddress('');
+    setBrand(device.brand || 'Apple');
+    setCustomBrand('');
+    setModel(device.model || device.name || '');
+    setColor(device.color || '');
+    setImei1(device.imei1 || existingImeis[0] || '');
+    setImei2(device.imei2 || existingImeis[1] || '');
+    setBatteryHealth(String(device.batteryHealth || String(device.condition || '').match(/Battery:\s*(\d+)/i)?.[1] || '90'));
+    setCondition(String(device.condition || 'Tested & Clean').replace(/\s*\(Battery:\s*\d+%\)/i, ''));
+    setBuyPrice(String(device.buyPrice || device.purchasePrice || ''));
+    setTargetSellPrice(String(device.sellPrice || ''));
+    setPaymentMode('Cash');
+    setIdImage(null);
+    setBillImage(null);
+    setDeviceImages([]);
+    setActiveSubTab('buy');
   };
 
   // =========================================================================
@@ -925,6 +968,7 @@ export default function UsedMobileModule({
 
                         <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
                           <button
+                            type="button"
                             onClick={() => handleOpenResellModal(phone)}
                             className="btn-primary"
                             style={{
@@ -940,6 +984,26 @@ export default function UsedMobileModule({
                             <Receipt size={14} />
                             <span>Generate Bill</span>
                           </button>
+                          {!phone.kycRef && (
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteSellerKyc(phone)}
+                              className="btn-outline"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.4rem 0.65rem',
+                                fontSize: '0.75rem',
+                                whiteSpace: 'nowrap',
+                                marginTop: '0.35rem'
+                              }}
+                              title="Capture seller identity and purchase documents for this existing stock item"
+                            >
+                              <UserCheck size={14} />
+                              <span>Complete Seller KYC</span>
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -959,10 +1023,12 @@ export default function UsedMobileModule({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <UserCheck size={20} color="var(--accent-primary)" />
-              <h3 style={{ fontSize: '1.15rem', margin: 0 }}>Customer (Seller) Verification & Inward KYC</h3>
+              <h3 style={{ fontSize: '1.15rem', margin: 0 }}>
+                {linkingInventoryId ? 'Complete Seller Verification & Inward KYC' : 'Customer (Seller) Verification & Inward KYC'}
+              </h3>
             </div>
             <span className="mono-tag" style={{ background: 'var(--illoca-blue-subtle)', color: 'var(--accent-primary)', fontWeight: 700 }}>
-              AUTO-INWARDS TO REFURBISHED STOCK
+              {linkingInventoryId ? 'LINKS TO EXISTING STOCK' : 'AUTO-INWARDS TO REFURBISHED STOCK'}
             </span>
           </div>
 
@@ -1234,14 +1300,13 @@ export default function UsedMobileModule({
 
             <div>
               <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Secondary IMEI 2 (SIM 2 / eSIM) *
+                Secondary IMEI 2 (SIM 2 / eSIM, if available)
               </label>
               <input
                 type="text"
                 placeholder="IMEI 2"
                 value={imei2}
                 onChange={(e) => setImei2(e.target.value)}
-                required
                 className="input-field"
                 style={{ fontFamily: 'var(--font-mono)' }}
               />
@@ -1533,7 +1598,7 @@ export default function UsedMobileModule({
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
             <button 
               type="button" 
-              onClick={() => setActiveSubTab('stock')}
+              onClick={() => { setLinkingInventoryId(null); setActiveSubTab('stock'); }}
               className="btn-outline"
             >
               Cancel
@@ -1544,7 +1609,7 @@ export default function UsedMobileModule({
               style={{ padding: '0.7rem 1.5rem' }}
             >
               <Printer size={18} />
-              <span>Inward Device & Print Purchase Voucher</span>
+              <span>{linkingInventoryId ? 'Save Seller KYC & Link Existing Stock' : 'Inward Device & Print Purchase Voucher'}</span>
             </button>
           </div>
         </form>
