@@ -1,263 +1,162 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { KeyRound, ShieldCheck, X } from 'lucide-react';
-import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
+import React, { useEffect, useState } from 'react';
+import { Copy, QrCode, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import QRCode from 'qrcode';
+import { generateBase32Secret, getOtpAuthUri, verifyTotpToken } from '../utils/totp';
 
-const getAdminProfile = async (client, shopName) => {
-  const { data: { user }, error: userError } = await client.auth.getUser();
-  if (userError || !user) throw new Error('Your sign-in session expired. Please sign in again.');
-
-  let { data: profile, error } = await client
-    .from('profiles')
-    .select('organization_id, role, is_active')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (error) throw error;
-
-  if (!profile) {
-    const { error: setupError } = await client.rpc('bootstrap_invited_shop', {
-      p_name: shopName || 'ALZINO',
-      p_slug: 'alzino-bodhan'
-    });
-    if (setupError) throw setupError;
-    const result = await client.from('profiles')
-      .select('organization_id, role, is_active')
-      .eq('id', user.id)
-      .maybeSingle();
-    profile = result.data;
-    error = result.error;
-  }
-  if (error) throw error;
-  if (!profile?.is_active || profile.role !== 'admin' || !profile.organization_id) {
-    throw new Error('This invited account is not an active shop administrator.');
-  }
-};
+const getRoleStorageKeys = role => ({
+  secret: `ALZINO_ERP_TOTP_SECRET_${role.toUpperCase()}`,
+  enrolled: `ALZINO_ERP_TOTP_ENROLLED_${role.toUpperCase()}`
+});
 
 export default function PinAccessModal({ isOpen, role = 'admin', onClose, onSuccess, shopName = 'ALZINO' }) {
-  const [email, setEmail] = useState('');
+  const [secret, setSecret] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState('');
   const [code, setCode] = useState('');
-  const [step, setStep] = useState('checking');
-  const [factorId, setFactorId] = useState('');
-  const [challengeId, setChallengeId] = useState('');
-  const [qrCode, setQrCode] = useState('');
-  const [manualSecret, setManualSecret] = useState('');
+  const [setupComplete, setSetupComplete] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-
-  const admin = role === 'admin';
-
-  const finishAdminSignIn = useCallback(async client => {
-    await getAdminProfile(client, shopName);
-    window.dispatchEvent(new Event('alzino-cloud-auth-ready'));
-    await onSuccess?.();
-  }, [onSuccess, shopName]);
-
-  const continueSignedInAdmin = useCallback(async (client, session) => {
-    if (!session?.user) {
-      setStep('email');
-      return;
-    }
-    const { data: assurance, error: assuranceError } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (assuranceError) throw assuranceError;
-    if (assurance?.currentLevel === 'aal2') {
-      await finishAdminSignIn(client);
-      return;
-    }
-
-    const { data: factors, error: factorsError } = await client.auth.mfa.listFactors();
-    if (factorsError) throw factorsError;
-    const verified = factors?.totp?.find(factor => factor.status === 'verified');
-    if (verified) {
-      const { data: challenge, error: challengeError } = await client.auth.mfa.challenge({ factorId: verified.id });
-      if (challengeError) throw challengeError;
-      setFactorId(verified.id);
-      setChallengeId(challenge.id);
-      setStep('verify');
-      return;
-    }
-
-    const pending = factors?.all?.find(factor => factor.factor_type === 'totp' && factor.status === 'unverified');
-    if (pending) {
-      const { data: challenge, error: challengeError } = await client.auth.mfa.challenge({ factorId: pending.id });
-      if (challengeError) throw challengeError;
-      setFactorId(pending.id);
-      setChallengeId(challenge.id);
-      setStep('enroll');
-      return;
-    }
-
-    const { data: enrollment, error: enrollmentError } = await client.auth.mfa.enroll({
-      factorType: 'totp',
-      friendlyName: 'ALZINO Admin'
-    });
-    if (enrollmentError) throw enrollmentError;
-    setFactorId(enrollment.id);
-    setQrCode(enrollment.totp.qr_code);
-    setManualSecret(enrollment.totp.secret);
-    setStep('enroll');
-  }, [finishAdminSignIn]);
+  const [copied, setCopied] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(30 - (Math.floor(Date.now() / 1000) % 30));
+  const isAdmin = role === 'admin';
+  const portalName = isAdmin ? 'Admin' : 'Cashier';
 
   useEffect(() => {
     if (!isOpen) return undefined;
     let active = true;
+    const keys = getRoleStorageKeys(role);
+    let savedSecret = localStorage.getItem(keys.secret);
+    const isEnrolled = localStorage.getItem(keys.enrolled) === 'true';
+
+    // Preserve the earlier admin authenticator setup on this browser.
+    if (!savedSecret && isAdmin) {
+      savedSecret = localStorage.getItem('ALZINO_ERP_TOTP_SECRET');
+      if (savedSecret) localStorage.setItem(keys.secret, savedSecret);
+    }
+    if (!savedSecret) {
+      savedSecret = generateBase32Secret(20);
+      localStorage.setItem(keys.secret, savedSecret);
+    }
+
+    setSecret(savedSecret);
+    setSetupComplete(isEnrolled);
+    setCode('');
     setError('');
-    if (!admin) {
-      setStep('cashier');
-      return undefined;
-    }
-    if (!isSupabaseConfigured()) {
-      setStep('email');
-      setError('Cloud sign-in is not configured on this deployment.');
-      return undefined;
-    }
-    setStep('checking');
-    const client = getSupabaseClient();
-    client.auth.getSession().then(({ data, error: sessionError }) => {
-      if (!active) return;
-      if (sessionError) throw sessionError;
-      return continueSignedInAdmin(client, data.session);
-    }).catch(err => {
-      if (!active) return;
-      setError(err.message || 'Could not verify the admin session.');
-      setStep('email');
-    });
+
+    const account = `${role}@alzino.shop`;
+    const otpAuthUri = getOtpAuthUri(savedSecret, account, shopName || 'ALZINO');
+    QRCode.toDataURL(otpAuthUri, { width: 220, margin: 1, errorCorrectionLevel: 'M' })
+      .then(dataUrl => { if (active) setQrDataUrl(dataUrl); })
+      .catch(() => { if (active) setError('Could not create the setup QR code. You can enter the setup key manually.'); });
+
     return () => { active = false; };
-  }, [isOpen, admin, continueSignedInAdmin]);
+  }, [isOpen, role, isAdmin, shopName]);
 
-  const handleEmailSubmit = async event => {
-    event.preventDefault();
-    if (!admin) return;
-    setBusy(true);
-    setError('');
-    try {
-      const client = getSupabaseClient();
-      if (!client) throw new Error('Cloud sign-in is not configured on this deployment.');
-      const { error: signInError } = await client.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          shouldCreateUser: false,
-          emailRedirectTo: `${window.location.origin}${window.location.pathname}`
-        }
-      });
-      if (signInError) throw signInError;
-      setStep('sent');
-    } catch (err) {
-      setError(err.message || 'Could not send the sign-in link.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleTotpSubmit = async event => {
-    event.preventDefault();
-    const client = getSupabaseClient();
-    if (!client || !factorId) return;
-    setBusy(true);
-    setError('');
-    try {
-      let currentChallengeId = challengeId;
-      if (!currentChallengeId) {
-        const { data: challenge, error: challengeError } = await client.auth.mfa.challenge({ factorId });
-        if (challengeError) throw challengeError;
-        currentChallengeId = challenge.id;
-        setChallengeId(challenge.id);
-      }
-      const { error: verifyError } = await client.auth.mfa.verify({ factorId, challengeId: currentChallengeId, code: code.trim() });
-      if (verifyError) throw verifyError;
-      if (step === 'enroll') {
-        const { data: assurance, error: assuranceError } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (assuranceError) throw assuranceError;
-        if (assurance?.currentLevel !== 'aal2') throw new Error('Authenticator verification did not complete. Try the latest 6-digit code.');
-      }
-      await finishAdminSignIn(client);
-    } catch (err) {
-      setError(err.message || 'That authenticator code could not be verified.');
-      setCode('');
-      setChallengeId('');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleCashierSubmit = async event => {
-    event.preventDefault();
-    if (code !== '4848') {
-      setError('Incorrect cashier PIN.');
-      setCode('');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try { await onSuccess?.(); } catch (err) {
-      setError(err.message || 'Could not open the cashier portal.');
-      setBusy(false);
-    }
-  };
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const interval = setInterval(() => {
+      setSecondsRemaining(30 - (Math.floor(Date.now() / 1000) % 30));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   const close = () => {
-    setEmail('');
     setCode('');
     setError('');
     if (onClose) onClose();
     else {
-      const client = getSupabaseClient();
-      client?.auth.signOut();
       window.history.pushState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
   };
 
+  const handleSubmit = async event => {
+    event.preventDefault();
+    if (code.length !== 6 || !secret) return;
+    setBusy(true);
+    setError('');
+    try {
+      const valid = await verifyTotpToken(code, secret);
+      if (!valid) {
+        setError('Invalid code. Check the current code in Microsoft or Google Authenticator.');
+        setCode('');
+        return;
+      }
+      if (!setupComplete) {
+        localStorage.setItem(getRoleStorageKeys(role).enrolled, 'true');
+        setSetupComplete(true);
+      }
+      await onSuccess?.();
+    } catch (err) {
+      setError(err.message || 'Could not verify the authenticator code.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copySecret = async () => {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError('Could not copy the setup key. You can select and copy it manually.');
+    }
+  };
+
   if (!isOpen) return null;
-  const qrSrc = qrCode.startsWith('data:') ? qrCode : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrCode)}`;
 
   return (
     <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
-      <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="portal-auth-title" style={{ maxWidth: 440, width: '92%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14, boxSizing: 'border-box' }}>
+      <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="portal-auth-title" style={{ maxWidth: 460, width: '95%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14, boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <h2 id="portal-auth-title" style={{ marginTop: 0 }}>{admin ? 'Admin sign-in' : 'Cashier PIN'}</h2>
-          {onClose && <button type="button" className="btn-secondary" aria-label="Close" onClick={close}><X size={16} /></button>}
+          <h2 id="portal-auth-title" style={{ margin: 0 }}>{portalName} Authenticator</h2>
+          <button type="button" className="btn-secondary" aria-label="Close" onClick={close}><X size={16} /></button>
         </div>
-        {!admin ? (
-          <>
-            <p style={{ color: 'var(--text-secondary)' }}>Enter the 4-digit cashier PIN to open the counter.</p>
-            {error && <p role="alert" style={{ color: 'var(--status-red)' }}>{error}</p>}
-            <form onSubmit={handleCashierSubmit} style={{ display: 'grid', gap: 12 }}>
-              <input autoFocus aria-label="Cashier PIN" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 4))} className="input-field" />
-              <button className="btn-primary" type="submit" disabled={busy || code.length !== 4}><KeyRound size={16} />{busy ? 'Opening…' : 'Unlock cashier'}</button>
-            </form>
-          </>
-        ) : (
-          <>
-            {step === 'checking' && <p style={{ color: 'var(--text-secondary)' }}>Checking your secure admin session…</p>}
-            {step === 'email' && <>
-              <p style={{ color: 'var(--text-secondary)' }}>Sign in with the email invited to manage this shop. Admin access requires Google Authenticator.</p>
-              <form onSubmit={handleEmailSubmit} style={{ display: 'grid', gap: 12 }}>
-                <label htmlFor="admin-email">Invited admin email</label>
-                <input id="admin-email" aria-label="Invited admin email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="input-field" />
-                <button className="btn-primary" type="submit" disabled={busy || !email.trim()}><ShieldCheck size={16} />{busy ? 'Sending…' : 'Email sign-in link'}</button>
-              </form>
-            </>}
-            {step === 'sent' && <div role="status"><p>Check {email} for the sign-in link, then return here to continue setup.</p><button type="button" className="btn-secondary" onClick={() => setStep('email')}>Use a different email</button></div>}
-            {step === 'enroll' && <>
-              <p style={{ color: 'var(--text-secondary)' }}>Scan this QR code in Google Authenticator, then enter the current 6-digit code.</p>
-              {qrCode && <img src={qrSrc} alt="Google Authenticator setup QR code" style={{ display: 'block', width: 200, height: 200, margin: '0 auto 12px', background: '#fff' }} />}
-              {manualSecret && <p style={{ overflowWrap: 'anywhere' }}>Setup key: <strong>{manualSecret}</strong></p>}
-              <form onSubmit={handleTotpSubmit} style={{ display: 'grid', gap: 12 }}>
-                <label htmlFor="admin-totp">Authenticator code</label>
-                <input id="admin-totp" autoFocus aria-label="Authenticator code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="input-field" />
-                <button className="btn-primary" type="submit" disabled={busy || code.length !== 6}><ShieldCheck size={16} />{busy ? 'Verifying…' : 'Verify and open admin'}</button>
-              </form>
-            </>}
-            {step === 'verify' && <>
-              <p style={{ color: 'var(--text-secondary)' }}>Enter the current 6-digit code from Google Authenticator.</p>
-              <form onSubmit={handleTotpSubmit} style={{ display: 'grid', gap: 12 }}>
-                <label htmlFor="admin-totp">Authenticator code</label>
-                <input id="admin-totp" autoFocus aria-label="Authenticator code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="input-field" />
-                <button className="btn-primary" type="submit" disabled={busy || code.length !== 6}><ShieldCheck size={16} />{busy ? 'Verifying…' : 'Verify and open admin'}</button>
-              </form>
-            </>}
-            {error && <p role="alert" style={{ color: 'var(--status-red)' }}>{error}</p>}
-          </>
-        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 14, marginTop: 16 }}>
+          <div>
+            <label htmlFor="authenticator-code" style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginBottom: 8 }}>
+              <span>Enter 6-digit code from authenticator</span>
+              <span style={{ fontSize: '0.75rem', color: secondsRemaining <= 5 ? 'var(--status-red)' : 'var(--text-secondary)' }}><RefreshCw size={12} /> {secondsRemaining}s</span>
+            </label>
+            <input
+              id="authenticator-code"
+              autoFocus
+              aria-label="Authenticator code"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              autoComplete="one-time-code"
+              placeholder="000 000"
+              required
+              value={code}
+              onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="input-field"
+              style={{ fontSize: '1.5rem', letterSpacing: '0.35em', textAlign: 'center', fontWeight: 800 }}
+            />
+          </div>
+
+          {!setupComplete && <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-color)', borderRadius: 10, padding: 12, textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderBottom: '1px dashed var(--border-color)', paddingBottom: 10, marginBottom: 10 }}>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: 8 }}><QrCode size={17} /> Scan QR in Microsoft Authenticator</strong>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', margin: '4px 0 10px' }}>Open Microsoft Authenticator, tap +, choose Other account, then scan this QR code.</p>
+            {qrDataUrl ? <img src={qrDataUrl} alt={`${portalName} authenticator setup QR code`} style={{ width: 220, height: 220, maxWidth: '100%', background: '#fff', borderRadius: 8, border: '1px solid var(--border-color)' }} /> : <p>Preparing QR code…</p>}
+            <p style={{ color: 'var(--text-secondary)', margin: '10px 0 0', overflowWrap: 'anywhere' }}>
+              Setup key: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}>{secret}</strong>
+              <button type="button" onClick={copySecret} className="btn-secondary" style={{ marginLeft: 8, padding: '0.25rem 0.45rem' }}><Copy size={13} /> {copied ? 'Copied' : 'Copy'}</button>
+            </p>
+          </div>}
+
+          {error && <p role="alert" style={{ color: 'var(--status-red)', margin: 0 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" className="btn-secondary" onClick={close} style={{ flex: 1 }}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={busy || code.length !== 6} style={{ flex: 2 }}>
+              <ShieldCheck size={16} /> {busy ? 'Verifying…' : `Verify & Unlock ${portalName}`}
+            </button>
+          </div>
+        </form>
       </section>
     </div>
   );

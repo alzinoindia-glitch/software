@@ -19,7 +19,6 @@ import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
 import { findProductFromScan } from './utils/productTerms';
 import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from './utils/customTaxonomy';
-import { Lock, ShieldCheck, Key } from 'lucide-react';
 import { 
   pullAllFromCloud, 
   pullCollectionFromCloud,
@@ -92,10 +91,8 @@ export default function App() {
   // Role Mode ('admin' | 'cashier')
   const [role, setRole] = useState(() => initialRoute.role !== 'customer' ? initialRoute.role : getStorageData('ROLE', 'admin'));
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
-  const [isCashierPinOpen, setIsCashierPinOpen] = useState(() => initialRoute.portal === 'cashier');
+  const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier');
   const [cloudHydrated, setCloudHydrated] = useState(false);
-  const [cashierPin, setCashierPin] = useState('');
-  const [cashierPinError, setCashierPinError] = useState('');
   const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
 
@@ -155,9 +152,7 @@ export default function App() {
     const cleanPath = targetPath.replace(/\\/g, '/');
     if (cleanPath.startsWith('/cashier')) {
       setCashierTargetPath(cleanPath);
-      setCashierPin('');
-      setCashierPinError('');
-      setIsCashierPinOpen(true);
+      setIsCashierAuthOpen(true);
       return;
     }
     if (cleanPath.startsWith('/admin') && role !== 'admin') {
@@ -186,19 +181,17 @@ export default function App() {
       setPortal(r.portal);
       if (r.portal === 'admin') {
         setIsAdminAuthModalOpen(true);
-        setIsCashierPinOpen(false);
+        setIsCashierAuthOpen(false);
         setRole('admin');
         setActiveTab(r.tab || 'dashboard');
       } else if (r.portal === 'cashier') {
         setCashierTargetPath(window.location.pathname);
-        setCashierPin('');
-        setCashierPinError('');
-        setIsCashierPinOpen(true);
+        setIsCashierAuthOpen(true);
         setRole('cashier');
         setActiveTab(r.tab || 'pos');
       } else {
         setIsAdminAuthModalOpen(false);
-        setIsCashierPinOpen(false);
+        setIsCashierAuthOpen(false);
         setRole('customer');
         setActiveTab('storefront');
       }
@@ -296,7 +289,7 @@ export default function App() {
 
   // Initial Cloud Sync & Realtime multi-device subscription on mount
   useEffect(() => {
-    if (portal === 'customer' || (portal === 'admin' && isAdminAuthModalOpen) || (portal === 'cashier' && isCashierPinOpen)) {
+    if (portal === 'customer' || (portal === 'admin' && isAdminAuthModalOpen) || (portal === 'cashier' && isCashierAuthOpen)) {
       setCloudHydrated(false);
       return undefined;
     }
@@ -349,7 +342,7 @@ export default function App() {
       window.removeEventListener('alzino:technicians-updated', handleTechniciansUpdated);
       if (unsubscribe) unsubscribe();
     };
-  }, [portal, isCashierPinOpen, isAdminAuthModalOpen]);
+  }, [portal, isCashierAuthOpen, isAdminAuthModalOpen]);
 
   // Purge any residual demo data on mount
   useEffect(() => {
@@ -401,7 +394,7 @@ export default function App() {
     setIsAdminAuthModalOpen(true);
   };
 
-  const handleAdminPinSuccess = useCallback(() => {
+  const handleAdminAuthSuccess = useCallback(() => {
     setCloudHydrated(false);
     setRole('admin');
     setPortal('admin');
@@ -411,21 +404,15 @@ export default function App() {
     setIsAdminAuthModalOpen(false);
   }, [initialRoute.portal, initialRoute.tab]);
 
-  const handleCashierPinSubmit = (event) => {
-    event.preventDefault();
-    if (cashierPin !== '4848') {
-      setCashierPinError('Incorrect cashier PIN.');
-      setCashierPin('');
-      return;
-    }
-    setCashierPinError('');
-    setIsCashierPinOpen(false);
+  const handleCashierAuthSuccess = useCallback(() => {
+    setIsCashierAuthOpen(false);
     window.history.pushState(null, '', cashierTargetPath || '/cashier');
     const route = parseRoute();
     setPortal('cashier');
     setRole('cashier');
     setActiveTab(route.tab || 'pos');
-  };
+    setCloudHydrated(false);
+  }, [cashierTargetPath]);
 
   // Apply theme class to <body>
   useEffect(() => {
@@ -534,22 +521,10 @@ export default function App() {
   // Keep the protected admin workspace out of the rendered tree until both
   // the invited account and its authenticator factor have been verified.
   if (portal === 'admin' && isAdminAuthModalOpen) {
-    return <PinAccessModal isOpen role="admin" onSuccess={handleAdminPinSuccess} shopName={shopConfig.name || 'ALZINO'} />;
+    return <PinAccessModal isOpen role="admin" onSuccess={handleAdminAuthSuccess} shopName={shopConfig.name || 'ALZINO'} />;
   }
-  if (portal === 'cashier' && isCashierPinOpen) {
-    return (
-      <div className="modal-backdrop no-print" style={{ zIndex: 1200 }}>
-        <section className="modal-dialog animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cashier-pin-title" style={{ maxWidth: 360, width: '92%', padding: '1.25rem', background: 'var(--surface-card, #FEFDFA)', borderRadius: 14 }}>
-          <h2 id="cashier-pin-title" style={{ marginTop: 0 }}>Cashier PIN</h2>
-          <p style={{ color: 'var(--text-secondary)' }}>Enter the 4-digit cashier PIN to open the counter.</p>
-          {cashierPinError && <p role="alert" style={{ color: 'var(--status-red)' }}>{cashierPinError}</p>}
-          <form onSubmit={handleCashierPinSubmit} style={{ display: 'grid', gap: 12 }}>
-            <input autoFocus aria-label="Cashier PIN" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" required value={cashierPin} onChange={event => setCashierPin(event.target.value.replace(/\D/g, '').slice(0, 4))} className="input-field" />
-            <button className="btn-primary" type="submit" disabled={cashierPin.length !== 4}>Unlock cashier</button>
-          </form>
-        </section>
-      </div>
-    );
+  if (portal === 'cashier' && isCashierAuthOpen) {
+    return <PinAccessModal isOpen role="cashier" onSuccess={handleCashierAuthSuccess} shopName={shopConfig.name || 'ALZINO'} />;
   }
 
   return (
@@ -822,12 +797,12 @@ export default function App() {
         />
       )}
 
-      {/* Admin PIN gate */}
+      {/* Admin authenticator gate */}
       <PinAccessModal
         isOpen={isAdminAuthModalOpen}
         role="admin"
         onClose={portal === 'admin' ? undefined : () => setIsAdminAuthModalOpen(false)}
-        onSuccess={handleAdminPinSuccess}
+        onSuccess={handleAdminAuthSuccess}
         shopName={shopConfig.name || 'ALZINO'}
       />
 
