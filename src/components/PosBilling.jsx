@@ -2389,33 +2389,43 @@ export default function PosBilling({
               <label className="input-label" style={{ marginBottom: '0.45rem', fontWeight: 700, fontSize: '0.82rem' }}>
                 Select Received Payment Method:
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '0.35rem', background: 'var(--surface-card)', padding: '0.3rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' }}>
                 {[
-                  { id: 'UPI', label: '📱 Online UPI' },
-                  { id: 'Cash', label: '💵 Cash' },
-                  { id: 'Split', label: '⚡ Split Cash+UPI' },
-                  { id: 'EMI', label: '🏷️ EMI Finance' },
-                  { id: 'Card', label: '💳 Card' },
-                  { id: 'Khata', label: '📒 Khata' },
+                  { id: 'UPI', label: 'Online UPI', Icon: QrCode },
+                  { id: 'Cash', label: 'Cash', Icon: IndianRupee },
+                  { id: 'Split', label: 'Split Cash + UPI', Icon: Zap },
+                  { id: 'EMI', label: 'EMI Finance', Icon: Landmark },
+                  { id: 'Card', label: 'Card', Icon: CreditCard },
+                  { id: 'Khata', label: 'Khata', Icon: FileText },
                 ].map(pm => (
                   <button
                     key={pm.id}
                     type="button"
                     onClick={() => setPaymentMode(pm.id)}
+                    aria-pressed={paymentMode === pm.id}
                     style={{
-                      padding: '0.45rem 0.25rem',
+                      minHeight: '72px',
+                      padding: '0.65rem 0.4rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.35rem',
                       fontSize: '0.78rem',
-                      fontWeight: paymentMode === pm.id ? 800 : 600,
-                      borderRadius: 'var(--radius-sm)',
-                      border: paymentMode === pm.id ? '1px solid var(--accent-primary)' : '1px solid transparent',
-                      background: paymentMode === pm.id ? 'var(--badge-bg)' : 'transparent',
-                      color: paymentMode === pm.id ? 'var(--badge-text)' : 'var(--text-secondary)',
+                      lineHeight: 1.2,
+                      fontWeight: paymentMode === pm.id ? 850 : 650,
+                      borderRadius: '10px',
+                      border: paymentMode === pm.id ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                      background: paymentMode === pm.id ? 'var(--accent-primary)' : 'var(--bg-main)',
+                      color: paymentMode === pm.id ? 'var(--accent-contrast, #FFFFFF)' : 'var(--text-primary)',
                       cursor: 'pointer',
                       textAlign: 'center',
-                      transition: 'var(--transition-smooth)'
+                      transition: 'var(--transition-smooth)',
+                      boxShadow: paymentMode === pm.id ? '0 3px 10px rgba(12, 91, 67, 0.22)' : '0 1px 3px rgba(0,0,0,0.05)'
                     }}
                   >
-                    {pm.label}
+                    <pm.Icon size={19} strokeWidth={2.2} />
+                    <span>{pm.label}</span>
                   </button>
                 ))}
               </div>
