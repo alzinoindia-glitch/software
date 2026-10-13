@@ -141,7 +141,6 @@ export default function AuthenticatorLoginModal({ portal, isOpen, onClose, onSuc
         <button className="btn-primary" disabled={busy || adminCode.length !== 6 || cashierCode.length !== 6} style={primary}>{busy ? 'Activating…' : 'Verify and activate both authenticators'}</button>
       </form>}
 
-      {!setupMode && !setupData && portal === 'admin' && <button type="button" onClick={() => { setSetupMode(true); setError(''); setMessage(''); }} style={{ marginTop: 12, border: 0, padding: 4, background: 'transparent', color: 'var(--text-secondary)', textDecoration: 'underline', cursor: 'pointer' }}>Initial authenticator setup</button>}
       {setupMode && <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setSetupMode(false); setSetupData(null); setError(''); }} style={{ marginTop: 12 }}>Back to code entry</button>}
       {onClose && <button type="button" className="btn-secondary" disabled={busy} onClick={close} style={{ width: '100%', marginTop: 12 }}>Cancel</button>}
     </section>
