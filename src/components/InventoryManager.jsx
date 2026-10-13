@@ -617,7 +617,10 @@ export default function InventoryManager({
       imeisArray.push(formData.imei2.trim());
     }
 
-    const calculatedStock = imeisArray.length > 0 ? imeisArray.length : parseInt(formData.stock, 10) || 0;
+    // IMEI 1 and IMEI 2 identify one dual-SIM handset, not two units.
+    // The Stock Units field is the quantity the admin intends to save.
+    const parsedStock = Number.parseInt(formData.stock, 10);
+    const calculatedStock = Number.isFinite(parsedStock) ? Math.max(0, parsedStock) : 0;
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
