@@ -1,4 +1,5 @@
 // Product Terms & Conditions presets, URL barcode/QR resolution & variant aggregation for ALZINO
+import { getProductSellingPrice } from './storefrontProductRules';
 
 export const STANDARD_PRODUCT_TERMS_PRESETS = [
   {
@@ -152,7 +153,7 @@ export function findAvailableColorsForProduct(product, inventory = []) {
       image: product.image || null,
       images: product.images || null,
       stock: product.stock || 0,
-      sellPrice: product.sellPrice,
+      sellPrice: getProductSellingPrice(product),
       mrp: product.mrp,
       ram: product.ram,
       storage: product.storage,
@@ -184,7 +185,7 @@ export function findAvailableColorsForProduct(product, inventory = []) {
             image: item.image || null,
             images: item.images || null,
             stock: item.stock || 0,
-            sellPrice: item.sellPrice,
+            sellPrice: getProductSellingPrice(item),
             mrp: item.mrp,
             ram: item.ram,
             storage: item.storage,
@@ -211,7 +212,7 @@ export function findAvailableColorsForProduct(product, inventory = []) {
                 image: u.image || item.image || null,
                 images: item.images || null,
                 stock: 1,
-                sellPrice: item.sellPrice,
+                sellPrice: getProductSellingPrice(item),
                 mrp: item.mrp,
                 ram: item.ram,
                 storage: item.storage,
@@ -238,7 +239,7 @@ export function findAvailableColorsForProduct(product, inventory = []) {
             image: u.image || product.image || null,
             images: product.images || null,
             stock: 1,
-            sellPrice: product.sellPrice,
+            sellPrice: getProductSellingPrice(product),
             mrp: product.mrp,
             ram: product.ram,
             storage: product.storage,

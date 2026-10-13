@@ -2,6 +2,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
 import { clearAllProductImages, syncAllProductImagesToCloud } from './productImageStore';
+import { getProductSellingPrice } from './storefrontProductRules';
 
 const STORE_STATE_TABLE = 'store_state';
 
@@ -173,7 +174,7 @@ export const syncPublishedCatalog = (inventory = []) => {
           name: String(item.name).trim(),
           brand: item.brand || null,
           category: item.category || null,
-          sell_price: Math.max(0, Number(item.sellPrice) || 0),
+          sell_price: getProductSellingPrice(item),
           mrp: item.mrp == null ? null : Math.max(0, Number(item.mrp) || 0),
           stock_status: stock > 0 ? 'Available in store' : 'Out of stock',
           image_url: publicImage,

@@ -56,6 +56,7 @@ import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
+import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -344,7 +345,7 @@ export default function CustomerStorefront({
         const isUsed = category === 'Used Mobiles';
         const isAppliance = category === 'Home Appliances';
         const isAccessory = category === 'Mobile Accessories';
-        const price = Number(item.sell_price) || 0;
+        const price = getProductSellingPrice(item);
         return {
           id: item.id,
           name: item.name,
@@ -401,8 +402,8 @@ export default function CustomerStorefront({
         const department = isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles');
         const agingDays = getAgingDays(item);
         const hasOffer = item.offer && item.offer.pct > 0;
-        const regularPrice = item.offer?.regularPrice || item.mrp || Math.round((item.sellPrice || 0) * 1.08);
-        const sellPrice = item.sellPrice || 0;
+        const sellPrice = getProductSellingPrice(item);
+        const regularPrice = firstPositiveAmount(item.offer?.regularPrice, item.mrp, Math.round(sellPrice * 1.08));
         const discount = regularPrice > sellPrice ? Math.round(((regularPrice - sellPrice) / regularPrice) * 100) : 0;
 
         let condition = isUsedMobile
@@ -452,7 +453,7 @@ export default function CustomerStorefront({
           if (item.id && inventory.some(i => i.id === item.id)) return;
 
           const buyP = Number(item.buyPrice || item.purchasePrice || 0);
-          const sellP = Number(item.sellPrice || item.targetSellPrice || item.expectedSellingPrice || (buyP > 0 ? Math.round(buyP * 1.18) : 0));
+          const sellP = getProductSellingPrice(item, buyP > 0 ? Math.round(buyP * 1.18) : 0);
           const mrpVal = Number(item.mrp || (sellP > 0 ? Math.round(sellP * 1.1) : 0));
           const disc = mrpVal > sellP ? Math.round(((mrpVal - sellP) / mrpVal) * 100) : 0;
           const uColor = item.color ? ` (${item.color})` : '';

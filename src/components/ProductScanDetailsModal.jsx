@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ProductImageViewer } from './ProductImages';
 import { getRealProductImage } from './CustomerStorefront';
+import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
 import { 
   normalizeProductTerms, 
   findAvailableColorsForProduct, 
@@ -64,7 +65,7 @@ export default function ProductScanDetailsModal({
       colorHex: product.colorHex || '#333333',
       image: product.image,
       stock: product.stock,
-      sellPrice: product.sellPrice,
+      sellPrice: getProductSellingPrice(product),
       mrp: product.mrp
     };
   }, [availableColors, selectedColorKey, product]);
@@ -78,8 +79,8 @@ export default function ProductScanDetailsModal({
 
   if (!isOpen || !product) return null;
 
-  const effectivePrice = Number(activeVariant.sellPrice || product.sellPrice || 0);
-  const effectiveMrp = Number(activeVariant.mrp || product.mrp || effectivePrice);
+  const effectivePrice = getProductSellingPrice(activeVariant, getProductSellingPrice(product));
+  const effectiveMrp = firstPositiveAmount(activeVariant.mrp, product.mrp, effectivePrice);
   const discountSavings = Math.max(0, effectiveMrp - effectivePrice);
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
 
@@ -810,7 +811,7 @@ export default function ProductScanDetailsModal({
             <button
               type="button"
               onClick={() => {
-                if (onAddToCart) onAddToCart(product);
+                if (onAddToCart) onAddToCart({ ...product, sellPrice: effectivePrice, price: effectivePrice });
                 onClose();
               }}
               style={{
