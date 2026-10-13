@@ -662,7 +662,9 @@ export default function BulkMobileVariantEntryModal({
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        // The ALZINO master workbook has its real column headers on Excel row 4.
+        const isAlzinoMaster = sheetName === 'ALZINO_IMPORT';
+        const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', ...(isAlzinoMaster ? { range: 3 } : {}) });
 
         if (!json || json.length === 0) {
           setExcelErrors(['Uploaded file contains no data rows.']);
@@ -670,19 +672,45 @@ export default function BulkMobileVariantEntryModal({
         }
 
         const errors = [];
+        if (isAlzinoMaster) {
+          errors.push('Stock quantities are left at 0 because the workbook marks all units as not physically counted.');
+          errors.push('Selling price, MRP, GST, warranty and actual inward date are left blank until verified by an admin.');
+        }
+        const usedCodes = new Set(inventory.flatMap(item => [item.barcode, ...(item.barcodes || []), ...((item.units || []).map(unit => unit.barcode))]).filter(Boolean).map(code => String(code).toUpperCase()));
+        let codeSequence = (Date.now() % 900000) + 100000;
+        const nextAlzinoBarcode = () => {
+          for (let attempt = 0; attempt < 900000; attempt += 1) {
+            const code = `ALZ-${String(codeSequence).padStart(6, '0')}`;
+            codeSequence = codeSequence >= 999999 ? 100000 : codeSequence + 1;
+            if (!usedCodes.has(code)) {
+              usedCodes.add(code);
+              return code;
+            }
+          }
+          return `ALZ-${Math.random().toString().slice(2, 8)}`;
+        };
         const parsedRows = json.map((row, idx) => {
+          const isMasterRow = isAlzinoMaster && Boolean(row['Barcode / SKU']);
           const category = String(row.Category || row.category || modelDetails.category || 'New Mobiles').trim();
           const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(category);
           const subCategory = String(row.Subcategory || row.SubCategory || row.subCategory || row.subcategory || '').trim();
-          const brand = row.Brand || row.brand || 'Universal';
+          const rawBrand = row.Brand || row.brand || 'Universal';
+          const brand = isMasterRow && /unspecified|verify|check box/i.test(String(rawBrand)) ? '' : rawBrand;
           saveCustomCategory(category);
           saveCustomBrand(String(brand).trim(), category);
           saveCustomSubcategory(subCategory, category);
-          const model = row.Model || row.model || '';
-          const sellPrice = parseFloat(row.SellingPrice || row.SellPrice || row.price || 0);
+          const model = row.Model || row.model || row['Product Name / Model'] || row['Invoice Product Name'] || '';
+          const suggestedPrice = Number.parseFloat(row.SellingPrice ?? row.SellPrice ?? row.price ?? row['Suggested Selling ₹']) || 0;
+          const sellPrice = isMasterRow ? 0 : suggestedPrice;
 
           if (!model) errors.push(`Row ${idx + 2}: Missing Model name`);
-          if (!sellPrice || sellPrice <= 0) errors.push(`Row ${idx + 2}: Missing or invalid Selling Price`);
+          if (!isMasterRow && (!sellPrice || sellPrice <= 0)) errors.push(`Row ${idx + 2}: Selling Price is blank and will remain 0 until edited`);
+
+          const rawQuantity = row.Quantity ?? row.quantity ?? row.Qty ?? row.qty ?? row['Stock Units'];
+          const parsedQuantity = Number.parseInt(rawQuantity, 10);
+          const stockNotVerified = isMasterRow && String(row['Stock Verification'] || '').toLowerCase().includes('not physically counted');
+          const quantity = isMasterRow && stockNotVerified ? 0 : (Number.isFinite(parsedQuantity) ? Math.max(0, parsedQuantity) : 0);
+          const sourceBarcode = row.Barcode || row.barcode || row['Barcode / SKU'];
 
           return {
             rowNo: idx + 2,
@@ -691,21 +719,24 @@ export default function BulkMobileVariantEntryModal({
             capacity: String(row.Capacity || row.capacity || '').trim(),
             brand: String(brand).trim(),
             model: String(model).trim(),
+            isMasterRow,
             ram: String(row.RAM || row.ram || (isPhoneCategory ? '8GB' : '')).trim(),
             storage: String(row.Storage || row.storage || (isPhoneCategory ? '128GB' : '')).trim(),
-            colour: String(row.Colour || row.Color || row.colour || row.color || 'Standard').trim(),
-            quantity: Math.max(1, parseInt(row.Quantity || row.quantity || row.Qty || row.qty || 1, 10)),
+            colour: String(row.Colour || row.Color || row.colour || row.color || (isPhoneCategory ? 'Standard' : '')).trim(),
+            quantity,
             imei1: String(row.IMEI1 || row.imei1 || row.IMEI || row.imei || '').trim(),
             imei2: String(row.IMEI2 || row.imei2 || '').trim(),
-            barcode: String(row.Barcode || row.barcode || `ALZ-EX-${Date.now().toString().slice(-4)}-${idx + 1}`).trim(),
-            hsn: String(row.HSN || row.hsn || (isPhoneCategory ? '851712' : '')).trim(),
-            gstRate: parseFloat(row.GSTRate || row.GstRate || row.gstRate || 18),
-            purchasePrice: parseFloat(row.PurchasePrice || row.BuyPrice || row.buyPrice || 0),
+            barcode: isMasterRow ? nextAlzinoBarcode() : String(sourceBarcode || nextAlzinoBarcode()).trim(),
+            codeFormat: String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'both' ? 'both' : (String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'qr' ? 'qr' : 'barcode'),
+            hsn: String(row.HSN || row.hsn || '').trim(),
+            gstRate: isMasterRow ? 0 : (Number.parseFloat(row.GSTRate ?? row.GstRate ?? row.gstRate ?? row['System Tax % (verify)']) || 0),
+            purchasePrice: Number.parseFloat(row.PurchasePrice ?? row.BuyPrice ?? row.buyPrice ?? row['Buy Cost ₹']) || 0,
             sellPrice,
-            mrp: parseFloat(row.MRP || row.mrp || sellPrice),
-            rack: String(row.Rack || row.rack || 'R-01').trim().toUpperCase(),
-            bin: String(row.Bin || row.bin || 'B-01').trim().toUpperCase(),
-            warranty: String(row.Warranty || row.warranty || '1 Year Brand Warranty').trim(),
+            mrp: isMasterRow ? 0 : (Number.parseFloat(row.MRP ?? row.mrp ?? sellPrice) || 0),
+            rack: String(isMasterRow ? '' : (row.Rack || row.rack || 'R-01')).trim().toUpperCase(),
+            bin: String(isMasterRow ? '' : (row.Bin || row.bin || 'B-01')).trim().toUpperCase(),
+            warranty: String(row.Warranty || row.warranty || '').trim(),
+            receivedDate: isMasterRow ? '' : String(row.ReceivedDate || row.receivedDate || '').trim(),
           };
         });
 
@@ -747,12 +778,14 @@ export default function BulkMobileVariantEntryModal({
     // Group rows by Brand + Model + RAM + Storage + Colour
     const grouped = {};
     excelRows.forEach(row => {
-      const key = `${row.category}|${row.subCategory}|${row.capacity}|${row.brand}|${row.model}|${row.ram}|${row.storage}|${row.colour}`.toLowerCase();
+      const key = `${row.category}|${row.subCategory}|${row.capacity}|${row.brand}|${row.model}|${row.ram}|${row.storage}|${row.colour}|${row.purchasePrice}|${row.sellPrice}|${row.mrp}|${row.gstRate}`.toLowerCase();
       if (!grouped[key]) {
         grouped[key] = {
           category: row.category,
           subCategory: row.subCategory,
           capacity: row.capacity,
+          barcode: row.barcode,
+          codeFormat: row.codeFormat,
           brand: row.brand,
           model: row.model,
           ram: row.ram,
@@ -766,6 +799,9 @@ export default function BulkMobileVariantEntryModal({
           rack: row.rack,
           bin: row.bin,
           warranty: row.warranty,
+          receivedDate: row.receivedDate,
+          description: row.description,
+          isMasterRow: row.isMasterRow,
           units: []
         };
       }
@@ -789,7 +825,9 @@ export default function BulkMobileVariantEntryModal({
     const newInventoryItems = Object.values(grouped).map((group, gIdx) => {
       const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(group.category);
       const specs = isPhoneCategory ? `${group.ram}/${group.storage}` : [group.subCategory, group.capacity].filter(Boolean).join(' · ');
-      const variantName = `${group.brand} ${group.model}${specs ? ` (${specs})` : ''}${group.colour ? ` - ${group.colour}` : ''}`;
+      const variantName = group.isMasterRow || !isPhoneCategory
+        ? group.model
+        : `${group.brand} ${group.model}${specs ? ` (${specs})` : ''}${group.colour ? ` - ${group.colour}` : ''}`;
       const variantImeis = [];
       group.units.forEach(u => {
         if (u.imei1) variantImeis.push(u.imei1);
@@ -807,7 +845,7 @@ export default function BulkMobileVariantEntryModal({
         ram: group.ram,
         storage: group.storage,
         color: group.colour,
-        description: `${group.brand} ${group.model}${specs ? ` ${specs}` : ''}${group.colour ? ` (${group.colour})` : ''} imported from spreadsheet.`,
+        description: group.description || (group.isMasterRow ? '' : `${group.brand} ${group.model}${specs ? ` ${specs}` : ''}${group.colour ? ` (${group.colour})` : ''} imported from spreadsheet.`),
         isGst: (Number(group.gstRate) || 0) > 0,
         hsn: group.hsn,
         gstRate: group.gstRate,
@@ -819,12 +857,13 @@ export default function BulkMobileVariantEntryModal({
         rack: group.rack,
         bin: group.bin,
         locations: [{ rack: group.rack, bin: group.bin, qty: group.units.length }],
-        barcode: group.units[0]?.barcode || `ALZ-EX-${Date.now().toString().slice(-6)}`,
+        barcode: group.units[0]?.barcode || group.barcode || `ALZ-EX-${Date.now().toString().slice(-6)}`,
+        codeFormat: group.codeFormat || 'barcode',
         barcodes: group.units.map(u => u.barcode).filter(Boolean),
         imeis: variantImeis,
         units: group.units,
         warranty: group.warranty,
-        receivedDate: new Date().toISOString().split('T')[0],
+          receivedDate: group.receivedDate || '',
         createdAt: new Date().toISOString(),
         status: 'Active'
       };
