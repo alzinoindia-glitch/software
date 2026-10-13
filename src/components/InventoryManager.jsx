@@ -42,7 +42,8 @@ import {
   STANDARD_PRODUCT_TERMS_PRESETS, 
   DEFAULT_PRODUCT_TERMS, 
   normalizeProductTerms, 
-  findProductFromScan 
+  findProductFromScan,
+  buildProductScanUrl
 } from '../utils/productTerms';
 import {
   BASE_CATEGORIES,
@@ -2472,6 +2473,7 @@ export default function InventoryManager({
                         title: formData.name || 'Product',
                         barcode: formData.barcode,
                         codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
+                        qrValue: buildProductScanUrl({ id: editingItem?.id || formData.barcode, barcode: formData.barcode }, '', { addToCart: true }),
                         price: formData.sellPrice || 0,
                         mrp: formData.mrp || formData.sellPrice || 0,
                         shopName: shopConfig?.name || 'ALZINO MOBILES'
@@ -2590,7 +2592,7 @@ export default function InventoryManager({
                   }}>
                     <div 
                       dangerouslySetInnerHTML={{ 
-                        __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 50, true) 
+                        __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 50, true, buildProductScanUrl({ id: editingItem?.id || formData.barcode, barcode: formData.barcode }, '', { addToCart: true }))
                       }} 
                     />
                   </div>
@@ -2937,6 +2939,7 @@ export default function InventoryManager({
             {(() => {
               const activeFormat = quickLabelFormat || quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode');
               const effectiveBarcode = quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`;
+              const productScanUrl = buildProductScanUrl(quickBarcodeItem, '', { addToCart: true });
               return (
                 <>
                   {/* Selector: Barcode vs QR vs Both */}
@@ -3035,7 +3038,8 @@ export default function InventoryManager({
                           activeFormat, 
                           240, 
                           activeFormat === 'both' ? 55 : (activeFormat === 'qr' ? 80 : 60), 
-                          true
+                          true,
+                          productScanUrl
                         ) 
                       }} 
                       style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
@@ -3108,6 +3112,7 @@ export default function InventoryManager({
                           title: quickBarcodeItem.name,
                           barcode: effectiveBarcode,
                           codeFormat: activeFormat,
+                          qrValue: productScanUrl,
                           price: quickBarcodeItem.sellPrice,
                           mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
                           shopName: shopConfig?.name || 'ALZINO MOBILES'
@@ -3127,6 +3132,7 @@ export default function InventoryManager({
                           onPrintBarcodeSheet({
                             title: quickBarcodeItem.name,
                             barcode: effectiveBarcode,
+                            id: quickBarcodeItem.id,
                             codeFormat: activeFormat,
                             price: quickBarcodeItem.sellPrice,
                             mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,

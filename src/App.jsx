@@ -203,7 +203,7 @@ export default function App() {
 
   // Detect ?product=... or ?scan=... in URL when scanning physical QR sticker with smartphone camera
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || portal === 'customer') return;
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const scanCode = urlParams.get('product') || urlParams.get('scan') || urlParams.get('code');
@@ -216,7 +216,7 @@ export default function App() {
     } catch (err) {
       console.warn('Could not parse scan URL query params:', err);
     }
-  }, [inventory]);
+  }, [inventory, portal]);
 
   // Quick Bill Product (from Stock Lookup to POS)
   const [quickBillProduct, setQuickBillProduct] = useState(null);

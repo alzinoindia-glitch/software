@@ -101,11 +101,11 @@ export function renderQrSvg(value = "", size = 110) {
 /**
  * Universal Code Renderer: Automatically dispatches to Barcode (Code-128), QR Code, or Both
  */
-export function renderCodeSvg(value = "", codeFormat = "barcode", width = 240, height = 70, showText = true) {
+export function renderCodeSvg(value = "", codeFormat = "barcode", width = 240, height = 70, showText = true, qrValue = value) {
   if (codeFormat === 'both') {
     const qrSize = Math.max(50, Math.min(height + 15, 68));
     const barcodeWidth = Math.max(120, width - qrSize - 12);
-    const qrSvg = renderQrSvg(value, qrSize);
+    const qrSvg = renderQrSvg(qrValue, qrSize);
     const bcSvg = renderBarcodeSvg(value, barcodeWidth, height, showText);
     return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:${width}px;margin:0 auto;">
       <div style="flex-shrink:0;display:flex;align-items:center;justify-content:center;">${qrSvg}</div>
@@ -113,7 +113,7 @@ export function renderCodeSvg(value = "", codeFormat = "barcode", width = 240, h
     </div>`;
   }
   if (codeFormat === 'qr' || (typeof value === 'string' && value.includes('QR-'))) {
-    return renderQrSvg(value, Math.min(width, height > 45 ? height : 90));
+    return renderQrSvg(qrValue, Math.min(width, height > 45 ? height : 90));
   }
   return renderBarcodeSvg(value, width, height, showText);
 }
@@ -132,6 +132,7 @@ export async function downloadStickerImage({
   title = "Product",
   barcode = "ALZ-000",
   codeFormat = "barcode",
+  qrValue = barcode,
   price = 0,
   mrp = 0,
   shopName = "ALZINO MOBILES • BODHAN"
@@ -204,11 +205,11 @@ export async function downloadStickerImage({
   // Render Code(s) based on format
   if (codeFormat === 'both') {
     const qrSize = 110;
-    await drawQrToCanvas(barcode, 30, 68, qrSize);
+    await drawQrToCanvas(qrValue, 30, 68, qrSize);
     drawBarcodeToCanvas(barcode, 155, 68, width - 180, 110);
   } else if (codeFormat === 'qr' || barcode.includes('QR-')) {
     const qrSize = 125;
-    await drawQrToCanvas(barcode, (width - qrSize) / 2, 64, qrSize);
+    await drawQrToCanvas(qrValue, (width - qrSize) / 2, 64, qrSize);
   } else {
     drawBarcodeToCanvas(barcode, 30, 68, width - 60, 110);
   }

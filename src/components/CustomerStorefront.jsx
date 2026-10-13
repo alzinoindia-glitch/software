@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ProductImageViewer } from './ProductImages';
 import { getAgingDays } from '../utils/stockOffers';
 import { 
@@ -202,6 +202,8 @@ export default function CustomerStorefront({
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('featured'); 
   const [selectedProductModal, setSelectedProductModal] = useState(null);
+  const [scanAddedNotice, setScanAddedNotice] = useState('');
+  const handledScanRef = useRef('');
   const [isStorefrontScannerOpen, setIsStorefrontScannerOpen] = useState(false);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [isMobileCategoriesOpen, setIsMobileCategoriesOpen] = useState(false);
@@ -500,6 +502,33 @@ export default function CustomerStorefront({
       [product.id]: (prev[product.id] || 0) + 1
     }));
   };
+
+  // QR links open this public storefront directly. Resolve the product after
+  // inventory loads, add one unit to the cart, and show its product details.
+  useEffect(() => {
+    if (typeof window === 'undefined' || liveProducts.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const scanCode = params.get('product') || params.get('scan') || params.get('code');
+    if (!scanCode || handledScanRef.current === scanCode) return;
+    const shouldAddToCart = params.get('addToCart') === '1';
+    const found = findProductFromScan(scanCode, liveProducts) || findProductFromScan(scanCode, inventory);
+    if (!found) return;
+
+    const product = liveProducts.find(item => String(item.id) === String(found.id)) || found;
+    handledScanRef.current = scanCode;
+    if (shouldAddToCart) addToCart(product);
+    setSelectedProductModal(product);
+    if (shouldAddToCart) {
+      setScanAddedNotice(`${product.name} added to your cart`);
+      window.setTimeout(() => setScanAddedNotice(''), 4000);
+    }
+    params.delete('product');
+    params.delete('scan');
+    params.delete('code');
+    params.delete('addToCart');
+    const nextQuery = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
+  }, [liveProducts, inventory]);
 
   const removeFromCart = (product) => {
     setCart(prev => {
@@ -2044,9 +2073,13 @@ export default function CustomerStorefront({
           onClose={() => setIsStorefrontScannerOpen(false)}
           onScan={(scannedCode) => {
             setIsStorefrontScannerOpen(false);
-            const matched = findProductFromScan(scannedCode, inventory);
+            const matched = findProductFromScan(scannedCode, liveProducts) || findProductFromScan(scannedCode, inventory);
             if (matched) {
-              setSelectedProductModal(matched);
+              const product = liveProducts.find(item => String(item.id) === String(matched.id)) || matched;
+              addToCart(product);
+              setSelectedProductModal(product);
+              setScanAddedNotice(`${product.name} added to your cart`);
+              window.setTimeout(() => setScanAddedNotice(''), 4000);
             } else {
               alert(`Product matching code "${scannedCode}" was not found in active inventory.`);
             }
@@ -2057,6 +2090,7 @@ export default function CustomerStorefront({
       )}
 
       <style>{'.storefront-mobile-bottom-nav{position:fixed;inset:auto 0 0;min-height:62px;z-index:1200;align-items:stretch;justify-content:space-around;gap:0;padding:.25rem .15rem max(.25rem,env(safe-area-inset-bottom));background:#fff;border-top:1px solid #E5E7EB;box-shadow:0 -4px 18px rgba(15,23,42,.12)}.storefront-mobile-bottom-nav button{position:relative;flex:1;min-width:0;border:0;background:transparent;color:#52606D;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18rem;font-size:.62rem;font-weight:700}.storefront-mobile-bottom-nav button:active{color:#0C5B43}.storefront-mobile-more-menu{position:fixed;z-index:1201;bottom:68px;right:.5rem;width:min(220px,calc(100vw - 1rem));padding:.4rem;background:#fff;border:1px solid #E5E7EB;border-radius:12px;box-shadow:0 8px 28px rgba(15,23,42,.18)}.storefront-mobile-more-menu a{display:flex;align-items:center;gap:.6rem;padding:.7rem;color:#1F2937;text-decoration:none;font-size:.86rem;font-weight:700}'} </style>
+      {scanAddedNotice && <div role="status" style={{ position: 'fixed', top: '1rem', left: '50%', transform: 'translateX(-50%)', zIndex: 2200, padding: '.7rem 1rem', borderRadius: '999px', background: '#0C5B43', color: '#fff', fontWeight: 800, boxShadow: '0 8px 24px rgba(0,0,0,.2)' }}>{scanAddedNotice}</div>}
       <nav className="storefront-mobile-bottom-nav" aria-label="Mobile storefront navigation">
         <button type="button" onClick={() => { setSelectedCategory('all'); setSearchTerm(''); document.querySelector('.storefront-catalog-section')?.scrollIntoView({ behavior: 'smooth' }); }} aria-label="Home and all products">
           <Home size={19} /><span>Home</span>

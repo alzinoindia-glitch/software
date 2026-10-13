@@ -71,11 +71,13 @@ export function normalizeProductTerms(terms) {
 /**
  * Generate a smart scan URL for product QR code
  */
-export function buildProductScanUrl(product, baseUrl = '') {
+export function buildProductScanUrl(product, baseUrl = '', { addToCart = false } = {}) {
   if (!product) return '';
   const origin = baseUrl || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://alzino.shop');
   const prodId = product.id || product.barcode || '';
-  return `${origin}/?product=${encodeURIComponent(prodId)}`;
+  const params = new URLSearchParams({ product: prodId });
+  if (addToCart) params.set('addToCart', '1');
+  return `${origin}/?${params.toString()}`;
 }
 
 /**

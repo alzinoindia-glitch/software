@@ -10,6 +10,7 @@ import {
   QrCode
 } from 'lucide-react';
 import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
+import { buildProductScanUrl } from '../utils/productTerms';
 
 export default function BarcodeGenerator({ 
   inventory, 
@@ -313,7 +314,7 @@ export default function BarcodeGenerator({
             {/* SVG Barcode or QR Code */}
             <div 
               style={{ margin: '0.35rem 0', display: 'flex', justifyContent: 'center' }}
-              dangerouslySetInnerHTML={{ __html: renderCodeSvg(customBarcode, codeFormat, 220, codeFormat === 'qr' ? 100 : 55, true) }} 
+              dangerouslySetInnerHTML={{ __html: renderCodeSvg(customBarcode, codeFormat, 220, codeFormat === 'qr' ? 100 : 55, true, buildProductScanUrl({ id: selectedProductId, barcode: customBarcode }, '', { addToCart: true })) }}
             />
 
             {/* Pricing */}
