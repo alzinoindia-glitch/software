@@ -14,6 +14,7 @@ import SettingsBackup from './components/SettingsBackup';
 import IllocaPulloutDrawer from './components/IllocaPulloutDrawer';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import PrintTemplates from './components/PrintTemplates';
+import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
 import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
@@ -521,7 +522,7 @@ export default function App() {
   // Keep the protected admin workspace out of the rendered tree until both
   // the invited account and its authenticator factor have been verified.
   if (portal === 'admin' && isAdminAuthModalOpen) {
-    return <PinAccessModal isOpen role="admin" onSuccess={handleAdminAuthSuccess} shopName={shopConfig.name || 'ALZINO'} />;
+    return <AdminAuthModal isOpen onSuccess={handleAdminAuthSuccess} />;
   }
   if (portal === 'cashier' && isCashierAuthOpen) {
     return <PinAccessModal isOpen role="cashier" onSuccess={handleCashierAuthSuccess} shopName={shopConfig.name || 'ALZINO'} />;
@@ -798,12 +799,10 @@ export default function App() {
       )}
 
       {/* Admin authenticator gate */}
-      <PinAccessModal
+      <AdminAuthModal
         isOpen={isAdminAuthModalOpen}
-        role="admin"
         onClose={portal === 'admin' ? undefined : () => setIsAdminAuthModalOpen(false)}
         onSuccess={handleAdminAuthSuccess}
-        shopName={shopConfig.name || 'ALZINO'}
       />
 
       {/* Global Product QR Scan Specifications, Colours & Terms Modal */}
