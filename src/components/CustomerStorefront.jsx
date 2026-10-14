@@ -406,7 +406,7 @@ export default function CustomerStorefront({
     if (inventory && inventory.length > 0) {
       inventory.forEach(item => {
         const cleanName = (item.name || '').replace(/^sSamsung/i, 'Samsung');
-        if ((Number(item.stock) || 0) <= 0 || item.isPublished === false || item.status === 'Archived') return;
+        if ((Number(item.stock) || 0) <= 0 || getProductSellingPrice(item) <= 0 || item.isPublished === false || item.status === 'Archived') return;
         if (item.kycRef) seenVouchers.add(item.kycRef);
         if (item.imeis && Array.isArray(item.imeis)) item.imeis.forEach(im => seenImeis.add(im));
         if (item.imei1) seenImeis.add(item.imei1);

@@ -167,6 +167,7 @@ export const syncPublishedCatalog = (inventory = []) => {
 
       const products = snapshot.filter(item => item?.id && item?.name).map(item => {
         const stock = Math.max(0, Number(item.stock) || 0);
+        const sellPrice = getProductSellingPrice(item);
         const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
           .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) || null;
         const publicSpecifications = sanitizePublicSpecifications(item.specifications);
@@ -181,14 +182,14 @@ export const syncPublishedCatalog = (inventory = []) => {
           name: String(item.name).trim(),
           brand: item.brand || null,
           category: item.category || null,
-          sell_price: getProductSellingPrice(item),
+          sell_price: sellPrice,
           mrp: item.mrp == null ? null : Math.max(0, Number(item.mrp) || 0),
           stock_status: stock > 0 ? 'Available in store' : 'Out of stock',
           image_url: publicImage,
           specifications,
           description: String(item.description || '').trim() || null,
           offer_text: item.offer?.label || item.offerText || null,
-          is_published: stock > 0 && item.isPublished !== false && item.status !== 'Archived',
+          is_published: stock > 0 && sellPrice > 0 && item.isPublished !== false && item.status !== 'Archived',
           updated_at: new Date().toISOString()
         };
       });

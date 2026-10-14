@@ -862,7 +862,9 @@ export default function BulkMobileVariantEntryModal({
         units: group.units,
         warranty: group.warranty,
           receivedDate: group.receivedDate || '',
-        isPublished: group.isMasterRow ? false : true,
+        // Imported stock with a verified selling price can be published. Rows
+        // with missing prices stay private until an admin completes the product.
+        isPublished: group.units.length > 0 && Number(group.sellPrice) > 0,
         createdAt: new Date().toISOString(),
         status: 'Active'
       };
