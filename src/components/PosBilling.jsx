@@ -632,33 +632,13 @@ export default function PosBilling({
     setPaidAmount(grandTotal);
   }, [grandTotal]);
 
-  // Express 5-Second Checkout (Zero Popups • 1-Hit Print • Optional Auto-WhatsApp)
-  const handleExpressCheckout = (mode = 'Cash', sendWhatsApp = false) => {
-    if (cart.length === 0) {
-      playDeviceBeep('error');
-      alert("Cart is empty! Scan a barcode or add an item first.");
-      return;
-    }
-
-    handleInitiatePayment(mode, sendWhatsApp);
-  };
-
-  // Keyboard Hotkey Automation for Counter Cashiers
+  // Keyboard shortcut for toggling GST billing mode.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // F-Keys for instant operations
-      if (['F2', 'F3', 'F4', 'F8'].includes(e.key)) {
+      if (e.key === 'F8') {
         e.preventDefault();
-        if (e.key === 'F2') {
-          handleExpressCheckout('Cash', false);
-        } else if (e.key === 'F3') {
-          handleExpressCheckout('UPI', false);
-        } else if (e.key === 'F4') {
-          handleExpressCheckout('UPI', true);
-        } else if (e.key === 'F8') {
-          setBillingType(prev => prev === 'gst' ? 'non-gst' : 'gst');
-          playDeviceBeep('scanner');
-        }
+        setBillingType(prev => prev === 'gst' ? 'non-gst' : 'gst');
+        playDeviceBeep('scanner');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1665,97 +1645,7 @@ export default function PosBilling({
               </div>
             </div>
 
-            {/* Express 5-Second Checkout Toolbar (Zero Popups • 1-Hit Thermal Print) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.1fr 1.2fr', gap: '0.45rem', marginTop: '0.65rem' }}>
-              <button
-                type="button"
-                onClick={() => handleExpressCheckout('Cash', false)}
-                disabled={cart.length === 0}
-                style={{
-                  padding: '0.6rem 0.35rem',
-                  fontSize: '0.78rem',
-                  fontWeight: 900,
-                  background: 'linear-gradient(135deg, #10B981, #059669)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
-                  opacity: cart.length === 0 ? 0.5 : 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.15rem',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                }}
-                title="Open cash payment collection and denomination entry [Shortcut: F2]"
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Zap size={14} />
-                  <span>[F2] CASH</span>
-                </div>
-                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Collect cash, then finish</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleExpressCheckout('UPI', false)}
-                disabled={cart.length === 0}
-                style={{
-                  padding: '0.6rem 0.35rem',
-                  fontSize: '0.78rem',
-                  fontWeight: 900,
-                  background: 'linear-gradient(135deg, #3B60C5, #254399)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
-                  opacity: cart.length === 0 ? 0.5 : 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.15rem',
-                  boxShadow: '0 2px 8px rgba(59, 96, 197, 0.3)'
-                }}
-                title="Open UPI QR payment and transaction verification [Shortcut: F3]"
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <QrCode size={14} />
-                  <span>[F3] UPI</span>
-                </div>
-                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>Collect UTR, then finish</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleExpressCheckout('UPI', true)}
-                disabled={cart.length === 0}
-                style={{
-                  padding: '0.6rem 0.35rem',
-                  fontSize: '0.78rem',
-                  fontWeight: 900,
-                  background: 'linear-gradient(135deg, #059669, #047857)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
-                  opacity: cart.length === 0 ? 0.5 : 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.15rem',
-                  boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
-                }}
-                title="Open UPI payment; send invoice on WhatsApp after confirmation [Shortcut: F4]"
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <span>💬</span>
-                  <span>[F4] UPI + WhatsApp</span>
-                </div>
-                <span style={{ fontSize: '0.62rem', opacity: 0.9 }}>WhatsApp & Print</span>
-              </button>
-            </div>
-
-            {/* Detailed Multi-Payment / EMI / Split Button */}
+            {/* Unified payment entry point */}
             <button
               onClick={handleInitiatePayment}
               disabled={cart.length === 0}
@@ -1777,7 +1667,7 @@ export default function PosBilling({
                 cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s ease'
               }}
-              title="Open full split payment, EMI, or custom Khata modal"
+              title="Choose a payment method and complete the sale"
             >
               <CreditCard size={15} />
               <span>Pay / Make Payment (₹{grandTotal.toLocaleString()})</span>
