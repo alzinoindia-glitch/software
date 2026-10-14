@@ -335,9 +335,9 @@ export default function InventoryManager({
 
   // Live Counts
   const totalProducts = inventory.length;
-  const inStockProducts = inventory.filter(i => i.stock > (i.lowStockThreshold || 2)).length;
-  const lowStockProducts = inventory.filter(i => i.stock > 0 && i.stock <= (i.lowStockThreshold || 2)).length;
-  const outOfStockProducts = inventory.filter(i => i.stock === 0).length;
+  const inStockProducts = inventory.filter(i => Number(i.stock) > (Number(i.lowStockThreshold) || 2)).length;
+  const lowStockProducts = inventory.filter(i => Number(i.stock) > 0 && Number(i.stock) <= (Number(i.lowStockThreshold) || 2)).length;
+  const outOfStockProducts = inventory.filter(i => Number(i.stock) <= 0).length;
 
   const availableBrands = useMemo(() => {
     const brandsSet = new Set();
@@ -362,9 +362,11 @@ export default function InventoryManager({
           !(normalizedFilter === 'New Mobiles' && isUsedItem));
       const matchesBrand = brandFilter === 'All' || item.brand === brandFilter;
 
-      const isLow = item.stock > 0 && item.stock <= (item.lowStockThreshold || 2);
-      const isOut = item.stock === 0;
-      const isInStock = item.stock > (item.lowStockThreshold || 2);
+      const stock = Number(item.stock) || 0;
+      const threshold = Number(item.lowStockThreshold) || 2;
+      const isLow = stock > 0 && stock <= threshold;
+      const isOut = stock <= 0;
+      const isInStock = stock > threshold;
 
       const matchesStock = 
         stockFilter === 'all' ||
@@ -677,6 +679,7 @@ export default function InventoryManager({
             sellPrice: parseFloat(formData.sellPrice) || 0,
             mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
             stock: calculatedStock,
+            ...(calculatedStock > 0 && item.status === 'Sold' ? { status: 'Active' } : {}),
             lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
             rack: rackVal,
             bin: binVal,
@@ -1138,8 +1141,10 @@ export default function InventoryManager({
           gap: '0.85rem'
         }}>
           {filteredProducts.map(item => {
-            const isLow = item.stock > 0 && item.stock <= (item.lowStockThreshold || 2);
-            const isOut = item.stock === 0;
+            const stock = Number(item.stock) || 0;
+            const threshold = Number(item.lowStockThreshold) || 2;
+            const isLow = stock > 0 && stock <= threshold;
+            const isOut = stock <= 0;
             const sellingPrice = Number(item.sellPrice) || 0;
             const mrp = Number(item.mrp) || 0;
             const hasValidMrp = mrp > 0 && mrp > sellingPrice;
@@ -1480,7 +1485,8 @@ export default function InventoryManager({
                           color: 'var(--text-secondary)',
                           cursor: 'pointer'
                         }}
-                        title="Edit"
+                        title={isOut ? 'Restock / Edit Product' : 'Edit'}
+                        aria-label={isOut ? `Restock or edit ${item.name}` : `Edit ${item.name}`}
                       >
                         <Edit3 size={14} />
                       </button>
@@ -1521,8 +1527,10 @@ export default function InventoryManager({
             </thead>
             <tbody>
               {filteredProducts.map(item => {
-                const isLow = item.stock > 0 && item.stock <= (item.lowStockThreshold || 2);
-                const isOut = item.stock === 0;
+                const stock = Number(item.stock) || 0;
+                const threshold = Number(item.lowStockThreshold) || 2;
+                const isLow = stock > 0 && stock <= threshold;
+                const isOut = stock <= 0;
                 const isCopied = copiedId === item.id;
                 const codeToCopy = item.imeis && item.imeis.length > 0 ? item.imeis[0] : (item.barcode || item.id);
 
@@ -1676,7 +1684,8 @@ export default function InventoryManager({
                               onClick={() => openEditModal(item)}
                               className="btn-secondary"
                               style={{ padding: '0.28rem 0.45rem' }}
-                              title="Edit Product"
+                              title={isOut ? 'Restock / Edit Product' : 'Edit Product'}
+                              aria-label={isOut ? `Restock or edit ${item.name}` : `Edit ${item.name}`}
                             >
                               <Edit3 size={13} />
                             </button>
