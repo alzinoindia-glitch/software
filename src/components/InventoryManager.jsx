@@ -1140,8 +1140,11 @@ export default function InventoryManager({
           {filteredProducts.map(item => {
             const isLow = item.stock > 0 && item.stock <= (item.lowStockThreshold || 2);
             const isOut = item.stock === 0;
-            const savings = (item.mrp && item.mrp > item.sellPrice) ? item.mrp - item.sellPrice : 0;
-            const savingsPct = item.mrp && item.mrp > item.sellPrice ? Math.round((savings / item.mrp) * 100) : 0;
+            const sellingPrice = Number(item.sellPrice) || 0;
+            const mrp = Number(item.mrp) || 0;
+            const hasValidMrp = mrp > 0 && mrp > sellingPrice;
+            const savings = hasValidMrp ? mrp - sellingPrice : 0;
+            const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
             const isCopied = copiedId === item.id;
             const codeToCopy = item.imeis && item.imeis.length > 0 ? item.imeis[0] : (item.barcode || item.id);
 
@@ -1359,15 +1362,15 @@ export default function InventoryManager({
                       letterSpacing: '-0.02em',
                       color: 'var(--accent-primary)'
                     }}>
-                      ₹{item.sellPrice.toLocaleString()}
+                      ₹{sellingPrice.toLocaleString()}
                     </span>
-                    {item.mrp && item.mrp > item.sellPrice && (
+                    {hasValidMrp && (
                       <span style={{
                         fontSize: '0.78rem',
                         color: 'var(--text-muted)',
                         textDecoration: 'line-through'
-                      }}>
-                        ₹{item.mrp.toLocaleString()}
+                      }} aria-label={`MRP ₹${mrp.toLocaleString()}`} title="MRP">
+                        ₹{mrp.toLocaleString()}
                       </span>
                     )}
                   </div>
