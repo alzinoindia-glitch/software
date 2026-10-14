@@ -784,15 +784,13 @@ export default function CustomerStorefront({
 
     const variantText = variantParts.length > 0 ? `\n⚙️ *Details:* ${variantParts.join(' • ')}` : '';
     const warrantyText = `\n🛡️ *Warranty:* ${product.warranty || '1 Year Official Brand Warranty'}`;
-    const stockText = product.stock > 0 ? `\n✅ *Stock Status:* Available right now in Bodhan` : `\n⚡ *Availability:* Same-day arrival at Bodhan store`;
 
     const message = `Namaste ALZINO Mobiles & Home Appliances Bodhan! 👋\n\n` +
       `I am enquiring from your store website about this product:\n\n` +
       `📱 *Product:* ${product.name}` +
       `${variantText}\n` +
       `💰 *Special Online Price:* ${priceFormatted}${mrpFormatted}${discountText}` +
-      `${warrantyText}` +
-      `${stockText}\n\n` +
+      `${warrantyText}\n\n` +
       `Please let me know if this is available for instant pickup/delivery at Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185. Thank you!`;
 
     const url = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;

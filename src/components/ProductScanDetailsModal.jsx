@@ -106,6 +106,7 @@ export default function ProductScanDetailsModal({
   if (!isOpen || !product) return null;
 
   const effectivePrice = getProductSellingPrice(activeVariant, getProductSellingPrice(product));
+  const canViewStockDetails = role === 'admin' || role === 'cashier';
   const effectiveMrp = firstPositiveAmount(activeVariant.mrp, product.mrp, effectivePrice);
   const discountSavings = Math.max(0, effectiveMrp - effectivePrice);
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
@@ -520,9 +521,9 @@ export default function ProductScanDetailsModal({
                 </div>
               )}
 
-              {/* Stock & Location (Privacy guarded: customers see clean verified status, admin sees rack & exact units) */}
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                {(role === 'admin' || role === 'cashier') ? (
+              {/* Stock quantities and locations are staff-only. */}
+              {canViewStockDetails && <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                <>
                   <>
                     <span style={{
                       fontSize: '0.75rem',
@@ -556,23 +557,8 @@ export default function ProductScanDetailsModal({
                       </span>
                     )}
                   </>
-                ) : (
-                  <span style={{
-                    fontSize: '0.75rem',
-                    fontWeight: 800,
-                    color: activeVariant.stock > 0 ? '#065F46' : '#991B1B',
-                    backgroundColor: activeVariant.stock > 0 ? '#D1FAE5' : '#FEE2E2',
-                    padding: '0.2rem 0.6rem',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
-                  }}>
-                    <CheckCircle2 size={12} />
-                    {activeVariant.stock > 0 ? 'Verified In Stock' : 'Currently Unavailable'}
-                  </span>
-                )}
-              </div>
+                </>
+              </div>}
             </div>
           </div>
 
@@ -729,15 +715,15 @@ export default function ProductScanDetailsModal({
                       </span>
                     </div>
 
-                    {/* Stock status for this colour */}
-                    <div style={{
+                    {/* Exact variant stock is visible to staff only. */}
+                    {canViewStockDetails && <div style={{
                       fontSize: '0.68rem',
                       color: variant.stock > 0 ? '#059669' : '#DC2626',
                       fontWeight: 700,
                       marginTop: '0.2rem'
                     }}>
                       {variant.stock > 0 ? `${variant.stock} In Stock` : 'Out of Stock'}
-                    </div>
+                    </div>}
 
                     {isSelected && (
                       <div style={{
