@@ -7,7 +7,8 @@ import {
   Layers, 
   Sparkles, 
   Tag,
-  QrCode
+  QrCode,
+  Search
 } from 'lucide-react';
 import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
 import { buildProductScanUrl } from '../utils/productTerms';
@@ -18,21 +19,23 @@ export default function BarcodeGenerator({
   shopConfig, 
   onPrintBarcodeSheet 
 }) {
+  const initialProduct = selectedItemForBarcode || inventory[0] || null;
   const [selectedProductId, setSelectedProductId] = useState(
-    selectedItemForBarcode ? selectedItemForBarcode.id : (inventory[0] ? inventory[0].id : '')
+    initialProduct?.id || ''
   );
+  const [stockSearch, setStockSearch] = useState(initialProduct ? `${initialProduct.brand || ''} ${initialProduct.name || ''}`.trim() : '');
 
   const [customTitle, setCustomTitle] = useState(
-    selectedItemForBarcode ? selectedItemForBarcode.name : '65W SuperVOOC Fast Power Adapter'
+    initialProduct?.name || '65W SuperVOOC Fast Power Adapter'
   );
   const [customBarcode, setCustomBarcode] = useState(
-    selectedItemForBarcode ? (selectedItemForBarcode.barcode || '8901234567890') : '8901234567890'
+    initialProduct ? (initialProduct.barcode || initialProduct.barcodes?.[0] || initialProduct.units?.find(unit => unit.barcode)?.barcode || initialProduct.imeis?.[0] || `ALZ-${initialProduct.id}`) : '8901234567890'
   );
   const [customPrice, setCustomPrice] = useState(
-    selectedItemForBarcode ? selectedItemForBarcode.sellPrice : '1299'
+    initialProduct?.sellPrice ?? '1299'
   );
   const [customMrp, setCustomMrp] = useState(
-    selectedItemForBarcode ? selectedItemForBarcode.mrp : '1999'
+    initialProduct?.mrp ?? '1999'
   );
 
   const [labelCopies, setLabelCopies] = useState(24);
@@ -45,6 +48,7 @@ export default function BarcodeGenerator({
   React.useEffect(() => {
     if (selectedItemForBarcode) {
       setSelectedProductId(selectedItemForBarcode.id);
+      setStockSearch(`${selectedItemForBarcode.brand || ''} ${selectedItemForBarcode.name || ''}`.trim());
       setCustomTitle(selectedItemForBarcode.name);
       setCustomBarcode(selectedItemForBarcode.barcode || `ALZ-${selectedItemForBarcode.id}`);
       setCustomPrice(selectedItemForBarcode.sellPrice);
@@ -61,8 +65,10 @@ export default function BarcodeGenerator({
     setSelectedProductId(id);
     const prod = inventory.find(p => p.id === id);
     if (prod) {
+      setStockSearch(`${prod.brand || ''} ${prod.name || ''}`.trim());
       setCustomTitle(prod.name);
-      setCustomBarcode(prod.barcode || `ALZ-${prod.id}`);
+      const existingCode = prod.barcode || prod.barcodes?.[0] || prod.units?.find(unit => unit.barcode)?.barcode || prod.imeis?.[0] || prod.units?.find(unit => unit.imei1 || unit.imei2)?.imei1 || `ALZ-${prod.id}`;
+      setCustomBarcode(existingCode);
       setCustomPrice(prod.sellPrice);
       setCustomMrp(prod.mrp || prod.sellPrice);
       if (prod.codeFormat) {
@@ -72,6 +78,27 @@ export default function BarcodeGenerator({
       }
     }
   };
+
+  React.useEffect(() => {
+    if (!selectedItemForBarcode && !selectedProductId && inventory.length) {
+      handleProductSelect(inventory[0].id);
+    }
+  }, [inventory, selectedItemForBarcode, selectedProductId]);
+
+  const stockMatches = inventory.filter(item => {
+    const query = stockSearch.trim().toLowerCase();
+    if (!query) return true;
+    const identifiers = [
+      item.id,
+      item.barcode,
+      ...(item.barcodes || []),
+      ...(item.imeis || []),
+      ...(item.units || []).flatMap(unit => [unit.barcode, unit.imei1, unit.imei2]),
+    ];
+    return [item.name, item.brand, item.model, item.category, ...identifiers]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(query));
+  }).slice(0, 12);
 
   const handlePrint = () => {
     onPrintBarcodeSheet({
@@ -114,23 +141,42 @@ export default function BarcodeGenerator({
         <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h3 style={{ fontSize: '1.1rem', marginBottom: '0.2rem' }}>Barcode & Label Settings</h3>
 
-          {/* Quick Select from Inventory */}
+          {/* Search existing stock items and their saved barcode / QR values */}
           <div>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-              Load from Existing Stock Item:
+              Search Existing Stock / Barcode / QR / IMEI:
             </label>
-            <select
-              value={selectedProductId}
-              onChange={(e) => handleProductSelect(e.target.value)}
-              className="input-field"
-            >
-              <option value="">-- Choose Stock Item --</option>
-              {inventory.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.brand} - {item.name} (₹{item.sellPrice})
-                </option>
-              ))}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <Search size={15} style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="search"
+                value={stockSearch}
+                onChange={(e) => setStockSearch(e.target.value)}
+                placeholder="Search product, brand, barcode, QR value, or IMEI..."
+                className="input-field"
+                style={{ paddingLeft: '2rem' }}
+              />
+            </div>
+            <div style={{ marginTop: '0.4rem', maxHeight: '190px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-primary)' }}>
+              {stockMatches.length ? stockMatches.map(item => {
+                const codes = [item.barcode, ...(item.barcodes || []), ...(item.units || []).map(unit => unit.barcode), ...(item.imeis || []), ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2])].filter(Boolean);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleProductSelect(item.id)}
+                    style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.15rem', padding: '0.55rem 0.65rem', border: 'none', borderBottom: '1px solid var(--border-color)', background: selectedProductId === item.id ? 'var(--illoca-blue-subtle)' : 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer' }}
+                  >
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{item.brand || 'Stock'} · {item.name} · ₹{item.sellPrice || 0}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{codes.length ? `Saved codes: ${codes.join(' · ')}` : `Product code: ALZ-${item.id}`}</span>
+                  </button>
+                );
+              }) : (
+                <div style={{ padding: '0.65rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                  {inventory.length ? 'No stock items match that search.' : 'Stock is still loading or no stock items are available.'}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Code Format Choice */}
