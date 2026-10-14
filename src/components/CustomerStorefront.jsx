@@ -2218,7 +2218,7 @@ export default function CustomerStorefront({
             <a href={shopConfig.whatsappUrl || 'https://wa.me/919121212292'} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp">
               <WhatsAppIcon size={19} color="#15803D" />
             </a>
-            <a href={shopConfig.instagramUrl || 'https://instagram.com/alzino.bodhan'} target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">
+            <a href={shopConfig.instagramUrl || 'https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr'} target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">
               <InstagramIcon size={19} color="#BE185D" />
             </a>
             <a href={shopConfig.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">

@@ -28,7 +28,6 @@ import {
   resolveCloudConflict,
   syncPublishedCatalog,
 } from './utils/cloudSyncService';
-
 import {
   defaultShopConfig,
   initialInventory,
@@ -43,6 +42,18 @@ import {
   setStorageData,
   purgeDemoRecords
 } from './data/initialData';
+
+const OFFICIAL_INSTAGRAM_URL = 'https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr';
+const LEGACY_INSTAGRAM_URL = 'https://instagram.com/alzino.bodhan';
+
+function normalizeShopConfig(config = {}) {
+  const updated = { ...config };
+  if (!updated.instagramUrl || updated.instagramUrl === LEGACY_INSTAGRAM_URL) {
+    updated.instagram = '@alzino.shop';
+    updated.instagramUrl = OFFICIAL_INSTAGRAM_URL;
+  }
+  return updated;
+}
 
 // Parse active portal and tab from URL path and domain
 export function parseRoute() {
@@ -99,7 +110,7 @@ export default function App() {
 
   const [shopConfig, setShopConfig] = useState(() => {
     const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
-    const updated = { ...cfg };
+    const updated = normalizeShopConfig(cfg);
     updated.address = 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185';
     // Update store contact & WhatsApp enquiry number to client's 9121212292
     if (!updated.whatsappNumber || updated.whatsappNumber.includes('98490') || updated.phone?.includes('98490')) {
@@ -305,7 +316,7 @@ export default function App() {
       SUPPLIERS: setSuppliers,
       EXPENSES: setExpenses,
       WARRANTY_CLAIMS: setWarrantyClaims,
-      SHOP_CONFIG: setShopConfig,
+      SHOP_CONFIG: config => setShopConfig(normalizeShopConfig(config)),
       CUSTOM_TAXONOMY: applyCustomTaxonomy,
       CUSTOM_TECHNICIANS: applyCustomTechnicians
     };
@@ -370,7 +381,7 @@ export default function App() {
         if (e.key === 'ALZINO_ERP_SUPPLIERS') setSuppliers(JSON.parse(e.newValue));
         if (e.key === 'ALZINO_ERP_EXPENSES') setExpenses(JSON.parse(e.newValue));
         if (e.key === 'ALZINO_ERP_WARRANTY_CLAIMS') setWarrantyClaims(JSON.parse(e.newValue));
-        if (e.key === 'ALZINO_ERP_SHOP_CONFIG') setShopConfig(JSON.parse(e.newValue));
+        if (e.key === 'ALZINO_ERP_SHOP_CONFIG') setShopConfig(normalizeShopConfig(JSON.parse(e.newValue)));
       } catch (err) {
         console.warn('Cross-tab sync error:', err);
       }

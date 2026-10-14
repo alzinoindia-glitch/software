@@ -42,8 +42,8 @@ export const defaultShopConfig = {
   ssdAutoSave: true,
   // Customer Portal (alzino.shop) & Social Media
   website: "https://alzino.shop",
-  instagram: "@alzino.bodhan",
-  instagramUrl: "https://instagram.com/alzino.bodhan",
+  instagram: "@alzino.shop",
+  instagramUrl: "https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr",
   whatsappNumber: "+91 91212 12292",
   whatsappUrl: "https://wa.me/919121212292",
   mapsUrl: "https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185",
