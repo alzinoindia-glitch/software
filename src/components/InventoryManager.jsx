@@ -40,7 +40,6 @@ import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
 import ProductScanDetailsModal from './ProductScanDetailsModal';
 import { 
   STANDARD_PRODUCT_TERMS_PRESETS, 
-  DEFAULT_PRODUCT_TERMS, 
   normalizeProductTerms, 
   findProductFromScan,
   buildProductScanUrl
@@ -164,7 +163,7 @@ export default function InventoryManager({
     imei1: '',
     imei2: '',
     warranty: '1 Year Brand Warranty',
-    termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
+    termsAndConditions: [],
     receivedDate: new Date().toISOString().split('T')[0],
     isPublished: true,
   });
@@ -448,7 +447,7 @@ export default function InventoryManager({
       imei1: '',
       imei2: '',
       warranty: '1 Year Brand Warranty',
-      termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
+      termsAndConditions: [],
       receivedDate: new Date().toISOString().split('T')[0],
       isPublished: true,
     });
@@ -1761,6 +1760,10 @@ export default function InventoryManager({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ gridColumn: '1 / -1', paddingBottom: '0.35rem', borderBottom: '1px solid var(--border-color)' }}>
+                <strong style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-primary)' }}>Product Information</strong>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Add clear product details for customers viewing the product scan page.</span>
+              </div>
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Category</label>
                 <select
@@ -2249,6 +2252,18 @@ export default function InventoryManager({
                     })}
                   </div>
                 )}
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Description / Information</label>
+                <textarea
+                  rows={3}
+                  placeholder="Add product features, compatibility, included accessories, or other useful details..."
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  className="input-field"
+                  style={{ resize: 'vertical', minHeight: '74px' }}
+                />
               </div>
 
               <div>

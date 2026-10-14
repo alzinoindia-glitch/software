@@ -32,7 +32,6 @@ import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
 import { compressImageFile, saveProductImage } from '../utils/productImageStore';
 import { 
   STANDARD_PRODUCT_TERMS_PRESETS, 
-  DEFAULT_PRODUCT_TERMS, 
   normalizeProductTerms 
 } from '../utils/productTerms';
 
@@ -72,7 +71,7 @@ export default function BulkMobileVariantEntryModal({
   });
 
   // Product Terms & Conditions for the batch (shown on QR scan)
-  const [termsAndConditions, setTermsAndConditions] = useState([...DEFAULT_PRODUCT_TERMS]);
+  const [termsAndConditions, setTermsAndConditions] = useState([]);
   const [customTermInput, setCustomTermInput] = useState('');
 
   const [isCustomBrand, setIsCustomBrand] = useState(false);

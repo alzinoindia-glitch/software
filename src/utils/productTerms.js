@@ -55,17 +55,17 @@ export const DEFAULT_PRODUCT_TERMS = [
  * Normalizes terms and conditions from any format (string, array of strings, or undefined)
  */
 export function normalizeProductTerms(terms) {
-  if (!terms) return [...DEFAULT_PRODUCT_TERMS];
+  if (!terms) return [];
   if (Array.isArray(terms)) {
     const cleaned = terms.map(t => typeof t === 'string' ? t.trim() : (t?.text || '')).filter(Boolean);
-    return cleaned.length > 0 ? cleaned : [...DEFAULT_PRODUCT_TERMS];
+    return cleaned;
   }
   if (typeof terms === 'string' && terms.trim()) {
     // If separated by newlines or bullets
     const lines = terms.split(/\r?\n|•/).map(s => s.trim()).filter(Boolean);
     return lines.length > 0 ? lines : [terms.trim()];
   }
-  return [...DEFAULT_PRODUCT_TERMS];
+  return [];
 }
 
 /**

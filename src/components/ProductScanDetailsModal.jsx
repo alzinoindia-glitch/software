@@ -91,9 +91,10 @@ export default function ProductScanDetailsModal({
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
   const ram = String(activeVariant.ram || product.ram || '').trim();
   const storage = String(activeVariant.storage || product.storage || '').trim();
-  const hasSpecifications = Boolean(ram || storage || activeVariant.color);
   const productCategory = String(product.category || '').trim().toLowerCase();
   const isHandsetProduct = /^(new|used) mobiles?$|^(certified )?refurbished mobiles?$|^smartphones?(\s|$)|^feature phones?(\s|$)/.test(productCategory);
+  const hasSpecifications = Boolean((isHandsetProduct && (ram || storage)) || activeVariant.color);
+  const productInformation = String(product.description || '').trim();
 
   // Active display image
   const displayImage = activeVariant.image || product.image || getRealProductImage(product);
@@ -554,6 +555,19 @@ export default function ProductScanDetailsModal({
               </div>
             </div>
           </div>
+
+          {productInformation && <section style={{
+            padding: '0.85rem 1rem',
+            backgroundColor: '#F9FAFB',
+            border: '1px solid #E5E7EB',
+            borderRadius: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', color: '#374151', fontSize: '0.78rem', fontWeight: 850 }}>
+              <FileText size={15} color="#059669" />
+              <span>Product Information</span>
+            </div>
+            <p style={{ margin: 0, color: '#374151', fontSize: '0.82rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{productInformation}</p>
+          </section>}
 
           {/* Show only product details that were actually supplied. */}
           {hasSpecifications && <div>
