@@ -91,7 +91,7 @@ export default function ProductScanDetailsModal({
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
   const ram = String(activeVariant.ram || product.ram || '').trim();
   const storage = String(activeVariant.storage || product.storage || '').trim();
-  const hasSpecifications = Boolean(ram || storage || activeVariant.color || product.warranty);
+  const hasSpecifications = Boolean(ram || storage || activeVariant.color);
   const productCategory = String(product.category || '').trim().toLowerCase();
   const isHandsetProduct = /^(new|used) mobiles?$|^(certified )?refurbished mobiles?$|^smartphones?(\s|$)|^feature phones?(\s|$)/.test(productCategory);
 
@@ -630,18 +630,6 @@ export default function ProductScanDetailsModal({
                 </div>
               </div>}
 
-              {/* Warranty */}
-              {product.warranty && <div style={{
-                padding: '0.75rem',
-                backgroundColor: '#F9FAFB',
-                border: '1px solid #E5E7EB',
-                borderRadius: '12px'
-              }}>
-                <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>OFFICIAL WARRANTY</div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
-                  {product.warranty}
-                </div>
-              </div>}
             </div>
           </div>}
 
