@@ -1234,7 +1234,7 @@ export default function PosBilling({
                 return (
                   <div 
                     key={prod.id} 
-                    className="hud-card"
+                    className="hud-card pos-product-card"
                     onClick={() => !isOut && addToCart(prod)}
                     style={{ 
                       padding: '0.75rem', 

@@ -646,8 +646,36 @@ input, select, textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   align-items: stretch;
-  grid-auto-rows: minmax(116px, auto);
+  grid-auto-rows: 140px;
+  align-content: start;
   gap: 0.65rem;
+}
+
+.pos-product-card {
+  box-sizing: border-box;
+  height: 140px;
+  min-width: 0;
+}
+
+.pos-product-card h4 {
+  min-height: 2.5em;
+  overflow-wrap: anywhere;
+}
+
+.pos-product-card > div:first-child > div:first-child > span:first-child {
+  max-width: 72%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-product-card > div:last-child,
+.pos-product-card button {
+  flex-shrink: 0;
+}
+
+.pos-product-card button {
+  white-space: nowrap;
 }
 
 .repair-jobs-grid {
@@ -942,7 +970,7 @@ input, select, textarea {
 @media (max-width: 640px) {
   .pos-product-catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)) !important;
-    grid-auto-rows: minmax(116px, auto);
+    grid-auto-rows: 140px;
     gap: 0.45rem !important;
   }
 
