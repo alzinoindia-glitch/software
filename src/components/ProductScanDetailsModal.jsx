@@ -75,7 +75,12 @@ export default function ProductScanDetailsModal({
 
   // Parse terms and conditions
   const termsList = useMemo(() => {
-    return product ? normalizeProductTerms(product.termsAndConditions || product.terms) : [];
+    if (!product) return [];
+    const explicitTerms = product.termsAndConditions || product.terms;
+    const hasExplicitTerms = Array.isArray(explicitTerms)
+      ? explicitTerms.some(term => (typeof term === 'string' ? term : term?.text || '').trim())
+      : typeof explicitTerms === 'string' && Boolean(explicitTerms.trim());
+    return hasExplicitTerms ? normalizeProductTerms(explicitTerms) : [];
   }, [product]);
 
   if (!isOpen || !product) return null;
@@ -84,6 +89,11 @@ export default function ProductScanDetailsModal({
   const effectiveMrp = firstPositiveAmount(activeVariant.mrp, product.mrp, effectivePrice);
   const discountSavings = Math.max(0, effectiveMrp - effectivePrice);
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
+  const ram = String(activeVariant.ram || product.ram || '').trim();
+  const storage = String(activeVariant.storage || product.storage || '').trim();
+  const hasSpecifications = Boolean(ram || storage || activeVariant.color || product.warranty);
+  const productCategory = String(product.category || '').trim().toLowerCase();
+  const isHandsetProduct = /^(new|used) mobiles?$|^(certified )?refurbished mobiles?$|^smartphones?(\s|$)|^feature phones?(\s|$)/.test(productCategory);
 
   // Active display image
   const displayImage = activeVariant.image || product.image || getRealProductImage(product);
@@ -146,10 +156,11 @@ export default function ProductScanDetailsModal({
 
   const handleWhatsAppEnquiry = () => {
     const phone = (shopConfig.whatsappNumber || shopConfig.phone || '919121212292').replace(/[^0-9]/g, '');
+    const configuration = [ram && `${ram} RAM`, storage && `${storage} Storage`].filter(Boolean).join(' / ');
     const text = encodeURIComponent(
       `Hello ALZINO Mobiles, I scanned the QR code for *${product.brand || ''} ${product.name || ''}*.\n` +
       `Colour: ${activeVariant.color}\n` +
-      `Configuration: ${product.ram || '8GB'} RAM / ${product.storage || '256GB'} Storage\n` +
+      (configuration ? `Configuration: ${configuration}\n` : '') +
       `Price: ₹${effectivePrice.toLocaleString()}\n` +
       `Is this available right now at your Bodhan counter?`
     );
@@ -544,8 +555,8 @@ export default function ProductScanDetailsModal({
             </div>
           </div>
 
-          {/* Section 1: Specifications (RAM, Storage, Brand, Model, Warranty) */}
-          <div>
+          {/* Show only product details that were actually supplied. */}
+          {hasSpecifications && <div>
             <div style={{
               fontSize: '0.82rem',
               fontWeight: 800,
@@ -567,7 +578,7 @@ export default function ProductScanDetailsModal({
               gap: '0.65rem'
             }}>
               {/* RAM */}
-              <div style={{
+              {ram && <div style={{
                 padding: '0.75rem',
                 backgroundColor: '#F9FAFB',
                 border: '1px solid #E5E7EB',
@@ -575,12 +586,12 @@ export default function ProductScanDetailsModal({
               }}>
                 <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>RAM MEMORY</div>
                 <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#111827', marginTop: '2px' }}>
-                  {product.ram || '8GB RAM'}
+                  {ram}
                 </div>
-              </div>
+              </div>}
 
               {/* Storage */}
-              <div style={{
+              {storage && <div style={{
                 padding: '0.75rem',
                 backgroundColor: '#F9FAFB',
                 border: '1px solid #E5E7EB',
@@ -588,12 +599,12 @@ export default function ProductScanDetailsModal({
               }}>
                 <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>STORAGE CAPACITY</div>
                 <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#111827', marginTop: '2px' }}>
-                  {product.storage || '256GB Storage'}
+                  {storage}
                 </div>
-              </div>
+              </div>}
 
               {/* Active Color */}
-              <div style={{
+              {activeVariant.color && <div style={{
                 padding: '0.75rem',
                 backgroundColor: '#F9FAFB',
                 border: '1px solid #E5E7EB',
@@ -617,10 +628,10 @@ export default function ProductScanDetailsModal({
                   }} />
                   {activeVariant.color}
                 </div>
-              </div>
+              </div>}
 
               {/* Warranty */}
-              <div style={{
+              {product.warranty && <div style={{
                 padding: '0.75rem',
                 backgroundColor: '#F9FAFB',
                 border: '1px solid #E5E7EB',
@@ -628,11 +639,11 @@ export default function ProductScanDetailsModal({
               }}>
                 <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>OFFICIAL WARRANTY</div>
                 <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
-                  {product.warranty || '1 Year Brand'}
+                  {product.warranty}
                 </div>
-              </div>
+              </div>}
             </div>
-          </div>
+          </div>}
 
           {/* Section 2: WHAT COLORS AVAILABLE IN THEM WITH THEIR IMAGES */}
           <div>
@@ -771,7 +782,7 @@ export default function ProductScanDetailsModal({
           </div>
 
           {/* Section 3: TERMS AND CONDITIONS OF RESPECTIVE PRODUCT */}
-          <div style={{
+          {termsList.length > 0 && <div style={{
             backgroundColor: '#F8FAF9',
             border: '1.5px solid #E2E8E5',
             borderRadius: '16px',
@@ -849,7 +860,7 @@ export default function ProductScanDetailsModal({
             </div>
 
             {/* Assistance Trust Callout */}
-            <div style={{
+            {isHandsetProduct && <div style={{
               marginTop: '0.85rem',
               padding: '0.65rem 0.85rem',
               backgroundColor: '#ECFDF5',
@@ -865,8 +876,8 @@ export default function ProductScanDetailsModal({
               <div>
                 <strong>100% Verified ALZINO Guarantee:</strong> For all warranty assistance, bring your original invoice to our store at Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185. Direct Helpline: <strong>+91 91212 12292</strong>.
               </div>
-            </div>
-          </div>
+            </div>}
+          </div>}
         </div>
 
         {/* Footer Actions */}
