@@ -692,6 +692,8 @@ export default function App() {
             initialView={activeTab === 'khata' ? 'khata' : 'customers'}
             customers={customers}
             setCustomers={setCustomers}
+            suppliers={suppliers}
+            setSuppliers={setSuppliers}
             invoices={invoices}
             repairJobs={repairJobs}
             shopConfig={shopConfig}

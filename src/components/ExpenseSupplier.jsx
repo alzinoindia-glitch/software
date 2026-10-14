@@ -95,8 +95,18 @@ export default function ExpenseSupplier({
     e.preventDefault();
     if (!suppName || !suppPhone) return;
 
+    const phoneDigits = String(suppPhone).replace(/\D/g, '').slice(-10);
+    const existingSupplier = suppliers.find(supplier => {
+      const existingDigits = String(supplier.phone || '').replace(/\D/g, '').slice(-10);
+      return phoneDigits && existingDigits === phoneDigits;
+    });
+    if (existingSupplier) {
+      alert(`${existingSupplier.name} is already in the supplier directory. Please use that existing supplier.`);
+      return;
+    }
+
     const newSupp = {
-      id: `SUPP-${String(suppliers.length + 1).padStart(3, '0')}`,
+      id: `SUPP-${Date.now()}`,
       name: suppName.trim(),
       contactPerson: suppContact.trim(),
       phone: suppPhone.trim(),
