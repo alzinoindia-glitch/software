@@ -166,6 +166,7 @@ export default function InventoryManager({
     warranty: '1 Year Brand Warranty',
     termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
     receivedDate: new Date().toISOString().split('T')[0],
+    isPublished: true,
   });
 
   const categoryIcons = {
@@ -449,6 +450,7 @@ export default function InventoryManager({
       warranty: '1 Year Brand Warranty',
       termsAndConditions: [...DEFAULT_PRODUCT_TERMS],
       receivedDate: new Date().toISOString().split('T')[0],
+      isPublished: true,
     });
     setCustomTermInput('');
     setFormImages({ front: null, back: null });
@@ -485,7 +487,7 @@ export default function InventoryManager({
       gstRate: item.gstRate !== undefined ? item.gstRate : 18,
       buyPrice: item.buyPrice,
       sellPrice: item.sellPrice,
-      mrp: item.mrp || item.sellPrice,
+      mrp: item.mrp ? String(item.mrp) : '',
       stock: item.stock,
       lowStockThreshold: item.lowStockThreshold || 2,
       rack: item.rack || (item.locations?.[0]?.rack) || 'R-01',
@@ -498,6 +500,7 @@ export default function InventoryManager({
       warranty: item.warranty || '',
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+      isPublished: item.isPublished !== false,
     });
     setCustomTermInput('');
     setFormImages({ front: null, back: null });
@@ -673,7 +676,7 @@ export default function InventoryManager({
             gstRate: finalGstRate,
             buyPrice: parseFloat(formData.buyPrice) || 0,
             sellPrice: parseFloat(formData.sellPrice) || 0,
-            mrp: parseFloat(formData.mrp) || parseFloat(formData.sellPrice),
+            mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
             stock: calculatedStock,
             lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
             rack: rackVal,
@@ -686,6 +689,7 @@ export default function InventoryManager({
             warranty: formData.warranty,
             termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
             receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
+            isPublished: Boolean(formData.isPublished),
             offer: editingItem.offer,
             createdAt: editingItem.createdAt || new Date().toISOString(),
             images: imagesMeta,
@@ -711,7 +715,7 @@ export default function InventoryManager({
         gstRate: finalGstRate,
         buyPrice: parseFloat(formData.buyPrice) || 0,
         sellPrice: parseFloat(formData.sellPrice) || 0,
-        mrp: parseFloat(formData.mrp) || parseFloat(formData.sellPrice),
+        mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
         stock: calculatedStock,
         lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
         rack: rackVal,
@@ -724,6 +728,7 @@ export default function InventoryManager({
         warranty: formData.warranty,
         termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
         receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
+        isPublished: Boolean(formData.isPublished),
         createdAt: new Date().toISOString(),
         images: imagesMeta,
         status: 'Active',
@@ -1165,7 +1170,7 @@ export default function InventoryManager({
                     padding: '0.12rem 0.45rem',
                     borderRadius: '4px'
                   }}>
-                    {item.brand || 'UNIVERSAL'}
+                    {item.brand || 'BRAND TO VERIFY'}
                   </span>
 
                   {/* Stock Pill: Just ● count */}
@@ -1229,6 +1234,11 @@ export default function InventoryManager({
                 }}>
                   {item.name}
                 </div>
+                {item.isPublished === false && (
+                  <span style={{ alignSelf: 'flex-start', fontSize: '0.66rem', fontWeight: 800, color: 'var(--status-amber)', background: 'var(--status-amber-bg)', padding: '0.12rem 0.45rem', borderRadius: '999px' }}>
+                    Not on storefront · verify details
+                  </span>
+                )}
 
                 {/* Variant Specs: Colour / RAM / Storage / IMEIs */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
@@ -1519,8 +1529,9 @@ export default function InventoryManager({
                     <td style={{ padding: '0.65rem 0.85rem' }}>
                       <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{item.name}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                        {item.isPublished === false && <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'var(--status-amber)', background: 'var(--status-amber-bg)', padding: '0.1rem 0.35rem', borderRadius: '999px' }}>Not on storefront</span>}
                         <span style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
-                          {item.brand || 'UNIVERSAL'}
+                          {item.brand || 'BRAND TO VERIFY'}
                         </span>
                         {item.color && (
                           <span style={{ fontSize: '0.65rem', background: 'rgba(0,0,0,0.05)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -2286,6 +2297,19 @@ export default function InventoryManager({
                 />
               </div>
 
+              <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: '0.55rem', padding: '0.7rem 0.8rem', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.isPublished)}
+                  onChange={e => setFormData({ ...formData, isPublished: e.target.checked })}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  <strong style={{ display: 'block', fontSize: '0.76rem' }}>Show on storefront</strong>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Publish after confirming the product, selling price, stock and photo.</span>
+                </span>
+              </label>
+
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Rack</label>
                 <input
@@ -2483,7 +2507,7 @@ export default function InventoryManager({
                         codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
                         qrValue: buildProductScanUrl({ id: editingItem?.id || formData.barcode, barcode: formData.barcode }, '', { addToCart: true }),
                         price: formData.sellPrice || 0,
-                        mrp: formData.mrp || formData.sellPrice || 0,
+                        mrp: Number(formData.mrp) || 0,
                         shopName: shopConfig?.name || 'ALZINO MOBILES'
                       })}
                       className="btn-secondary"
@@ -2512,7 +2536,7 @@ export default function InventoryManager({
                         barcode: formData.barcode,
                         codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
                         price: formData.sellPrice || 0,
-                        mrp: formData.mrp || formData.sellPrice || 0,
+                        mrp: Number(formData.mrp) || 0,
                         copies: 1,
                         format: 'single'
                       })}
@@ -3054,9 +3078,11 @@ export default function InventoryManager({
                     />
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '6px', padding: '0 0.5rem' }}>
-                      <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
-                        MRP: ₹{(quickBarcodeItem.mrp || quickBarcodeItem.sellPrice).toLocaleString()}
-                      </span>
+                      {Number(quickBarcodeItem.mrp) > 0 && (
+                        <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
+                          MRP: ₹{Number(quickBarcodeItem.mrp).toLocaleString()}
+                        </span>
+                      )}
                       <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43' }}>
                         ₹{quickBarcodeItem.sellPrice.toLocaleString()}
                       </span>
@@ -3122,7 +3148,7 @@ export default function InventoryManager({
                           codeFormat: activeFormat,
                           qrValue: productScanUrl,
                           price: quickBarcodeItem.sellPrice,
-                          mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
+                          mrp: Number(quickBarcodeItem.mrp) || 0,
                           shopName: shopConfig?.name || 'ALZINO MOBILES'
                         });
                       }}
@@ -3143,7 +3169,7 @@ export default function InventoryManager({
                             id: quickBarcodeItem.id,
                             codeFormat: activeFormat,
                             price: quickBarcodeItem.sellPrice,
-                            mrp: quickBarcodeItem.mrp || quickBarcodeItem.sellPrice,
+                            mrp: Number(quickBarcodeItem.mrp) || 0,
                             copies: quickLabelQty,
                             format: 'single',
                           });
@@ -3264,7 +3290,7 @@ export default function InventoryManager({
                               title: activeImeiViewerItem.name,
                               barcode: u.barcode,
                               price: activeImeiViewerItem.sellPrice,
-                              mrp: activeImeiViewerItem.mrp || activeImeiViewerItem.sellPrice,
+                              mrp: Number(activeImeiViewerItem.mrp) || 0,
                               copies: 1,
                               format: 'single'
                             })}

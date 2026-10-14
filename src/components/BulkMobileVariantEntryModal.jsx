@@ -425,7 +425,7 @@ export default function BulkMobileVariantEntryModal({
       barcode: units[0]?.barcode || 'ALZ-001',
       codeFormat,
       price: modelDetails.sellPrice || 0,
-      mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+      mrp: Number(modelDetails.mrp) || 0,
       copies: units.length,
       format: 'sheet24'
     });
@@ -863,6 +863,7 @@ export default function BulkMobileVariantEntryModal({
         units: group.units,
         warranty: group.warranty,
           receivedDate: group.receivedDate || '',
+        isPublished: group.isMasterRow ? false : true,
         createdAt: new Date().toISOString(),
         status: 'Active'
       };
@@ -2612,7 +2613,7 @@ export default function BulkMobileVariantEntryModal({
                     barcode: previewUnit.barcode,
                     codeFormat: previewUnit.codeFormat || codeFormat,
                     price: modelDetails.sellPrice || 0,
-                    mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+                    mrp: Number(modelDetails.mrp) || 0,
                     shopName: 'ALZINO MOBILES • BODHAN'
                   });
                 }}
@@ -2632,7 +2633,7 @@ export default function BulkMobileVariantEntryModal({
                       barcode: previewUnit.barcode,
                       codeFormat: previewUnit.codeFormat || codeFormat,
                       price: modelDetails.sellPrice || 0,
-                      mrp: modelDetails.mrp || modelDetails.sellPrice || 0,
+                      mrp: Number(modelDetails.mrp) || 0,
                       copies: 1,
                       format: 'single'
                     });
