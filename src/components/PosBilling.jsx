@@ -1237,7 +1237,7 @@ export default function PosBilling({
                     className="hud-card pos-product-card"
                     onClick={() => !isOut && addToCart(prod)}
                     style={{ 
-                      padding: '0.75rem', 
+                      padding: '0.55rem',
                       minHeight: '116px',
                       boxSizing: 'border-box',
                       display: 'flex', 
@@ -1296,7 +1296,8 @@ export default function PosBilling({
                       <h4 style={{ 
                         fontSize: '0.86rem', 
                         fontWeight: 700, 
-                        marginBottom: '0.3rem', 
+                        marginTop: 0,
+                        marginBottom: '0.2rem',
                         lineHeight: 1.25,
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
