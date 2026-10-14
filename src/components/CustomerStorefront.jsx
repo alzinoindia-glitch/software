@@ -227,12 +227,21 @@ export default function CustomerStorefront({
     let refreshTimer;
     const loadCatalog = async () => {
       const revision = ++requestRevision;
-      const { data, error } = await client
+      let { data, error } = await client
         .from('catalog_products')
-        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
+        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, specifications, description')
         .eq('is_published', true)
         .eq('stock_status', 'Available in store')
         .order('updated_at', { ascending: false });
+      // Keep existing storefront data available until the catalog migration is applied.
+      if (error && /specifications|description|column/i.test(error.message || '')) {
+        ({ data, error } = await client
+          .from('catalog_products')
+          .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
+          .eq('is_published', true)
+          .eq('stock_status', 'Available in store')
+          .order('updated_at', { ascending: false }));
+      }
       if (!active || revision !== requestRevision) return;
       if (error) {
         console.warn('[PublicCatalog] Could not load storefront products:', error.message);
@@ -374,6 +383,12 @@ export default function CustomerStorefront({
           bin: '',
           deliveryTime: 'Counter pickup / Bodhan delivery',
           specs: '',
+          specifications: item.specifications || {},
+          description: item.description || '',
+          ram: item.specifications?.ram || '',
+          storage: item.specifications?.storage || '',
+          capacity: item.specifications?.capacity || '',
+          color: item.specifications?.color || '',
           image: item.image_url || null,
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };
@@ -446,6 +461,12 @@ export default function CustomerStorefront({
           bin: item.bin || (isUsedMobile ? 'B-04' : 'B-01'),
           deliveryTime: isAppliance ? 'Same-Day Bodhan' : 'Instant Counter Pickup / Delivery',
           specs: item.description || (isUsedMobile ? (item.condition || 'Tested 24-Point Diagnostic QC Check') : 'Genuine Bodhan In-Store Stock • Official GST Bill'),
+          specifications: item.specifications || {},
+          description: item.description || '',
+          ram: item.ram || '',
+          storage: item.storage || '',
+          capacity: item.capacity || '',
+          color: item.color || '',
           image: item.image || item.frontImage || null,
           images: item.images || null,
           type: itemType
@@ -488,6 +509,12 @@ export default function CustomerStorefront({
             bin: item.bin || 'B-04',
             deliveryTime: 'Same-Day Bodhan',
             specs: `IMEI: ${item.imei1 ? item.imei1.slice(0, 8) + '...' : 'Verified'} • Tested 24-Point Diagnostic Check`,
+            specifications: item.specifications || {},
+            description: item.description || '',
+            ram: item.ram || '',
+            storage: item.storage || '',
+            capacity: item.capacity || '',
+            color: item.color || '',
             image: item.image || (item.deviceImages && item.deviceImages[0]) || null,
             images: item.images || null,
             type: 'refurbished'

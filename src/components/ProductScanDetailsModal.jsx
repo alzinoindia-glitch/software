@@ -36,6 +36,26 @@ const WhatsAppIcon = ({ size = 18, color = "currentColor" }) => (
   </svg>
 );
 
+const getSpecificationEntries = (product, variant, hasColorVariants) => {
+  const entries = new Map();
+  const add = (key, value) => {
+    const cleanValue = value == null ? '' : String(value).trim();
+    if (!cleanValue) return;
+    const label = String(key).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+    if (!label) return;
+    entries.set(label.toLowerCase(), { label, value: cleanValue });
+  };
+  const addSpecificationObject = value => {
+    if (Array.isArray(value)) value.forEach(item => add(item?.label || item?.name || item?.key, item?.value));
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([key, item]) => add(key, item));
+  };
+  addSpecificationObject(product?.specifications);
+  addSpecificationObject(variant?.specifications);
+  ['ram', 'storage', 'capacity'].forEach(key => add(key, variant?.[key] || product?.[key]));
+  if (product?.color || hasColorVariants) add('Colour Finish', variant?.color || product?.color);
+  return [...entries.values()];
+};
+
 export default function ProductScanDetailsModal({
   product,
   inventory = [],
@@ -89,11 +109,8 @@ export default function ProductScanDetailsModal({
   const effectiveMrp = firstPositiveAmount(activeVariant.mrp, product.mrp, effectivePrice);
   const discountSavings = Math.max(0, effectiveMrp - effectivePrice);
   const discountPct = effectiveMrp > effectivePrice ? Math.round((discountSavings / effectiveMrp) * 100) : 0;
-  const ram = String(activeVariant.ram || product.ram || '').trim();
-  const storage = String(activeVariant.storage || product.storage || '').trim();
-  const productCategory = String(product.category || '').trim().toLowerCase();
-  const isHandsetProduct = /^(new|used) mobiles?$|^(certified )?refurbished mobiles?$|^smartphones?(\s|$)|^feature phones?(\s|$)/.test(productCategory);
-  const hasSpecifications = Boolean((isHandsetProduct && (ram || storage)) || activeVariant.color);
+  const specifications = getSpecificationEntries(product, activeVariant, availableColors.length > 0);
+  const hasSpecifications = specifications.length > 0;
   const productInformation = String(product.description || '').trim();
 
   // Active display image
@@ -157,10 +174,13 @@ export default function ProductScanDetailsModal({
 
   const handleWhatsAppEnquiry = () => {
     const phone = (shopConfig.whatsappNumber || shopConfig.phone || '919121212292').replace(/[^0-9]/g, '');
-    const configuration = [ram && `${ram} RAM`, storage && `${storage} Storage`].filter(Boolean).join(' / ');
+    const configuration = specifications
+      .filter(item => ['ram', 'storage'].includes(item.label.toLowerCase()))
+      .map(item => `${item.value} ${item.label}`)
+      .join(' / ');
     const text = encodeURIComponent(
       `Hello ALZINO Mobiles, I scanned the QR code for *${product.brand || ''} ${product.name || ''}*.\n` +
-      `Colour: ${activeVariant.color}\n` +
+      (activeVariant.color && activeVariant.color !== 'Standard' ? `Colour: ${activeVariant.color}\n` : '') +
       (configuration ? `Configuration: ${configuration}\n` : '') +
       `Price: ₹${effectivePrice.toLocaleString()}\n` +
       `Is this available right now at your Bodhan counter?`
@@ -591,58 +611,17 @@ export default function ProductScanDetailsModal({
               gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
               gap: '0.65rem'
             }}>
-              {/* RAM */}
-              {ram && <div style={{
+              {specifications.map(({ label, value }) => <div key={label.toLowerCase()} style={{
                 padding: '0.75rem',
                 backgroundColor: '#F9FAFB',
                 border: '1px solid #E5E7EB',
                 borderRadius: '12px'
               }}>
-                <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>RAM MEMORY</div>
+                <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600, textTransform: 'uppercase' }}>{label}</div>
                 <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#111827', marginTop: '2px' }}>
-                  {ram}
+                  {value}
                 </div>
-              </div>}
-
-              {/* Storage */}
-              {storage && <div style={{
-                padding: '0.75rem',
-                backgroundColor: '#F9FAFB',
-                border: '1px solid #E5E7EB',
-                borderRadius: '12px'
-              }}>
-                <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>STORAGE CAPACITY</div>
-                <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#111827', marginTop: '2px' }}>
-                  {storage}
-                </div>
-              </div>}
-
-              {/* Active Color */}
-              {activeVariant.color && <div style={{
-                padding: '0.75rem',
-                backgroundColor: '#F9FAFB',
-                border: '1px solid #E5E7EB',
-                borderRadius: '12px'
-              }}>
-                <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>COLOUR FINISH</div>
-                <div style={{
-                  fontSize: '0.95rem',
-                  fontWeight: 900,
-                  color: '#111827',
-                  marginTop: '2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem'
-                }}>
-                  <span style={{
-                    width: '10px',
-                    height: '10px',
-                    borderRadius: '50%',
-                    backgroundColor: activeVariant.colorHex || '#333'
-                  }} />
-                  {activeVariant.color}
-                </div>
-              </div>}
+              </div>)}
 
             </div>
           </div>}

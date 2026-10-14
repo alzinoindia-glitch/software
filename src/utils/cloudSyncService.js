@@ -168,6 +168,11 @@ export const syncPublishedCatalog = (inventory = []) => {
         const stock = Math.max(0, Number(item.stock) || 0);
         const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
           .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) || null;
+        const specifications = { ...(item.specifications && typeof item.specifications === 'object' && !Array.isArray(item.specifications) ? item.specifications : {}) };
+        ['ram', 'storage', 'capacity', 'color'].forEach(key => {
+          const value = item[key];
+          if (value != null && String(value).trim()) specifications[key] = String(value).trim();
+        });
         return {
           organization_id: organizationId,
           id: String(item.id),
@@ -178,16 +183,26 @@ export const syncPublishedCatalog = (inventory = []) => {
           mrp: item.mrp == null ? null : Math.max(0, Number(item.mrp) || 0),
           stock_status: stock > 0 ? 'Available in store' : 'Out of stock',
           image_url: publicImage,
+          specifications,
+          description: String(item.description || '').trim() || null,
           offer_text: item.offer?.label || item.offerText || null,
           is_published: stock > 0 && item.isPublished !== false && item.status !== 'Archived',
           updated_at: new Date().toISOString()
         };
       });
 
-      const { data: existing, error: existingError } = await client
+      let { data: existing, error: existingError } = await client
         .from('catalog_products')
-        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published')
+        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published, specifications, description')
         .eq('organization_id', organizationId);
+      let supportsProductDetails = true;
+      if (existingError && /specifications|description|column/i.test(existingError.message || '')) {
+        supportsProductDetails = false;
+        ({ data: existing, error: existingError } = await client
+          .from('catalog_products')
+          .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published')
+          .eq('organization_id', organizationId));
+      }
       if (existingError) throw existingError;
       if (revision !== publicCatalogRevision) return;
 
@@ -203,10 +218,13 @@ export const syncPublishedCatalog = (inventory = []) => {
           current.stock_status !== product.stock_status ||
           current.image_url !== product.image_url ||
           current.offer_text !== product.offer_text ||
+          (supportsProductDetails && (JSON.stringify(current.specifications || {}) !== JSON.stringify(product.specifications) ||
+          (current.description || null) !== product.description)) ||
           current.is_published !== product.is_published;
       });
       if (changedProducts.length) {
-        const { error } = await client.from('catalog_products').upsert(changedProducts, {
+        const rowsToUpsert = supportsProductDetails ? changedProducts : changedProducts.map(({ specifications, description, ...product }) => product);
+        const { error } = await client.from('catalog_products').upsert(rowsToUpsert, {
           onConflict: 'organization_id,id'
         });
         if (error) throw error;

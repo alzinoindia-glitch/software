@@ -159,6 +159,8 @@ export function findAvailableColorsForProduct(product, inventory = []) {
       mrp: product.mrp,
       ram: product.ram,
       storage: product.storage,
+      capacity: product.capacity,
+      specifications: product.specifications,
       isCurrent: true
     });
   }
@@ -191,6 +193,8 @@ export function findAvailableColorsForProduct(product, inventory = []) {
             mrp: item.mrp,
             ram: item.ram,
             storage: item.storage,
+            capacity: item.capacity,
+            specifications: item.specifications,
             isCurrent: item.id === product.id
           });
         } else {
@@ -218,6 +222,8 @@ export function findAvailableColorsForProduct(product, inventory = []) {
                 mrp: item.mrp,
                 ram: item.ram,
                 storage: item.storage,
+                capacity: item.capacity,
+                specifications: item.specifications,
                 isCurrent: item.id === product.id
               });
             }
@@ -245,6 +251,8 @@ export function findAvailableColorsForProduct(product, inventory = []) {
             mrp: product.mrp,
             ram: product.ram,
             storage: product.storage,
+            capacity: product.capacity,
+            specifications: product.specifications,
             isCurrent: true
           });
         }
