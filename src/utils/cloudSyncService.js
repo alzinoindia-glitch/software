@@ -3,6 +3,7 @@ import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
 import { clearAllProductImages, syncAllProductImagesToCloud } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
+import { sanitizePublicSpecifications } from './productSpecifications';
 
 const STORE_STATE_TABLE = 'store_state';
 
@@ -168,7 +169,8 @@ export const syncPublishedCatalog = (inventory = []) => {
         const stock = Math.max(0, Number(item.stock) || 0);
         const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
           .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) || null;
-        const specifications = { ...(item.specifications && typeof item.specifications === 'object' && !Array.isArray(item.specifications) ? item.specifications : {}) };
+        const publicSpecifications = sanitizePublicSpecifications(item.specifications);
+        const specifications = { ...(publicSpecifications && typeof publicSpecifications === 'object' && !Array.isArray(publicSpecifications) ? publicSpecifications : {}) };
         ['ram', 'storage', 'capacity', 'color'].forEach(key => {
           const value = item[key];
           if (value != null && String(value).trim()) specifications[key] = String(value).trim();

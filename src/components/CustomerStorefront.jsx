@@ -58,6 +58,7 @@ import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
 import { getAvailableCategories, isUsedMobileProduct, normalizeProductCategory } from '../utils/customTaxonomy';
+import { sanitizePublicSpecifications } from '../utils/productSpecifications';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -362,6 +363,7 @@ export default function CustomerStorefront({
   const liveProducts = useMemo(() => {
     const cloudProducts = isSupabaseConfigured()
       ? publicCatalog.map(item => {
+        const specifications = sanitizePublicSpecifications(item.specifications) || {};
         const category = normalizeProductCategory(item.category || 'New Mobiles');
         const isUsed = category === 'Used Mobiles';
         const isAppliance = category === 'Home Appliances';
@@ -383,12 +385,12 @@ export default function CustomerStorefront({
           bin: '',
           deliveryTime: 'Counter pickup / Bodhan delivery',
           specs: '',
-          specifications: item.specifications || {},
+          specifications,
           description: item.description || '',
-          ram: item.specifications?.ram || '',
-          storage: item.specifications?.storage || '',
-          capacity: item.specifications?.capacity || '',
-          color: item.specifications?.color || '',
+          ram: specifications.ram || '',
+          storage: specifications.storage || '',
+          capacity: specifications.capacity || '',
+          color: specifications.color || '',
           image: item.image_url || null,
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };

@@ -69,6 +69,8 @@ export const SPARE_PARTS_BRANDS = BASE_SPARE_PARTS_BRANDS;
 export const STANDARD_CATEGORIES = BASE_CATEGORIES;
 export const getBrandsForCategory = (category, inv = []) => getAvailableBrandsForCategory(category, inv);
 
+const parseImeiLines = value => String(value || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
+
 
 export default function InventoryManager({ 
   inventory, 
@@ -159,7 +161,6 @@ export default function InventoryManager({
     bin: 'B-01',
     codeFormat: 'barcode',
     barcode: '',
-    imeisText: '',
     imei1: '',
     imei2: '',
     warranty: '1 Year Brand Warranty',
@@ -283,13 +284,11 @@ export default function InventoryManager({
 
       // 1. Assign to barcode or IMEI fields
       if (is15DigitImei || targetField === 'imei1' || targetField === 'imei2') {
-        if (targetField === 'imei2') {
-          next.imei2 = raw;
-        } else if (targetField === 'imei1' || !next.imei1) {
-          next.imei1 = raw;
-        } else if (!next.imei2) {
-          next.imei2 = raw;
-        }
+        const appendImei = current => [...new Set([...parseImeiLines(current), raw])].join('\n');
+        if (targetField === 'imei2') next.imei2 = appendImei(next.imei2);
+        else if (targetField === 'imei1') next.imei1 = appendImei(next.imei1);
+        else if (parseImeiLines(next.imei1).length <= parseImeiLines(next.imei2).length) next.imei1 = appendImei(next.imei1);
+        else next.imei2 = appendImei(next.imei2);
       } else {
         next.barcode = raw;
       }
@@ -445,7 +444,6 @@ export default function InventoryManager({
       bin: 'B-01',
       codeFormat: 'barcode',
       barcode: `ALZ-${Date.now().toString().slice(-6)}`,
-      imeisText: '',
       imei1: '',
       imei2: '',
       warranty: '1 Year Brand Warranty',
@@ -472,6 +470,14 @@ export default function InventoryManager({
     setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
     const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
+    const itemUnits = Array.isArray(item.units) ? item.units : [];
+    const legacyImeis = Array.isArray(item.imeis) ? item.imeis : [];
+    const imei1Values = itemUnits.length
+      ? itemUnits.map(unit => unit.imei1 || '')
+      : (legacyImeis.length ? legacyImeis.filter((_, index) => index % 2 === 0) : [item.imei1 || '']);
+    const imei2Values = itemUnits.length
+      ? itemUnits.map(unit => unit.imei2 || '')
+      : (legacyImeis.length ? legacyImeis.filter((_, index) => index % 2 === 1) : [item.imei2 || '']);
     setFormData({
       category: normalizedCategory || 'New Mobiles',
       subCategory: item.subCategory || item.applianceType || item.accessoryType || item.partType || '',
@@ -495,9 +501,8 @@ export default function InventoryManager({
       bin: item.bin || (item.locations?.[0]?.bin) || 'B-01',
       codeFormat: itemCodeFormat,
       barcode: item.barcode || '',
-      imeisText: (item.imeis || []).join('\n'),
-      imei1: item.units?.[0]?.imei1 || item.imeis?.[0] || '',
-      imei2: item.units?.[0]?.imei2 || item.imeis?.[1] || '',
+      imei1: imei1Values.filter(Boolean).join('\n') || item.imei1 || '',
+      imei2: imei2Values.filter(Boolean).join('\n') || item.imei2 || '',
       warranty: item.warranty || '',
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
@@ -599,8 +604,48 @@ export default function InventoryManager({
       onOpenUsedMobileIntake?.();
       return;
     }
-    if (['New Mobiles', 'Used Mobiles'].includes(formData.category) && (!formData.imei1?.trim() || !formData.imei2?.trim())) {
-      alert('Please enter both IMEI 1 (SIM 1) and IMEI 2 (SIM 2 / eSIM) for mobile phones.');
+    const parsedStock = Number.parseInt(formData.stock, 10);
+    const calculatedStock = Number.isFinite(parsedStock) ? Math.max(0, parsedStock) : 0;
+    const mobileCategory = ['New Mobiles', 'Used Mobiles'].includes(formData.category);
+    const imei1Values = parseImeiLines(formData.imei1);
+    const imei2Values = parseImeiLines(formData.imei2);
+    const enteredImeis = [...imei1Values, ...imei2Values];
+    const originalUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
+    const originalImeis = Array.isArray(editingItem?.imeis) ? editingItem.imeis : [];
+    const originalImei1 = originalUnits.length
+      ? originalUnits.map(unit => unit.imei1 || '').filter(Boolean)
+      : (originalImeis.length ? originalImeis.filter((_, index) => index % 2 === 0) : [editingItem?.imei1 || ''].filter(Boolean));
+    const originalImei2 = originalUnits.length
+      ? originalUnits.map(unit => unit.imei2 || '').filter(Boolean)
+      : (originalImeis.length ? originalImeis.filter((_, index) => index % 2 === 1) : [editingItem?.imei2 || ''].filter(Boolean));
+    const imeisUnchanged = Boolean(editingItem) &&
+      imei1Values.join('\n') === originalImei1.join('\n') &&
+      imei2Values.join('\n') === originalImei2.join('\n');
+    const stockUnchanged = Boolean(editingItem) && calculatedStock === Math.max(0, Number.parseInt(editingItem.stock, 10) || 0);
+    const categoryUnchanged = Boolean(editingItem) && normalizeProductCategory(formData.category) === normalizeProductCategory(editingItem.category);
+    const shouldValidateImeis = !editingItem || !imeisUnchanged || !stockUnchanged || !categoryUnchanged;
+    if (shouldValidateImeis && mobileCategory && calculatedStock > 0 &&
+        (imei1Values.length !== calculatedStock || imei2Values.length !== calculatedStock)) {
+      alert(`Enter one IMEI 1 and one IMEI 2 for each of the ${calculatedStock} mobile unit(s). Put one IMEI on each line.`);
+      return;
+    }
+    if (shouldValidateImeis && mobileCategory && enteredImeis.some(imei => !/^\d{15}$/.test(imei))) {
+      alert('Each mobile IMEI must contain exactly 15 digits.');
+      return;
+    }
+    const normalizedImeis = enteredImeis.map(imei => imei.trim());
+    const inventoryImeis = new Set(inventory
+      .filter(item => item.id !== editingItem?.id)
+      .flatMap(item => [
+        ...(item.imeis || []),
+        item.imei1,
+        item.imei2,
+        ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2])
+      ])
+      .filter(Boolean)
+      .map(imei => String(imei).trim()));
+    if (shouldValidateImeis && (new Set(normalizedImeis).size !== normalizedImeis.length || normalizedImeis.some(imei => inventoryImeis.has(imei)))) {
+      alert('One or more IMEIs are duplicated in this entry or already assigned to another stock item.');
       return;
     }
 
@@ -621,36 +666,36 @@ export default function InventoryManager({
       imagesMeta = editingItem?.images || null;
     }
 
-    const imeisArray = (formData.imeisText || '')
-      .split('\n')
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    if (formData.imei1 && !imeisArray.includes(formData.imei1.trim())) {
-      imeisArray.unshift(formData.imei1.trim());
-    }
-    if (formData.imei2 && !imeisArray.includes(formData.imei2.trim())) {
-      imeisArray.push(formData.imei2.trim());
-    }
-
-    // IMEI 1 and IMEI 2 identify one dual-SIM handset, not two units.
-    // The Stock Units field is the quantity the admin intends to save.
-    const parsedStock = Number.parseInt(formData.stock, 10);
-    const calculatedStock = Number.isFinite(parsedStock) ? Math.max(0, parsedStock) : 0;
+    const imeisArray = imeisUnchanged && editingItem
+      ? (originalImeis.length ? originalImeis : originalUnits.flatMap(unit => [unit.imei1, unit.imei2]).filter(Boolean))
+      : [...new Set(enteredImeis)];
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
 
-    const unitRecords = (formData.imei1 || formData.imei2) ? [{
-      unitId: editingItem?.units?.[0]?.unitId || `UNIT-${Date.now()}`,
-      imei1: formData.imei1?.trim() || '',
-      imei2: formData.imei2?.trim() || '',
-      barcode: formData.barcode,
-      color: formData.color,
-      rack: rackVal,
-      bin: binVal,
-      status: 'In Stock'
-    }] : (editingItem?.units || []);
+    const existingUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
+    const imeiPairCount = Math.max(imei1Values.length, imei2Values.length);
+    const unitRecords = imeisUnchanged && editingItem && existingUnits.length
+      ? existingUnits
+      : imeiPairCount > 0
+      ? Array.from({ length: imeiPairCount }, (_, index) => {
+        const imei1 = imei1Values[index] || '';
+        const imei2 = imei2Values[index] || '';
+        const existingUnit = existingUnits.find(unit => unit.imei1 === imei1 && unit.imei2 === imei2) || existingUnits[index];
+        const pairUnchanged = existingUnit?.imei1 === imei1 && existingUnit?.imei2 === imei2;
+        return {
+          ...(existingUnit || {}),
+          unitId: pairUnchanged && existingUnit?.unitId ? existingUnit.unitId : `UNIT-${Date.now()}-${index}`,
+          imei1,
+          imei2,
+          barcode: existingUnit?.barcode || (index === 0 ? formData.barcode : ''),
+          color: formData.color || existingUnit?.color || '',
+          rack: existingUnit?.rack || rackVal,
+          bin: existingUnit?.bin || binVal,
+          status: 'In Stock'
+        };
+      })
+      : existingUnits;
 
     if (editingItem) {
       setInventory(prev => prev.map(item => {
@@ -687,6 +732,8 @@ export default function InventoryManager({
             barcode: (formData.barcode || '').trim(),
             codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
             imeis: imeisArray,
+            imei1: imeisUnchanged ? (item.imei1 || originalImei1[0] || '') : (imei1Values[0] || ''),
+            imei2: imeisUnchanged ? (item.imei2 || originalImei2[0] || '') : (imei2Values[0] || ''),
             units: unitRecords,
             warranty: formData.warranty,
             termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
@@ -726,6 +773,8 @@ export default function InventoryManager({
         barcode: (formData.barcode || '').trim(),
         codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
         imeis: imeisArray,
+        imei1: imei1Values[0] || '',
+        imei2: imei2Values[0] || '',
         units: unitRecords,
         warranty: formData.warranty,
         termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
@@ -2702,12 +2751,11 @@ export default function InventoryManager({
                     <Camera size={13} />
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder="15-digit IMEI 1"
+                <textarea
+                  rows={2}
+                  placeholder={formData.stock > 1 ? 'One 15-digit IMEI 1 per line' : '15-digit IMEI 1'}
                   value={formData.imei1 || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, imei1: e.target.value }))}
-                  required={['New Mobiles', 'Used Mobiles'].includes(formData.category)}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
@@ -2728,12 +2776,11 @@ export default function InventoryManager({
                     <Camera size={13} />
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder={['New Mobiles', 'Used Mobiles'].includes(formData.category) ? '15-digit IMEI 2 (required)' : '15-digit IMEI 2'}
+                <textarea
+                  rows={2}
+                  placeholder={formData.stock > 1 ? 'One 15-digit IMEI 2 per line' : '15-digit IMEI 2'}
                   value={formData.imei2 || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, imei2: e.target.value }))}
-                  required={['New Mobiles', 'Used Mobiles'].includes(formData.category)}
                   className="input-field"
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
