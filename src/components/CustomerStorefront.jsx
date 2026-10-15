@@ -58,6 +58,13 @@ import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
 import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
 import { getAvailableCategories, isUsedMobileProduct, normalizeProductCategory } from '../utils/customTaxonomy';
+
+const getPublicProductFrontImageUrl = (organizationId, productId) => {
+  const client = getSupabaseClient();
+  if (!client || !organizationId || !productId) return null;
+  const path = `${organizationId}/${productId}/front.jpg`;
+  return client.storage.from('product-images').getPublicUrl(path).data?.publicUrl || null;
+};
 import { sanitizePublicSpecifications } from '../utils/productSpecifications';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
@@ -113,7 +120,7 @@ export default function CustomerStorefront({
       const revision = ++requestRevision;
       let { data, error } = await client
         .from('catalog_products')
-        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, specifications, description')
+        .select('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, specifications, description')
         .eq('is_published', true)
         .eq('stock_status', 'Available in store')
         .order('updated_at', { ascending: false });
@@ -121,7 +128,7 @@ export default function CustomerStorefront({
       if (error && /specifications|description|column/i.test(error.message || '')) {
         ({ data, error } = await client
           .from('catalog_products')
-          .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
+          .select('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
           .eq('is_published', true)
           .eq('stock_status', 'Available in store')
           .order('updated_at', { ascending: false }));
@@ -274,7 +281,7 @@ export default function CustomerStorefront({
           storage: specifications.storage || '',
           capacity: specifications.capacity || '',
           color: specifications.color || '',
-          image: item.image_url || null,
+          image: item.image_url || getPublicProductFrontImageUrl(item.organization_id, item.id),
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };
       })
