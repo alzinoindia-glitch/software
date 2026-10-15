@@ -1,7 +1,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
-import { clearAllProductImages, syncAllProductImagesToCloud } from './productImageStore';
+import { clearAllProductImages, syncAllProductImagesToCloud, syncPublishedProductImagesToCloud } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
 import { sanitizePublicSpecifications } from './productSpecifications';
 
@@ -164,12 +164,15 @@ export const syncPublishedCatalog = (inventory = []) => {
       const client = getSupabaseClient();
       const organizationId = await getActiveOrgId(client);
       if (!organizationId || revision !== publicCatalogRevision) return;
+      const catalogImageUrls = await syncPublishedProductImagesToCloud(organizationId, snapshot);
+      if (revision !== publicCatalogRevision) return;
 
       const products = snapshot.filter(item => item?.id && item?.name).map(item => {
         const stock = Math.max(0, Number(item.stock) || 0);
         const sellPrice = getProductSellingPrice(item);
         const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
-          .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) || null;
+          .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) ||
+          catalogImageUrls.get(String(item.id)) || null;
         const publicSpecifications = sanitizePublicSpecifications(item.specifications);
         const specifications = { ...(publicSpecifications && typeof publicSpecifications === 'object' && !Array.isArray(publicSpecifications) ? publicSpecifications : {}) };
         ['ram', 'storage', 'capacity', 'color'].forEach(key => {

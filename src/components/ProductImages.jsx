@@ -126,7 +126,7 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
 
   const available = ['front', 'back'].filter((s) => images[s]);
   const activeSide = images[side] ? side : available[0];
-  const src = activeSide ? images[activeSide] : null;
+  const src = (activeSide ? images[activeSide] : null) || product?.imageUrl || product?.image_url || product?.image || null;
 
   if (!src) {
     if (placeholder) return placeholder;

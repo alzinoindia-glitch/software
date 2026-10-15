@@ -509,10 +509,10 @@ export default function InventoryManager({
       isPublished: item.isPublished !== false,
     });
     setCustomTermInput('');
-    setFormImages({ front: null, back: null });
+    setFormImages({ front: item.frontImage || item.image || null, back: item.backImage || null });
     if (item.images?.front || item.images?.back) {
       Promise.all([getProductImage(item.id, 'front'), getProductImage(item.id, 'back')])
-        .then(([front, back]) => setFormImages({ front, back }));
+        .then(([front, back]) => setFormImages(prev => ({ front: front || prev.front, back: back || prev.back })));
     }
     setShowModal(true);
   };
