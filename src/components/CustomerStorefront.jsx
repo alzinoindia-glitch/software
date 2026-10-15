@@ -424,11 +424,13 @@ export default function CustomerStorefront({
       uniqueProducts.set(id, cloudProduct ? {
         ...cloudProduct,
         ...item,
-        imageUrl: item.imageUrl || cloudProduct.imageUrl,
-        image_url: item.image_url || cloudProduct.image_url,
+        image: item.image || cloudProduct.image,
+        imageUrl: item.imageUrl || cloudProduct.imageUrl || cloudProduct.image,
+        image_url: item.image_url || cloudProduct.image_url || cloudProduct.image,
         imageFallbacks: [
           ...(Array.isArray(item.imageFallbacks) ? item.imageFallbacks : []),
           ...(Array.isArray(cloudProduct.imageFallbacks) ? cloudProduct.imageFallbacks : []),
+          cloudProduct.image,
           cloudProduct.imageUrl,
           cloudProduct.image_url
         ].filter((image, index, all) => typeof image === 'string' && image && all.indexOf(image) === index),
