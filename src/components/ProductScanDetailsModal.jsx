@@ -22,7 +22,6 @@ import {
   Package
 } from 'lucide-react';
 import { ProductImageViewer } from './ProductImages';
-import { getRealProductImage } from './CustomerStorefront';
 import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
 import { 
   normalizeProductTerms, 
@@ -115,7 +114,7 @@ export default function ProductScanDetailsModal({
   const productInformation = String(product.description || '').trim();
 
   // Active display image
-  const displayImage = activeVariant.image || product.image || getRealProductImage(product);
+  const displayImage = activeVariant.image || product.image || product.imageUrl || product.image_url || null;
 
   const copyScanUrl = async () => {
     const scanUrl = buildProductScanUrl(product);

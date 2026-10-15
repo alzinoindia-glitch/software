@@ -121,7 +121,11 @@ export function ProductImagePicker({ value = { front: null, back: null }, onChan
  */
 export function ProductImageViewer({ product, height = 140, dark = false, placeholder = null }) {
   const hasImages = Boolean(product?.images?.front || product?.images?.back);
-  const images = useProductImages(hasImages ? product?.id : null, product?.images?.v);
+  // Always check this browser's IndexedDB by product ID. Some older/imported
+  // rows have saved photos but lost the lightweight `images` marker. When no
+  // marker exists, keep this local-only to avoid private Storage lookups for
+  // every public catalog card.
+  const images = useProductImages(product?.id, product?.images?.v, hasImages);
   const [side, setSide] = useState('front');
   const [failedSource, setFailedSource] = useState('');
 

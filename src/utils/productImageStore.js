@@ -135,6 +135,19 @@ export const getProductImage = async (productId, side) => {
   }
 };
 
+const getLocalProductImage = async (productId, side) => {
+  try {
+    const db = await openDb();
+    return await new Promise(resolve => {
+      const request = db.transaction(STORE, 'readonly').objectStore(STORE).get(keyFor(productId, side));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+};
+
 export const deleteProductImages = async (productId) => {
   await tx('readwrite', store => IMAGE_SIDES.forEach(side => store.delete(keyFor(productId, side))));
   try {
@@ -227,6 +240,16 @@ export const syncPublishedProductImagesToCloud = async (organizationId, products
   const imageUrls = new Map();
   const removals = [];
   const uploads = [];
+  const localImages = new Map();
+
+  await Promise.all(products.flatMap(product => (
+    product?.id
+      ? IMAGE_SIDES.filter(side => !product.images?.[side]).map(async side => {
+          const image = await getLocalProductImage(product.id, side);
+          if (image) localImages.set(`${product.id}:${side}`, image);
+        })
+      : []
+  )));
 
   products.forEach(product => {
     if (!product?.id) return;
@@ -241,7 +264,10 @@ export const syncPublishedProductImagesToCloud = async (organizationId, products
       const inlineImage = side === 'front'
         ? (product.frontImage || product.image)
         : product.backImage;
-      const hasImage = Boolean(product.images?.[side] || (typeof inlineImage === 'string' && inlineImage.startsWith('data:image/')));
+      // Older inventory rows can have a photo in IndexedDB even if their
+      // lightweight `images` marker was lost during a data import/edit.
+      const hasLocalImage = localImages.has(`${product.id}:${side}`);
+      const hasImage = Boolean(product.images?.[side] || hasLocalImage || (typeof inlineImage === 'string' && inlineImage.startsWith('data:image/')));
       if (!hasImage) return;
       const version = String(product.images?.v || product.updatedAt || 'stored');
       if (publicImageVersions.get(path) === version) {
@@ -261,8 +287,11 @@ export const syncPublishedProductImagesToCloud = async (organizationId, products
   for (let index = 0; index < uploads.length; index += 4) {
     await Promise.all(uploads.slice(index, index + 4).map(async ({ product, side, path, version, inlineImage }) => {
       try {
+        const localImage = localImages.get(`${product.id}:${side}`);
         const blob = typeof inlineImage === 'string' && inlineImage.startsWith('data:image/')
           ? await fetch(inlineImage).then(response => response.blob())
+          : localImage
+            ? await fetch(localImage).then(response => response.blob())
           : await getPrivateProductImageBlob(organizationId, product.id, side);
         if (!blob) return;
         const { error } = await client.storage.from(PUBLIC_CATALOG_BUCKET).upload(path, blob, {
@@ -323,7 +352,7 @@ export const compressImageFile = (file, maxSize = 720, quality = 0.78) =>
  * React hook: loads a product's stored front/back images.
  * `version` should change whenever images are updated (product.images.v).
  */
-export const useProductImages = (productId, version) => {
+export const useProductImages = (productId, version, includePrivateRemote = true) => {
   const [images, setImages] = useState({ front: null, back: null });
   useEffect(() => {
     let cancelled = false;
@@ -331,11 +360,12 @@ export const useProductImages = (productId, version) => {
       setImages({ front: null, back: null });
       return undefined;
     }
-    Promise.all(IMAGE_SIDES.map((side) => getProductImage(productId, side))).then(([front, back]) => {
+    const loadImage = includePrivateRemote ? getProductImage : getLocalProductImage;
+    Promise.all(IMAGE_SIDES.map((side) => loadImage(productId, side))).then(([front, back]) => {
       if (!cancelled) setImages({ front, back });
     });
     return () => { cancelled = true; };
-  }, [productId, version]);
+  }, [productId, version, includePrivateRemote]);
   return images;
 };
 
