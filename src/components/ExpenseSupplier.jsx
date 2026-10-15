@@ -46,6 +46,8 @@ export default function ExpenseSupplier({
   const [inwardQty, setInwardQty] = useState('5');
   const [inwardUnitCost, setInwardUnitCost] = useState('');
   const [inwardImeisText, setInwardImeisText] = useState('');
+  const [inwardInvoiceNumber, setInwardInvoiceNumber] = useState('');
+  const [inwardDate, setInwardDate] = useState(new Date().toISOString().split('T')[0]);
 
   const expenseCategories = [
     'Shop Rent',
@@ -62,7 +64,6 @@ export default function ExpenseSupplier({
 
   // Calculations
   const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-  const totalPayables = suppliers.reduce((sum, s) => sum + (s.balancePayable || 0), 0);
 
   const handleAddExpense = (e) => {
     e.preventDefault();
@@ -126,18 +127,35 @@ export default function ExpenseSupplier({
 
   const handleStockInward = (e) => {
     e.preventDefault();
-    if (!inwardProductId || !inwardQty) return;
+    if (!selectedSupplierId || !inwardProductId || !inwardQty || !inwardUnitCost) return;
 
     const qty = parseInt(inwardQty, 10);
     const cost = parseFloat(inwardUnitCost) || 0;
+    if (!Number.isInteger(qty) || qty < 1 || cost <= 0) return;
     const imeis = inwardImeisText.split('\n').map(s => s.trim()).filter(Boolean);
+    const product = inventory.find(item => item.id === inwardProductId);
+    const billTotal = cost * qty;
+    const bill = {
+      id: `BILL-${Date.now()}`,
+      invoiceNumber: inwardInvoiceNumber.trim() || `SUP-${Date.now().toString().slice(-6)}`,
+      date: inwardDate,
+      productId: inwardProductId,
+      productName: product?.name || 'Stock item',
+      brand: product?.brand || '',
+      quantity: qty,
+      unitCost: cost,
+      totalAmount: billTotal,
+      paidAmount: 0,
+      balanceDue: billTotal,
+      imeis,
+    };
 
     // Increment inventory
     setInventory(prev => prev.map(p => {
       if (p.id === inwardProductId) {
         return {
           ...p,
-          stock: p.stock + qty,
+          stock: (Number(p.stock) || 0) + qty,
           buyPrice: cost > 0 ? cost : p.buyPrice,
           imeis: [...(p.imeis || []), ...imeis]
         };
@@ -145,102 +163,59 @@ export default function ExpenseSupplier({
       return p;
     }));
 
-    // If supplier selected, log payable
-    if (selectedSupplierId && cost > 0) {
-      const totalCost = cost * qty;
-      setSuppliers(prev => prev.map(s => {
-        if (s.id === selectedSupplierId) {
-          return {
-            ...s,
-            balancePayable: s.balancePayable + totalCost
-          };
-        }
-        return s;
-      }));
-    }
+    setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? {
+      ...s,
+      balancePayable: (Number(s.balancePayable) || 0) + billTotal,
+      purchaseBills: [bill, ...(s.purchaseBills || [])],
+    } : s));
 
-    alert(`Successfully added ${qty} units to stock!`);
+    alert(`Received ${qty} units from ${suppliers.find(s => s.id === selectedSupplierId)?.name || 'supplier'} and recorded bill ${bill.invoiceNumber}.`);
     setShowInwardModal(false);
     setInwardProductId('');
     setInwardQty('5');
     setInwardUnitCost('');
     setInwardImeisText('');
+    setInwardInvoiceNumber('');
+    setInwardDate(new Date().toISOString().split('T')[0]);
   };
+
+  const supplierBills = suppliers.flatMap(supplier => (supplier.purchaseBills || []).map(bill => ({
+    ...bill,
+    supplierName: supplier.name,
+  }))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       
       {/* Sleek Minimalist Title Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Expenses & Supplier Inward</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>{activeSubTab === 'suppliers' ? 'Supplier Portal' : 'Shop Expenses'}</h2>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            Total Outflow: ₹{totalExpenses.toLocaleString()}
+            {activeSubTab === 'suppliers' ? `${suppliers.length} supplier records` : `Total Outflow: ₹${totalExpenses.toLocaleString()}`}
           </span>
         </div>
 
         <div style={{ display: 'flex', gap: '0.45rem' }}>
-          <button 
+          {activeSubTab === 'expenses' && <button
             onClick={() => setShowExpenseModal(true)}
             className="btn-primary"
             style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
           >
             <Plus size={15} />
             <span>Add Expense</span>
-          </button>
+          </button>}
 
-          <button 
+          {activeSubTab === 'suppliers' && <button
             onClick={() => setShowInwardModal(true)}
-            className="btn-secondary"
+            className="btn-primary"
             style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
           >
             <Truck size={14} color="var(--accent-primary)" />
-            <span>Stock Inward</span>
-          </button>
+            <span>Receive Stock & Add Bill</span>
+          </button>}
+          {activeSubTab === 'suppliers' && <button onClick={() => setShowSupplierModal(true)} className="btn-outline" style={{ fontSize: '0.82rem' }}><Plus size={14} /> Add Supplier</button>}
         </div>
-      </div>
-
-      {/* Subtab Toggle Bar */}
-      <div className="illoca-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button
-            onClick={() => setActiveSubTab('expenses')}
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: 'var(--radius-sm)',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: 700,
-              fontSize: '0.88rem',
-              background: activeSubTab === 'expenses' ? 'var(--accent-primary)' : 'var(--surface-primary)',
-              color: activeSubTab === 'expenses' ? '#FFFFFF' : 'var(--text-primary)',
-              border: `1px solid ${activeSubTab === 'expenses' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-            }}
-          >
-            Daily Expenses (₹{totalExpenses.toLocaleString()})
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('suppliers')}
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: 'var(--radius-sm)',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: 700,
-              fontSize: '0.88rem',
-              background: activeSubTab === 'suppliers' ? 'var(--accent-primary)' : 'var(--surface-primary)',
-              color: activeSubTab === 'suppliers' ? '#FFFFFF' : 'var(--text-primary)',
-              border: `1px solid ${activeSubTab === 'suppliers' ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-            }}
-          >
-            Suppliers & Payables (₹{totalPayables.toLocaleString()})
-          </button>
-        </div>
-
-        {activeSubTab === 'suppliers' && (
-          <button onClick={() => setShowSupplierModal(true)} className="btn-outline" style={{ fontSize: '0.82rem' }}>
-            + Add New Supplier
-          </button>
-        )}
       </div>
 
       {/* Expenses Table */}
@@ -289,6 +264,7 @@ export default function ExpenseSupplier({
 
       {/* Suppliers Table */}
       {activeSubTab === 'suppliers' && (
+        <>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
             <thead>
@@ -297,7 +273,7 @@ export default function ExpenseSupplier({
                 <th style={{ padding: '0.65rem 0.5rem' }}>Contact Person & Phone</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>City / Hub</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>GSTIN</th>
-                <th style={{ padding: '0.65rem 0.5rem' }}>Outstanding Payable</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Bills</th>
               </tr>
             </thead>
             <tbody>
@@ -310,14 +286,24 @@ export default function ExpenseSupplier({
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem' }}>{sup.city}</td>
                   <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{sup.gstin || '—'}</td>
-                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: 700, color: sup.balancePayable > 0 ? 'var(--status-amber)' : 'var(--status-green)' }}>
-                    ₹{sup.balancePayable.toLocaleString()}
-                  </td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{(sup.purchaseBills || []).length}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem' }}>Received Products & Supplier Bills</h3>
+          {supplierBills.length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+            <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}>
+              <th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Bill No.</th><th style={{ padding: '0.6rem' }}>Product Received</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Qty</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Bill Total</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Due (Khata)</th>
+            </tr></thead>
+            <tbody>{supplierBills.map(bill => <tr key={bill.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '0.65rem' }}>{bill.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{bill.supplierName}</td><td style={{ padding: '0.65rem' }}>{bill.invoiceNumber}</td><td style={{ padding: '0.65rem' }}>{bill.productName}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{bill.quantity}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>₹{(Number(bill.totalAmount) || 0).toLocaleString()}</td><td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 700 }}>₹{(Number(bill.balanceDue ?? bill.totalAmount) || 0).toLocaleString()}</td>
+            </tr>)}</tbody>
+          </table> : <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem' }}>No supplier bills yet. Use “Receive Stock & Add Bill” when products arrive.</div>}
+        </div>
+        </>
       )}
 
       {/* Add Expense Modal */}
@@ -405,11 +391,23 @@ export default function ExpenseSupplier({
                 <select 
                   value={selectedSupplierId} 
                   onChange={(e) => setSelectedSupplierId(e.target.value)}
+                  required
                   className="input-field"
                 >
-                  <option value="">-- Direct Purchase / Cash --</option>
+                  <option value="">-- Choose Supplier --</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
                 </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Supplier Bill / Invoice No.</label>
+                  <input type="text" value={inwardInvoiceNumber} onChange={e => setInwardInvoiceNumber(e.target.value)} placeholder="e.g. INV-1042" className="input-field" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Received Date *</label>
+                  <input type="date" value={inwardDate} onChange={e => setInwardDate(e.target.value)} required className="input-field" />
+                </div>
               </div>
 
               <div>
@@ -430,6 +428,8 @@ export default function ExpenseSupplier({
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Quantity Added (Pcs) *</label>
                   <input
                     type="number"
+                    min="1"
+                    step="1"
                     value={inwardQty}
                     onChange={(e) => setInwardQty(e.target.value)}
                     required
@@ -441,9 +441,12 @@ export default function ExpenseSupplier({
                   <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Unit Purchase Cost ₹</label>
                   <input
                     type="number"
+                    min="0.01"
+                    step="0.01"
                     placeholder="New Cost Price"
                     value={inwardUnitCost}
                     onChange={(e) => setInwardUnitCost(e.target.value)}
+                    required
                     className="input-field"
                   />
                 </div>

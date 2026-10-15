@@ -53,12 +53,10 @@ export default function CustomerKhata({
   const [viewLayout, setViewLayout] = useState('table'); // table | cards
   const [showAddModal, setShowAddModal] = useState(false);
   const [portalEntity, setPortalEntity] = useState('customers');
-  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
-  const [newSupplierName, setNewSupplierName] = useState('');
-  const [newSupplierContact, setNewSupplierContact] = useState('');
-  const [newSupplierPhone, setNewSupplierPhone] = useState('');
-  const [newSupplierCity, setNewSupplierCity] = useState('');
-  const [newSupplierGstin, setNewSupplierGstin] = useState('');
+  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState(null);
+  const [supplierPaymentAmount, setSupplierPaymentAmount] = useState('');
+  const [supplierPaymentMode, setSupplierPaymentMode] = useState('Bank Transfer');
+  const [supplierPaymentNote, setSupplierPaymentNote] = useState('');
   
   // Payment Modal state
   const [selectedCustomerForPayment, setSelectedCustomerForPayment] = useState(null);
@@ -406,36 +404,6 @@ export default function CustomerKhata({
     setNewGstin('');
   };
 
-  const handleAddPortalSupplier = (e) => {
-    e.preventDefault();
-    if (!newSupplierName.trim() || !newSupplierPhone.trim()) {
-      alert('Please provide a supplier name and phone number.');
-      return;
-    }
-    const phone = normalizePhone(newSupplierPhone);
-    const existingSupplier = suppliers.find(supplier => normalizePhone(supplier.phone) === phone && phone);
-    if (existingSupplier) {
-      alert(`${existingSupplier.name} is already in the supplier directory. Select that existing supplier instead.`);
-      return;
-    }
-    setSuppliers(prev => [{
-      id: `SUPP-${Date.now()}`,
-      name: newSupplierName.trim(),
-      contactPerson: newSupplierContact.trim(),
-      phone: newSupplierPhone.trim(),
-      city: newSupplierCity.trim(),
-      gstin: newSupplierGstin.trim().toUpperCase(),
-      balancePayable: 0,
-      createdAt: new Date().toISOString(),
-    }, ...prev]);
-    setShowAddSupplierModal(false);
-    setNewSupplierName('');
-    setNewSupplierContact('');
-    setNewSupplierPhone('');
-    setNewSupplierCity('');
-    setNewSupplierGstin('');
-  };
-
   const filteredPortalSuppliers = suppliers.filter(supplier => {
     const query = searchTerm.trim().toLowerCase();
     return !query || [supplier.name, supplier.contactPerson, supplier.phone, supplier.city, supplier.gstin]
@@ -470,6 +438,40 @@ export default function CustomerKhata({
     setPaymentNote('');
   };
 
+  const handlePaySupplierKhata = (e) => {
+    e.preventDefault();
+    const amount = Number(supplierPaymentAmount);
+    if (!selectedSupplierForPayment || !Number.isFinite(amount) || amount <= 0 || amount > (Number(selectedSupplierForPayment.balancePayable) || 0)) return;
+    setSuppliers(prev => prev.map(supplier => {
+      if (supplier.id !== selectedSupplierForPayment.id) return supplier;
+      let unappliedPayment = amount;
+      const purchaseBills = [...(supplier.purchaseBills || [])].map(bill => ({ ...bill }));
+      for (let index = purchaseBills.length - 1; index >= 0 && unappliedPayment > 0; index -= 1) {
+        const bill = purchaseBills[index];
+        const due = Math.max(0, Number(bill.balanceDue ?? (Number(bill.totalAmount) - Number(bill.paidAmount))) || 0);
+        const applied = Math.min(due, unappliedPayment);
+        bill.paidAmount = (Number(bill.paidAmount) || 0) + applied;
+        bill.balanceDue = Math.max(0, due - applied);
+        unappliedPayment -= applied;
+      }
+      return {
+        ...supplier,
+        balancePayable: Math.max(0, (Number(supplier.balancePayable) || 0) - amount),
+        purchaseBills,
+        payments: [{
+          id: `SUPPAY-${Date.now()}`,
+          date: new Date().toISOString().slice(0, 10),
+          amount,
+          mode: supplierPaymentMode,
+          note: supplierPaymentNote.trim(),
+        }, ...(supplier.payments || [])],
+      };
+    }));
+    setSelectedSupplierForPayment(null);
+    setSupplierPaymentAmount('');
+    setSupplierPaymentNote('');
+  };
+
   // WhatsApp Message Composer Helper
   const getWhatsAppUrl = (cust, customMessage = '') => {
     const cleanPhone = normalizePhone(cust.phone);
@@ -485,57 +487,36 @@ export default function CustomerKhata({
     return `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`;
   };
 
-  if (portalEntity === 'suppliers') {
+  if (initialView === 'khata' && portalEntity === 'suppliers') {
+    const totalSupplierDue = suppliers.reduce((sum, supplier) => sum + (Number(supplier.balancePayable) || 0), 0);
+    const supplierBills = suppliers.flatMap(supplier => (supplier.purchaseBills || []).map(bill => ({ ...bill, supplierName: supplier.name, supplierId: supplier.id })))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const supplierPayments = suppliers.flatMap(supplier => (supplier.payments || []).map(payment => ({ ...payment, supplierName: supplier.name })))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     return (
-      <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         <div className="illoca-card" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>Customer & Supplier Portal</h2>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Supplier records created here are shared with Suppliers & Payables and stock inward.</div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-            <button type="button" className="btn-outline" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }}>Customers ({unifiedCustomers.length})</button>
-            <button type="button" className="btn-primary" onClick={() => { setPortalEntity('suppliers'); setSearchTerm(''); }}>Suppliers ({suppliers.length})</button>
-            <button type="button" className="btn-primary" onClick={() => setShowAddSupplierModal(true)}><Plus size={14} /> New Supplier</button>
-          </div>
+          <div><h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>Khata Ledger · Supplier Payables</h2><div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Supplier bills and payments from the Supplier Portal are recorded here.</div></div>
+          <div style={{ display: 'flex', gap: '0.45rem' }}><button type="button" className="btn-outline" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }}>Customer Khata ({unifiedCustomers.length})</button><button type="button" className="btn-primary">Supplier Khata ({suppliers.length})</button></div>
         </div>
-
-        <div className="illoca-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ position: 'relative', maxWidth: '520px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input-field" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search supplier name, phone, city, or GSTIN..." style={{ paddingLeft: '2rem' }} />
-          </div>
-          {filteredPortalSuppliers.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}>
-                  <th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Contact</th><th style={{ padding: '0.6rem' }}>Phone</th><th style={{ padding: '0.6rem' }}>City</th><th style={{ padding: '0.6rem' }}>GSTIN</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Payable</th>
-                </tr></thead>
-                <tbody>{filteredPortalSuppliers.map(supplier => (
-                  <tr key={supplier.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.7rem 0.6rem', fontWeight: 700 }}>{supplier.name}</td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.contactPerson || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.phone || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.city || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.gstin || '—'}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>₹{(Number(supplier.balancePayable) || 0).toLocaleString()}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          ) : <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>{searchTerm ? 'No suppliers match your search.' : 'No suppliers added yet. Add a supplier here or from Suppliers & Payables.'}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.65rem' }}>
+          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SUPPLIERS</div><strong style={{ fontSize: '1.25rem' }}>{suppliers.length}</strong></div>
+          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>OUTSTANDING PAYABLE</div><strong style={{ fontSize: '1.25rem', color: 'var(--status-amber)' }}>₹{totalSupplierDue.toLocaleString()}</strong></div>
+          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>RECORDED BILLS</div><strong style={{ fontSize: '1.25rem' }}>{supplierBills.length}</strong></div>
         </div>
-
-        {showAddSupplierModal && (
-          <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1000 }}>
-            <form onSubmit={handleAddPortalSupplier} className="illoca-card animate-fade-in" style={{ maxWidth: '480px', width: '100%', padding: '1.4rem', background: 'var(--surface-primary)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Add Supplier</h3><button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)}>✕</button></div>
-              <div style={{ display: 'grid', gap: '0.7rem' }}>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>Supplier / Business Name *<input required className="input-field" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} placeholder="Business or supplier name" /></label>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>Contact Person<input className="input-field" value={newSupplierContact} onChange={e => setNewSupplierContact(e.target.value)} placeholder="Contact person" /></label>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>Mobile / Phone *<input required className="input-field" value={newSupplierPhone} onChange={e => setNewSupplierPhone(e.target.value)} placeholder="Supplier phone number" /></label>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>City<input className="input-field" value={newSupplierCity} onChange={e => setNewSupplierCity(e.target.value)} placeholder="City" /></label>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>GSTIN<input className="input-field" value={newSupplierGstin} onChange={e => setNewSupplierGstin(e.target.value.toUpperCase())} placeholder="Optional GSTIN" /></label>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)}>Cancel</button><button type="submit" className="btn-primary">Save Supplier</button></div>
-            </form>
-          </div>
-        )}
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
+          <div style={{ position: 'relative', maxWidth: '520px', marginBottom: '0.75rem' }}><Search size={15} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} /><input className="input-field" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search supplier, phone, or GSTIN..." style={{ paddingLeft: '2rem' }} /></div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Phone</th><th style={{ padding: '0.6rem' }}>Bills</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Payable Due</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Action</th></tr></thead>
+            <tbody>{filteredPortalSuppliers.map(supplier => <tr key={supplier.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.7rem 0.6rem', fontWeight: 700 }}>{supplier.name}<div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{supplier.gstin || supplier.city || 'Supplier account'}</div></td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.phone || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{(supplier.purchaseBills || []).length}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right', fontWeight: 700, color: Number(supplier.balancePayable) > 0 ? 'var(--status-amber)' : 'var(--status-green)' }}>₹{(Number(supplier.balancePayable) || 0).toLocaleString()}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right' }}>{Number(supplier.balancePayable) > 0 && <button type="button" className="btn-primary" onClick={() => setSelectedSupplierForPayment(supplier)}>Record Payment</button>}</td></tr>)}</tbody>
+          </table>
+          {!filteredPortalSuppliers.length && <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier balances match your search.</div>}
+        </div>
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}><h3 style={{ margin: '0 0 0.7rem', fontSize: '1rem' }}>Supplier Account Activity</h3>
+          {supplierBills.length || supplierPayments.length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Entry</th><th style={{ padding: '0.6rem' }}>Reference / Details</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Debit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Credit</th></tr></thead><tbody>
+            {[...supplierBills.map(bill => ({ ...bill, kind: 'Bill', detail: `${bill.invoiceNumber} · ${bill.productName}`, debit: bill.totalAmount, credit: 0 })), ...supplierPayments.map(payment => ({ ...payment, kind: 'Payment', detail: `${payment.mode}${payment.note ? ` · ${payment.note}` : ''}`, debit: 0, credit: payment.amount }))].sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(row => <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.65rem' }}>{row.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{row.supplierName}</td><td style={{ padding: '0.65rem' }}>{row.kind}</td><td style={{ padding: '0.65rem' }}>{row.detail}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.debit ? `₹${Number(row.debit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right', color: 'var(--status-green)' }}>{row.credit ? `₹${Number(row.credit).toLocaleString()}` : '—'}</td></tr>)}
+          </tbody></table> : <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier bills or payments are recorded yet.</div>}
+        </div>
+        {selectedSupplierForPayment && <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1000 }}><form onSubmit={handlePaySupplierKhata} className="illoca-card animate-fade-in" style={{ maxWidth: '440px', width: '100%', padding: '1.4rem', background: 'var(--surface-primary)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Pay Supplier Khata</h3><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>✕</button></div><p style={{ marginTop: 0 }}>{selectedSupplierForPayment.name} · Due ₹{(Number(selectedSupplierForPayment.balancePayable) || 0).toLocaleString()}</p><label className="input-label">Payment Amount ₹<input type="number" min="0.01" max={Number(selectedSupplierForPayment.balancePayable) || 0} step="0.01" required className="input-field" value={supplierPaymentAmount} onChange={e => setSupplierPaymentAmount(e.target.value)} /></label><label className="input-label">Paid Via<select className="input-field" value={supplierPaymentMode} onChange={e => setSupplierPaymentMode(e.target.value)}><option>Bank Transfer</option><option>Cash</option><option>UPI</option><option>Cheque</option></select></label><label className="input-label">Reference / Note<input className="input-field" value={supplierPaymentNote} onChange={e => setSupplierPaymentNote(e.target.value)} placeholder="Optional transaction reference" /></label><div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>Cancel</button><button type="submit" className="btn-primary">Save Payment</button></div></form></div>}
       </div>
     );
   }
@@ -550,7 +531,7 @@ export default function CustomerKhata({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
-              Customers Directory
+              {initialView === 'khata' ? 'Khata Ledger · Customer Receivables' : 'Customers Directory'}
             </h2>
             <span style={{ 
               fontSize: '0.68rem', 
@@ -561,27 +542,19 @@ export default function CustomerKhata({
               background: 'var(--badge-bg)',
               color: 'var(--badge-text)'
             }}>
-              ADMIN PORTAL • /admin/customers
+              {initialView === 'khata' ? 'ADMIN PORTAL • /admin/khata' : 'ADMIN PORTAL • /admin/customers'}
             </span>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-            Unified client records across Sales counter, Repairing Lab & Khata ledger
+            {initialView === 'khata' ? 'Track customer credit, payments, and outstanding balances.' : 'Unified customer records across Sales counter and Repairing Lab.'}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button
-            type="button"
-            onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }}
-            className="btn-primary"
-            style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}
-          >Customers ({unifiedCustomers.length})</button>
-          <button
-            type="button"
-            onClick={() => { setPortalEntity('suppliers'); setSearchTerm(''); }}
-            className="btn-outline"
-            style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}
-          >Suppliers ({suppliers.length})</button>
+          {initialView === 'khata' && <>
+            <button type="button" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }} className={portalEntity === 'customers' ? 'btn-primary' : 'btn-outline'} style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}>Customer Khata ({unifiedCustomers.length})</button>
+            <button type="button" onClick={() => { setPortalEntity('suppliers'); setSearchTerm(''); }} className={portalEntity === 'suppliers' ? 'btn-primary' : 'btn-outline'} style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}>Supplier Khata ({suppliers.length})</button>
+          </>}
           <button 
             onClick={() => setShowAddModal(true)}
             className="btn-primary"
@@ -683,7 +656,7 @@ export default function CustomerKhata({
         </div>
 
         {/* Outstanding Receivables */}
-        <div 
+        {initialView === 'khata' && <div
           onClick={() => setTypeFilter('due')}
           style={{ 
             background: typeFilter === 'due' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', 
@@ -701,7 +674,7 @@ export default function CustomerKhata({
           <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--status-red)', fontFamily: 'var(--font-mono)' }}>
             ₹{totalReceivables.toLocaleString()}
           </div>
-        </div>
+        </div>}
 
       </div>
 
@@ -726,7 +699,7 @@ export default function CustomerKhata({
             { id: 'both', label: `⭐ Both (${countBoth})` },
             { id: 'sales', label: `🛒 Sales (${countSales})` },
             { id: 'repairs', label: `🔧 Repairs (${countRepairs})` },
-            { id: 'due', label: `⚠️ Due (${countDue})` }
+            ...(initialView === 'khata' ? [{ id: 'due', label: `⚠️ Due (${countDue})` }] : [])
           ].map(f => (
             <button
               key={f.id}
@@ -841,7 +814,7 @@ export default function CustomerKhata({
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Sales Purchases (Invoices)</th>
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Repair Service Bills</th>
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Total Spent</th>
-                <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Balance Due</th>
+                {initialView === 'khata' && <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Balance Due</th>}
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -919,7 +892,7 @@ export default function CustomerKhata({
                             color: 'var(--text-secondary)',
                             width: 'fit-content'
                           }}>
-                            Khata Reg
+                            Registered Customer
                           </span>
                         )}
                       </div>
@@ -1083,7 +1056,7 @@ export default function CustomerKhata({
                     </td>
 
                     {/* BALANCE DUE */}
-                    <td style={{ padding: '0.65rem 0.75rem', verticalAlign: 'top' }}>
+                    {initialView === 'khata' && <td style={{ padding: '0.65rem 0.75rem', verticalAlign: 'top' }}>
                       <span style={{
                         fontFamily: 'var(--font-mono)',
                         fontWeight: 800,
@@ -1097,7 +1070,7 @@ export default function CustomerKhata({
                           DUE PENDING
                         </div>
                       )}
-                    </td>
+                    </td>}
 
                     {/* ACTIONS */}
                     <td style={{ padding: '0.65rem 0.75rem', verticalAlign: 'top', textAlign: 'right' }}>
@@ -1116,7 +1089,7 @@ export default function CustomerKhata({
                           <span>Bills</span>
                         </button>
 
-                        {hasDue && (
+                        {initialView === 'khata' && hasDue && (
                           <>
                             {/* UPI QR */}
                             <button
@@ -1212,7 +1185,7 @@ export default function CustomerKhata({
                     </div>
                   </div>
 
-                  <div style={{ textAlign: 'right' }}>
+                  {initialView === 'khata' && <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Balance Due</div>
                     <div style={{ 
                       fontSize: '1.05rem', 
@@ -1222,7 +1195,7 @@ export default function CustomerKhata({
                     }}>
                       ₹{cust.balanceDue.toLocaleString()}
                     </div>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Contact Pill */}
@@ -1348,7 +1321,7 @@ export default function CustomerKhata({
                     <span>View Profile & Bills</span>
                   </button>
 
-                  {hasDue && (
+                  {initialView === 'khata' && hasDue && (
                     <>
                       <button
                         onClick={() => setQrCustomer(cust)}
@@ -1463,7 +1436,7 @@ export default function CustomerKhata({
                   </a>
                 )}
 
-                <button
+                {initialView === 'khata' && <button
                   onClick={() => {
                     const ledger = getCustomerLedger(statementCustomer);
                     onPrintKhataStatement({
@@ -1477,9 +1450,9 @@ export default function CustomerKhata({
                 >
                   <Printer size={13} />
                   <span>Print Ledger</span>
-                </button>
+                </button>}
 
-                {statementCustomer.balanceDue > 0 && statementCustomer.phone && (
+                {initialView === 'khata' && statementCustomer.balanceDue > 0 && statementCustomer.phone && (
                   <button
                     type="button"
                     onClick={() => openWhatsAppKhataReminder(statementCustomer, shopConfig)}
@@ -1512,7 +1485,7 @@ export default function CustomerKhata({
             </div>
 
             {/* Financial Summary Ribbon */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${initialView === 'khata' ? 4 : 3}, 1fr)`, gap: '0.5rem', marginBottom: '0.75rem' }}>
               <div style={{ background: 'var(--surface-card)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Sales Purchases Total</div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--status-blue)', fontFamily: 'var(--font-mono)' }}>
@@ -1531,12 +1504,12 @@ export default function CustomerKhata({
                   ₹{(statementCustomer.totalSpent || 0).toLocaleString()}
                 </div>
               </div>
-              <div style={{ background: 'var(--surface-card)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              {initialView === 'khata' && <div style={{ background: 'var(--surface-card)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Balance Due</div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: statementCustomer.balanceDue > 0 ? 'var(--status-red)' : 'var(--status-green)', fontFamily: 'var(--font-mono)' }}>
                   ₹{(statementCustomer.balanceDue || 0).toLocaleString()}
                 </div>
-              </div>
+              </div>}
             </div>
 
             {/* Profile Navigation Tabs */}
@@ -1589,7 +1562,7 @@ export default function CustomerKhata({
                 🔧 Repair Bills ({statementCustomer.repairs.length})
               </button>
 
-              <button
+              {initialView === 'khata' && <button
                 onClick={() => setProfileActiveTab('ledger')}
                 style={{
                   padding: '0.35rem 0.75rem',
@@ -1603,7 +1576,7 @@ export default function CustomerKhata({
                 }}
               >
                 📒 Khata Ledger Statement
-              </button>
+              </button>}
             </div>
 
             {/* TAB CONTENTS */}
