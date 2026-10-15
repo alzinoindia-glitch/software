@@ -123,12 +123,13 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
   const hasImages = Boolean(product?.images?.front || product?.images?.back);
   const images = useProductImages(hasImages ? product?.id : null, product?.images?.v);
   const [side, setSide] = useState('front');
+  const [failedSource, setFailedSource] = useState('');
 
   const available = ['front', 'back'].filter((s) => images[s]);
   const activeSide = images[side] ? side : available[0];
   const src = (activeSide ? images[activeSide] : null) || product?.imageUrl || product?.image_url || product?.image || null;
 
-  if (!src) {
+  if (!src || failedSource === src) {
     if (placeholder) return placeholder;
     return (
       <div style={{
@@ -146,7 +147,13 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
       position: 'relative', height, borderRadius: '8px', overflow: 'hidden',
       background: dark ? '#FFFFFF' : 'var(--bg-main)'
     }}>
-      <img src={src} alt={`${product.name} – ${activeSide} view`} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      <img
+        src={src}
+        alt={`${product.name} – ${activeSide || 'product'} view`}
+        loading="lazy"
+        onError={() => setFailedSource(src)}
+        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+      />
       {available.length > 1 && (
         <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '0.25rem' }}>
           {available.map((s) => (

@@ -75,123 +75,6 @@ const WhatsAppIcon = ({ size = 16, color = "currentColor" }) => (
   </svg>
 );
 
-export function getRealProductImage(product) {
-  if (product?.image && typeof product.image === 'string' && (product.image.startsWith('http') || product.image.startsWith('data:image/') || product.image.startsWith('blob:'))) {
-    return product.image;
-  }
-  const name = (product?.name || '').toLowerCase();
-  const brand = (product?.brand || '').toLowerCase();
-  const cat = (product?.category || '').toLowerCase();
-
-  // 1. AUDIO & WIRELESS EARBUDS (Check first before brand names!)
-  if (name.includes('airdopes') || name.includes('earbuds') || name.includes('airpods') || name.includes('buds') || 
-      name.includes('headphone') || name.includes('earphone') || name.includes('neckband') || name.includes('tws') || 
-      cat.includes('audio') || (brand.includes('boat') && !name.includes('watch'))) {
-    if (name.includes('airpods')) {
-      return 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=800&auto=format&fit=crop&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 2. CHARGERS, ADAPTERS, POWER BANKS & CABLES (Check before brand names!)
-  if (name.includes('charger') || name.includes('adapter') || name.includes('supervooc') || name.includes('power bank') || 
-      name.includes('powerbank') || name.includes('gan') || name.includes('cable') || name.includes('warp charge') || 
-      name.includes('flash charge') || name.includes('type-c') || name.includes('lightning')) {
-    if (name.includes('power bank') || name.includes('powerbank')) {
-      return 'https://images.unsplash.com/photo-1609592424109-dd9892f1b177?w=800&auto=format&fit=crop&q=80';
-    }
-    if (name.includes('apple') || name.includes('20w')) {
-      return 'https://images.unsplash.com/photo-1622445262464-84b14e32452e?w=800&auto=format&fit=crop&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 3. SMARTWATCHES & WEARABLES (Check before brand names!)
-  if (name.includes('watch') || name.includes('colorfit') || name.includes('noise') || name.includes('smartwatch') || name.includes('band')) {
-    if (name.includes('apple watch')) {
-      return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 4. SCREEN GUARDS & TEMPERED GLASS
-  if (name.includes('tempered') || name.includes('glass') || name.includes('screen guard') || name.includes('protector') || name.includes('9d')) {
-    return 'https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 5. CASES & COVERS
-  if (name.includes('case') || name.includes('cover') || name.includes('silicon') || name.includes('magsafe') || name.includes('pouch')) {
-    return 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 6. HOME APPLIANCES
-  // Smart TVs
-  if (name.includes('tv') || name.includes('television') || name.includes('bravia') || name.includes('oled') || name.includes('crystal 4k') || name.includes('led tv')) {
-    if (name.includes('crystal') || name.includes('samsung')) {
-      return 'https://images.unsplash.com/photo-1461151304267-38535e780c79?w=800&auto=format&fit=crop&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // AC / Air Conditioners
-  if (name.includes(' ac') || name.includes('air conditioner') || name.includes('split ac') || name.includes('voltas') || name.includes('daikin') || name.includes('inverter ac')) {
-    return 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Washing Machines
-  if (name.includes('washing machine') || name.includes('washer') || name.includes('dryer')) {
-    return 'https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Air Coolers
-  if (name.includes('cooler') || name.includes('symphony') || name.includes('diet 3d')) {
-    return 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Refrigerators
-  if (name.includes('fridge') || name.includes('refrigerator')) {
-    return 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 7. CERTIFIED REFURBISHED / USED PHONES
-  if (product?.type === 'refurbished' || cat.includes('used') || name.includes('used') || name.includes('refurbished')) {
-    return 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // 8. NEW SMARTPHONES BY BRAND
-  // Apple iPhones
-  if (name.includes('iphone') || (brand.includes('apple') && !cat.includes('accessories'))) {
-    if (name.includes('15 pro')) {
-      return 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&auto=format&fit=crop&q=80';
-    }
-    return 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Samsung Galaxy Flagships
-  if (name.includes('galaxy') || name.includes('s24') || name.includes('s23') || name.includes('s22') || (brand.includes('samsung') && !cat.includes('appliance'))) {
-    return 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // OnePlus
-  if (name.includes('oneplus') || brand.includes('oneplus')) {
-    return 'https://images.unsplash.com/photo-1565849904461-04a58ad377e0?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Vivo / Realme / Xiaomi / Redmi / Oppo / iQOO / Poco
-  if (brand.includes('vivo') || brand.includes('realme') || brand.includes('xiaomi') || brand.includes('redmi') || brand.includes('oppo') || brand.includes('iqoo') || brand.includes('poco')) {
-    return 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Home Appliances fallback
-  if (cat.includes('appliance') || product?.type === 'appliance') {
-    return 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80';
-  }
-
-  // Default Smartphone image
-  return 'https://images.unsplash.com/photo-1580910051074-3eb694886505?w=800&auto=format&fit=crop&q=80';
-}
-
-
 export default function CustomerStorefront({
   shopConfig = {},
   inventory = [],
@@ -526,7 +409,12 @@ export default function CustomerStorefront({
     }
 
     const localIds = new Set(list.map(item => String(item.id)));
-    return [...list, ...cloudProducts.filter(item => !localIds.has(String(item.id)))];
+    const uniqueProducts = new Map();
+    [...list, ...cloudProducts.filter(item => !localIds.has(String(item.id)))].forEach(item => {
+      const id = String(item.id);
+      if (!uniqueProducts.has(id)) uniqueProducts.set(id, item);
+    });
+    return [...uniqueProducts.values()];
   }, [inventory, usedPurchases, publicCatalog]);
 
   // Cart Quantities & Helpers
@@ -1523,29 +1411,11 @@ export default function CustomerStorefront({
                       }}
                       title="Click to view details & photos"
                     >
-                      {prod.images ? (
-                        <ProductImageViewer product={prod} height={155} />
-                      ) : (
-                        <img 
-                          src={getRealProductImage(prod)} 
-                          alt={prod.name} 
-                          className="storefront-card-img"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = prod.type === 'appliance'
-                              ? 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=800&auto=format&fit=crop&q=80'
-                              : 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80';
-                          }}
-                          style={{ 
-                            maxHeight: '145px', 
-                            maxWidth: '92%', 
-                            objectFit: 'contain',
-                            borderRadius: '6px',
-                            transition: 'transform 0.25s ease'
-                          }} 
-                        />
-                      )}
+                      <ProductImageViewer
+                        product={prod}
+                        height={155}
+                        placeholder={<div aria-label="No product photo" style={{ width: '100%', height: '100%' }} />}
+                      />
                     </div>
 
                     {/* Brand & Category & Rating Pill */}
