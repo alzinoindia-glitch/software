@@ -10,8 +10,6 @@ import { getAuthenticatorIdentity } from './authenticatorSession';
 
 const DB_NAME = 'ALZINO_PRODUCT_IMAGES';
 const STORE = 'images';
-// Reuse the public bucket provisioned by the existing Supabase setup.
-const PUBLIC_CATALOG_BUCKET = 'catalog-media';
 export const IMAGE_SIDES = ['front', 'back'];
 
 let dbPromise = null;
@@ -38,8 +36,6 @@ const openDb = () => {
 
 const keyFor = (productId, side) => `${productId}:${side}`;
 const remotePath = (organizationId, productId, side) => `${organizationId}/${productId}/${side}.jpg`;
-const publicRemotePath = remotePath;
-const publicImageVersions = new Map();
 
 const getAuthorizedOrganization = async () => {
   if (!isSupabaseConfigured()) return null;
@@ -157,10 +153,7 @@ export const deleteProductImages = async (productId) => {
     const paths = IMAGE_SIDES.map(side => remotePath(organizationId, productId, side));
     const { error } = await getSupabaseClient().storage.from('product-images').remove(paths);
     if (error) throw error;
-    const { error: publicError } = await getSupabaseClient().storage.from(PUBLIC_CATALOG_BUCKET).remove(paths);
-    if (publicError) throw publicError;
     paths.forEach(path => signedImageUrls.delete(path));
-    paths.forEach(path => publicImageVersions.delete(path));
   } catch (error) {
     console.warn('[ProductImages] Cloud photo removal deferred:', error.message);
   }
@@ -203,52 +196,15 @@ export const syncAllProductImagesToCloud = async (organizationId) => {
   return { count };
 };
 
-const readLocalProductImage = async (productId, side) => {
-  try {
-    const db = await openDb();
-    return await new Promise(resolve => {
-      const request = db.transaction(STORE, 'readonly').objectStore(STORE).get(keyFor(productId, side));
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => resolve(null);
-    });
-  } catch {
-    return null;
-  }
-};
-
-const getPrivateProductImageBlob = async (organizationId, productId, side) => {
-  const local = await readLocalProductImage(productId, side);
-  if (local) {
-    try {
-      const response = await fetch(local);
-      if (response.ok) return response.blob();
-    } catch {}
-  }
-  const { data, error } = await getSupabaseClient().storage.from('product-images')
-    .createSignedUrl(remotePath(organizationId, productId, side), 300);
-  if (error || !data?.signedUrl) return null;
-  const response = await fetch(data.signedUrl);
-  return response.ok ? response.blob() : null;
-};
-
-/**
- * Copy only published product photos into the public catalog bucket. Original
- * photos remain in the private bucket; draft products never receive public URLs.
- */
-export const syncPublishedProductImagesToCloud = async (organizationId, products = []) => {
+/** Return direct public URLs for saved photos in the now-public product bucket. */
+export const getPublishedProductImageUrls = async (organizationId, products = []) => {
   const client = getSupabaseClient();
   if (!client || !organizationId) return new Map();
   const imageUrls = new Map();
-  const removals = [];
-  const uploads = [];
   const localImages = new Map();
 
   await Promise.all(products.flatMap(product => (
     product?.id
-      // ProductImagePicker writes every photo to IndexedDB before syncing it
-      // to the private bucket. Read that local copy even when the lightweight
-      // `images` marker is present; otherwise publishing unnecessarily fetches
-      // the private Storage object (which can fail under browser CORS rules).
       ? IMAGE_SIDES.filter(side => product.images?.[side] !== false).map(async side => {
           const image = await getLocalProductImage(product.id, side);
           if (image) localImages.set(`${product.id}:${side}`, image);
@@ -259,61 +215,19 @@ export const syncPublishedProductImagesToCloud = async (organizationId, products
   products.forEach(product => {
     if (!product?.id) return;
     const shouldPublish = Number(product.stock) > 0 && product.isPublished !== false && product.status !== 'Archived';
+    if (!shouldPublish) return;
     IMAGE_SIDES.forEach(side => {
-      const path = publicRemotePath(organizationId, product.id, side);
-      if (!shouldPublish || product.images?.[side] === false) {
-        removals.push(path);
-        publicImageVersions.delete(path);
-        return;
-      }
+      if (product.images?.[side] === false) return;
       const inlineImage = side === 'front'
         ? (product.frontImage || product.image)
         : product.backImage;
-      // Older inventory rows can have a photo in IndexedDB even if their
-      // lightweight `images` marker was lost during a data import/edit.
       const hasLocalImage = localImages.has(`${product.id}:${side}`);
       const hasImage = Boolean(product.images?.[side] || hasLocalImage || (typeof inlineImage === 'string' && inlineImage.startsWith('data:image/')));
       if (!hasImage) return;
-      const version = String(product.images?.v || product.updatedAt || 'stored');
-      if (publicImageVersions.get(path) === version) {
-        const { data } = client.storage.from(PUBLIC_CATALOG_BUCKET).getPublicUrl(path);
-        if (data?.publicUrl) imageUrls.set(String(product.id), imageUrls.get(String(product.id)) || data.publicUrl);
-        return;
-      }
-      uploads.push({ product, side, path, version, inlineImage });
+      const { data } = client.storage.from('product-images').getPublicUrl(remotePath(organizationId, product.id, side));
+      if (data?.publicUrl) imageUrls.set(String(product.id), imageUrls.get(String(product.id)) || data.publicUrl);
     });
   });
-
-  for (let index = 0; index < removals.length; index += 100) {
-    const { error } = await client.storage.from(PUBLIC_CATALOG_BUCKET).remove(removals.slice(index, index + 100));
-    if (error) console.warn('[ProductImages] Public catalog photo cleanup deferred:', error.message);
-  }
-
-  for (let index = 0; index < uploads.length; index += 4) {
-    await Promise.all(uploads.slice(index, index + 4).map(async ({ product, side, path, version, inlineImage }) => {
-      try {
-        const localImage = localImages.get(`${product.id}:${side}`);
-        const blob = typeof inlineImage === 'string' && inlineImage.startsWith('data:image/')
-          ? await fetch(inlineImage).then(response => response.blob())
-          : localImage
-            ? await fetch(localImage).then(response => response.blob())
-          : await getPrivateProductImageBlob(organizationId, product.id, side);
-        if (!blob) return;
-        const { error } = await client.storage.from(PUBLIC_CATALOG_BUCKET).upload(path, blob, {
-          upsert: true,
-          contentType: blob.type || 'image/jpeg',
-          cacheControl: '3600'
-        });
-        if (error) throw error;
-        publicImageVersions.set(path, version);
-        const { data } = client.storage.from(PUBLIC_CATALOG_BUCKET).getPublicUrl(path);
-        if (data?.publicUrl) imageUrls.set(String(product.id), imageUrls.get(String(product.id)) || data.publicUrl);
-      } catch (error) {
-        console.warn(`[ProductImages] Public photo sync deferred for ${product.id}:`, error.message);
-      }
-    }));
-  }
-
   return imageUrls;
 };
 
@@ -404,22 +318,6 @@ export const clearAllProductImages = async () => {
       await collect(organizationId);
       for (let i = 0; i < paths.length; i += 100) {
         const { error } = await bucket.remove(paths.slice(i, i + 100));
-        if (error) throw error;
-      }
-      const publicBucket = getSupabaseClient().storage.from(PUBLIC_CATALOG_BUCKET);
-      const publicPaths = [];
-      const collectPublic = async (prefix) => {
-        const { data, error } = await publicBucket.list(prefix, { limit: 1000 });
-        if (error) throw error;
-        for (const item of data || []) {
-          const path = `${prefix}/${item.name}`;
-          if (item.id) publicPaths.push(path);
-          else await collectPublic(path);
-        }
-      };
-      await collectPublic(organizationId);
-      for (let i = 0; i < publicPaths.length; i += 100) {
-        const { error } = await publicBucket.remove(publicPaths.slice(i, i + 100));
         if (error) throw error;
       }
     }

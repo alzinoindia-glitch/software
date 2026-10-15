@@ -1,7 +1,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
-import { clearAllProductImages, syncAllProductImagesToCloud, syncPublishedProductImagesToCloud } from './productImageStore';
+import { clearAllProductImages, syncAllProductImagesToCloud, getPublishedProductImageUrls } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
 import { sanitizePublicSpecifications } from './productSpecifications';
 
@@ -164,7 +164,7 @@ export const syncPublishedCatalog = (inventory = []) => {
       const client = getSupabaseClient();
       const organizationId = await getActiveOrgId(client);
       if (!organizationId || revision !== publicCatalogRevision) return;
-      const catalogImageUrls = await syncPublishedProductImagesToCloud(organizationId, snapshot);
+      const catalogImageUrls = await getPublishedProductImageUrls(organizationId, snapshot);
       if (revision !== publicCatalogRevision) return;
 
       const products = snapshot.filter(item => item?.id && item?.name).map(item => {
