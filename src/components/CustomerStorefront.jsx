@@ -281,7 +281,8 @@ export default function CustomerStorefront({
           storage: specifications.storage || '',
           capacity: specifications.capacity || '',
           color: specifications.color || '',
-          image: item.image_url || getPublicProductFrontImageUrl(item.organization_id, item.id),
+          image: item.image_url || null,
+          imageFallbacks: [getPublicProductFrontImageUrl(item.organization_id, item.id)].filter(Boolean),
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };
       })

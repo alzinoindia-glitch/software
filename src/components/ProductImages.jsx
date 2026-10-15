@@ -127,13 +127,22 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
   // every public catalog card.
   const images = useProductImages(product?.id, product?.images?.v, hasImages);
   const [side, setSide] = useState('front');
-  const [failedSource, setFailedSource] = useState('');
+  const [sourceFailures, setSourceFailures] = useState({ key: '', sources: [] });
 
   const available = ['front', 'back'].filter((s) => images[s]);
   const activeSide = images[side] ? side : available[0];
-  const src = (activeSide ? images[activeSide] : null) || product?.imageUrl || product?.image_url || product?.image || null;
+  const sourceKey = `${product?.id || ''}:${side}`;
+  const failedSources = sourceFailures.key === sourceKey ? sourceFailures.sources : [];
+  const sources = [
+    activeSide ? images[activeSide] : null,
+    product?.imageUrl,
+    product?.image_url,
+    product?.image,
+    ...(Array.isArray(product?.imageFallbacks) ? product.imageFallbacks : [])
+  ].filter((source, index, all) => typeof source === 'string' && source && all.indexOf(source) === index);
+  const src = sources.find((source) => !failedSources.includes(source)) || null;
 
-  if (!src || failedSource === src) {
+  if (!src) {
     if (placeholder) return placeholder;
     return (
       <div style={{
@@ -155,7 +164,10 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
         src={src}
         alt={`${product.name} – ${activeSide || 'product'} view`}
         loading="lazy"
-        onError={() => setFailedSource(src)}
+        onError={() => setSourceFailures(current => ({
+          key: sourceKey,
+          sources: [...(current.key === sourceKey ? current.sources : failedSources), src]
+        }))}
         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
       />
       {available.length > 1 && (
