@@ -245,7 +245,11 @@ export const syncPublishedProductImagesToCloud = async (organizationId, products
 
   await Promise.all(products.flatMap(product => (
     product?.id
-      ? IMAGE_SIDES.filter(side => !product.images?.[side]).map(async side => {
+      // ProductImagePicker writes every photo to IndexedDB before syncing it
+      // to the private bucket. Read that local copy even when the lightweight
+      // `images` marker is present; otherwise publishing unnecessarily fetches
+      // the private Storage object (which can fail under browser CORS rules).
+      ? IMAGE_SIDES.filter(side => product.images?.[side] !== false).map(async side => {
           const image = await getLocalProductImage(product.id, side);
           if (image) localImages.set(`${product.id}:${side}`, image);
         })
