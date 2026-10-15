@@ -71,6 +71,31 @@ export const getBrandsForCategory = (category, inv = []) => getAvailableBrandsFo
 
 const parseImeiLines = value => String(value || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
 
+// Older inventory records can have IMEIs on the product (`imeis` / `imei1` /
+// `imei2`) while newer records keep them on `units`. Prefer unit data when it
+// exists, but fall back per SIM slot so an incomplete legacy `units` array
+// cannot make previously saved IMEIs disappear from the edit form.
+const readStoredImeiFields = item => {
+  const units = Array.isArray(item?.units) ? item.units : [];
+  const legacyImeis = Array.isArray(item?.imeis)
+    ? item.imeis.flatMap(value => typeof value === 'string' ? parseImeiLines(value) : [value?.imei1, value?.imei2, value?.imei, value?.serialNumber].filter(Boolean))
+    : parseImeiLines(item?.imeis);
+  const legacyImei1 = parseImeiLines(item?.imei1);
+  const legacyImei2 = parseImeiLines(item?.imei2);
+  const alternatingImei1 = legacyImeis.filter((_, index) => index % 2 === 0);
+  const alternatingImei2 = legacyImeis.filter((_, index) => index % 2 === 1);
+  const unitImei1 = units.map(unit => parseImeiLines(unit?.imei1 || unit?.imei || unit?.serialNumber)[0] || '');
+  const unitImei2 = units.map(unit => parseImeiLines(unit?.imei2 || unit?.secondImei)[0] || '');
+  const hasUnitImei1 = unitImei1.some(Boolean);
+  const hasUnitImei2 = unitImei2.some(Boolean);
+
+  return {
+    imei1: hasUnitImei1 ? unitImei1.map((value, index) => value || legacyImei1[index] || alternatingImei1[index] || '') : (legacyImei1.length ? legacyImei1 : alternatingImei1),
+    imei2: hasUnitImei2 ? unitImei2.map((value, index) => value || legacyImei2[index] || alternatingImei2[index] || '') : (legacyImei2.length ? legacyImei2 : alternatingImei2),
+    legacyImeis: Array.isArray(item?.imeis) ? item.imeis.filter(value => typeof value === 'string') : legacyImeis,
+  };
+};
+
 
 export default function InventoryManager({ 
   inventory, 
@@ -470,14 +495,9 @@ export default function InventoryManager({
     setBarcodeMode(isGenerated ? 'generate' : 'scan');
     const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
     const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
-    const itemUnits = Array.isArray(item.units) ? item.units : [];
-    const legacyImeis = Array.isArray(item.imeis) ? item.imeis : [];
-    const imei1Values = itemUnits.length
-      ? itemUnits.map(unit => unit.imei1 || '')
-      : (legacyImeis.length ? legacyImeis.filter((_, index) => index % 2 === 0) : [item.imei1 || '']);
-    const imei2Values = itemUnits.length
-      ? itemUnits.map(unit => unit.imei2 || '')
-      : (legacyImeis.length ? legacyImeis.filter((_, index) => index % 2 === 1) : [item.imei2 || '']);
+    const storedImeis = readStoredImeiFields(item);
+    const imei1Values = storedImeis.imei1;
+    const imei2Values = storedImeis.imei2;
     setFormData({
       category: normalizedCategory || 'New Mobiles',
       subCategory: item.subCategory || item.applianceType || item.accessoryType || item.partType || '',
@@ -611,13 +631,10 @@ export default function InventoryManager({
     const imei2Values = parseImeiLines(formData.imei2);
     const enteredImeis = [...imei1Values, ...imei2Values];
     const originalUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
-    const originalImeis = Array.isArray(editingItem?.imeis) ? editingItem.imeis : [];
-    const originalImei1 = originalUnits.length
-      ? originalUnits.map(unit => unit.imei1 || '').filter(Boolean)
-      : (originalImeis.length ? originalImeis.filter((_, index) => index % 2 === 0) : [editingItem?.imei1 || ''].filter(Boolean));
-    const originalImei2 = originalUnits.length
-      ? originalUnits.map(unit => unit.imei2 || '').filter(Boolean)
-      : (originalImeis.length ? originalImeis.filter((_, index) => index % 2 === 1) : [editingItem?.imei2 || ''].filter(Boolean));
+    const storedImeis = readStoredImeiFields(editingItem);
+    const originalImeis = storedImeis.legacyImeis;
+    const originalImei1 = storedImeis.imei1.filter(Boolean);
+    const originalImei2 = storedImeis.imei2.filter(Boolean);
     const imeisUnchanged = Boolean(editingItem) &&
       imei1Values.join('\n') === originalImei1.join('\n') &&
       imei2Values.join('\n') === originalImei2.join('\n');
