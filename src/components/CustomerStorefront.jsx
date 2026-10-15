@@ -56,7 +56,7 @@ import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
-import { firstPositiveAmount, getProductSellingPrice } from '../utils/storefrontProductRules';
+import { firstPositiveAmount, getProductSellingPrice, isSmartphoneProduct } from '../utils/storefrontProductRules';
 import { getAvailableCategories, isUsedMobileProduct, normalizeProductCategory } from '../utils/customTaxonomy';
 
 const getPublicProductFrontImageUrl = (organizationId, productId) => {
@@ -517,10 +517,7 @@ export default function CustomerStorefront({
     let result = liveProducts.filter(item => {
       // 1. Category Filter
       if (selectedCategory === 'smartphones') {
-        const isSmart = (item.department === 'mobiles' || item.category === 'New Mobiles') && 
-                        item.type !== 'refurbished' && 
-                        item.category !== 'Mobile Accessories';
-        if (!isSmart) return false;
+        if (!isSmartphoneProduct(item)) return false;
       }
       if (selectedCategory === 'used-mobiles' && item.category !== 'Used Mobiles' && item.type !== 'refurbished') return false;
       if (selectedCategory === 'audio') {
@@ -620,7 +617,7 @@ export default function CustomerStorefront({
       if (cat.id === 'all') return;
       counts[cat.id] = liveProducts.filter(item => {
         const cleanName = (item.name || '').toLowerCase();
-        if (cat.id === 'smartphones') return (item.department === 'mobiles' || item.category === 'New Mobiles') && item.type !== 'refurbished';
+        if (cat.id === 'smartphones') return isSmartphoneProduct(item);
         if (cat.id === 'used-mobiles') return item.type === 'refurbished' || item.category === 'Used Mobiles';
         if (cat.id === 'audio') return cleanName.includes('earbuds') || cleanName.includes('airpods') || cleanName.includes('airdopes') || cleanName.includes('audio') || cleanName.includes('headphone');
         if (cat.id === 'chargers') return cleanName.includes('charger') || cleanName.includes('adapter') || cleanName.includes('cable') || cleanName.includes('power bank');
