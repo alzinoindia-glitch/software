@@ -1,7 +1,8 @@
 export function isRefurbishedProduct(item) {
   const category = String(item?.category || '').trim().toLowerCase();
   const name = String(item?.name || '').trim().toLowerCase();
-  return item?.type === 'refurbished' || /^used mobiles?$/.test(category) ||
+  const type = String(item?.type || '').trim().toLowerCase();
+  return ['used', 'refurbished', 'pre-owned'].includes(type) || /^(used|refurbished|pre-owned)(\s|$)/.test(category) ||
     name.startsWith('used ') || name.includes('refurbished') || name.includes('pre-owned');
 }
 
@@ -14,8 +15,8 @@ export function isSmartphoneProduct(item) {
   // Older/imported stock may be tagged as "New Mobiles" or assigned to the
   // mobiles department despite being a cable, accessory, or appliance. Honor
   // explicit non-phone categories and product names in both pills and counts.
-  const nonPhoneCategory = /accessor|cable|connector|charger|audio|earbud|headphone|earphone|home appliance|appliance|spare part|wearable|case|cover|screen guard|tempered glass/i.test(category);
-  const nonPhoneName = /\b(cables?|connectors?|chargers?|charging|adapters?|power\s*banks?|powerbanks?|earbuds?|airdopes|airpods|headphones?|headsets?|earphones?|neckbands?|speakers?|cases?|covers?|tempered|screen\s*guards?|glass\s*guards?|power\s*strips?|extension\s*boards?|heaters?|cookers?|kettles?|toasters?|irons?|mixers?|fans?|washing\s*machines?|televisions?|smart\s*tvs?|refrigerators?|fridges?|coolers?|air\s*conditioners?)\b/i.test(name);
+  const nonPhoneCategory = /accessor|cable|connector|charger|audio|earbud|headphone|earphone|home appliance|appliance|spare part|wearable|case|cover|screen guard|tempered glass|massager|personal care|beauty/i.test(category);
+  const nonPhoneName = /\b(cables?|connectors?|chargers?|charging|adapters?|power\s*banks?|powerbanks?|earbuds?|airdopes|airpods|headphones?|headsets?|earphones?|neckbands?|speakers?|cases?|covers?|tempered|screen\s*guards?|glass\s*guards?|power\s*strips?|extension\s*boards?|heaters?|cookers?|kettles?|toasters?|irons?|mixers?|fans?|washing\s*machines?|televisions?|smart\s*tvs?|refrigerators?|fridges?|coolers?|air\s*conditioners?|massagers?|facial\s*guns?|feature\s*phones?|keypad\s*phones?|basic\s*phones?|nokia\s*105|hotline\s*pro)\b/i.test(name);
 
   return (department === 'mobiles' || category === 'new mobiles') &&
     !isRefurbishedProduct(item) &&
