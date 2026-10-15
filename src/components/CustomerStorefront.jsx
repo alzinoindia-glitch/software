@@ -416,9 +416,27 @@ export default function CustomerStorefront({
       });
     }
 
-    const localIds = new Set(list.map(item => String(item.id)));
+    const cloudById = new Map(cloudProducts.map(item => [String(item.id), item]));
     const uniqueProducts = new Map();
-    [...list, ...cloudProducts.filter(item => !localIds.has(String(item.id)))].forEach(item => {
+    list.forEach(item => {
+      const id = String(item.id);
+      const cloudProduct = cloudById.get(id);
+      uniqueProducts.set(id, cloudProduct ? {
+        ...cloudProduct,
+        ...item,
+        imageUrl: item.imageUrl || cloudProduct.imageUrl,
+        image_url: item.image_url || cloudProduct.image_url,
+        imageFallbacks: [
+          ...(Array.isArray(item.imageFallbacks) ? item.imageFallbacks : []),
+          ...(Array.isArray(cloudProduct.imageFallbacks) ? cloudProduct.imageFallbacks : []),
+          cloudProduct.imageUrl,
+          cloudProduct.image_url
+        ].filter((image, index, all) => typeof image === 'string' && image && all.indexOf(image) === index),
+        specifications: { ...(cloudProduct.specifications || {}), ...(item.specifications || {}) },
+        description: item.description || cloudProduct.description || ''
+      } : item);
+    });
+    cloudProducts.forEach(item => {
       const id = String(item.id);
       if (!uniqueProducts.has(id)) uniqueProducts.set(id, item);
     });

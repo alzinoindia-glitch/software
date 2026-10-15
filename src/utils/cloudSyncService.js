@@ -186,7 +186,10 @@ export const syncPublishedCatalog = (inventory = []) => {
           brand: item.brand || null,
           category: item.category || null,
           sell_price: sellPrice,
-          mrp: item.mrp == null ? null : Math.max(0, Number(item.mrp) || 0),
+          // `catalog_products` requires MRP to be at least the selling price.
+          // Inventory imports often use 0 for an unknown MRP, so publish that
+          // as NULL instead of rejecting the entire catalog sync.
+          mrp: Number(item.mrp) >= sellPrice && Number(item.mrp) > 0 ? Number(item.mrp) : null,
           stock_status: stock > 0 ? 'Available in store' : 'Out of stock',
           image_url: publicImage,
           specifications,
