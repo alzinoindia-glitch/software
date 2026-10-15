@@ -10,7 +10,8 @@ import { getAuthenticatorIdentity } from './authenticatorSession';
 
 const DB_NAME = 'ALZINO_PRODUCT_IMAGES';
 const STORE = 'images';
-const PUBLIC_CATALOG_BUCKET = 'catalog-product-images';
+// Reuse the public bucket provisioned by the existing Supabase setup.
+const PUBLIC_CATALOG_BUCKET = 'catalog-media';
 export const IMAGE_SIDES = ['front', 'back'];
 
 let dbPromise = null;
