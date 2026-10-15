@@ -6,6 +6,14 @@ export function isRefurbishedProduct(item) {
     name.startsWith('used ') || name.includes('refurbished') || name.includes('pre-owned');
 }
 
+export function isFeaturePhoneProduct(item) {
+  const category = String(item?.category || '').trim().toLowerCase();
+  const subCategory = String(item?.subCategory || item?.subcategory || item?.sub_category || '').trim().toLowerCase();
+  const name = String(item?.name || '').trim().toLowerCase();
+  return /feature\s*phones?/.test(subCategory) || /feature\s*phones?/.test(category) ||
+    /\b(feature\s*phones?|keypad\s*phones?|basic\s*phones?|nokia\s*105|hotline\s*pro)\b/i.test(name);
+}
+
 export function isSmartphoneProduct(item) {
   const category = String(item?.category || '').trim().toLowerCase();
   const name = String(item?.name || '').trim().toLowerCase();
@@ -20,6 +28,7 @@ export function isSmartphoneProduct(item) {
 
   return (department === 'mobiles' || category === 'new mobiles') &&
     !isRefurbishedProduct(item) &&
+    !isFeaturePhoneProduct(item) &&
     !['accessory', 'appliance'].includes(type) &&
     department !== 'accessories' && department !== 'appliances' &&
     !nonPhoneCategory && !nonPhoneName;

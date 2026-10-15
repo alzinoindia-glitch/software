@@ -56,7 +56,7 @@ import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { findProductFromScan } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 import { getSupabaseClient, isSupabaseConfigured } from '../utils/supabaseClient';
-import { firstPositiveAmount, getProductSellingPrice, isSmartphoneProduct } from '../utils/storefrontProductRules';
+import { firstPositiveAmount, getProductSellingPrice, isFeaturePhoneProduct, isSmartphoneProduct } from '../utils/storefrontProductRules';
 import { getAvailableCategories, isUsedMobileProduct, normalizeProductCategory } from '../utils/customTaxonomy';
 
 const getPublicProductFrontImageUrl = (organizationId, productId) => {
@@ -342,6 +342,7 @@ export default function CustomerStorefront({
           id: item.id,
           name: cleanName,
           category: isUsedMobile ? 'Used Mobiles' : (normalizedCategory || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles'))),
+          subCategory: item.subCategory || item.subcategory || item.sub_category || '',
           department,
           brand: item.brand || cleanName.split(' ')[0] || (isUsedMobile ? 'Refurbished' : 'Samsung'),
           price: sellPrice,
@@ -519,6 +520,7 @@ export default function CustomerStorefront({
       if (selectedCategory === 'smartphones') {
         if (!isSmartphoneProduct(item)) return false;
       }
+      if (selectedCategory === 'feature-phones' && !isFeaturePhoneProduct(item)) return false;
       if (selectedCategory === 'used-mobiles' && item.category !== 'Used Mobiles' && item.type !== 'refurbished') return false;
       if (selectedCategory === 'audio') {
         const name = (item.name || '').toLowerCase();
@@ -595,6 +597,7 @@ export default function CustomerStorefront({
   const fixedCategories = [
     { id: 'all', label: 'All Products', icon: LayoutGrid },
     { id: 'smartphones', label: 'Smartphones & 5G', icon: Smartphone },
+    { id: 'feature-phones', label: 'Feature Phones', icon: Phone },
     { id: 'used-mobiles', label: 'Used Mobiles', icon: RefreshCw },
     { id: 'audio', label: 'Earbuds & Audio', icon: Headphones },
     { id: 'chargers', label: 'Fast Chargers & Cables', icon: Cable },
@@ -618,6 +621,7 @@ export default function CustomerStorefront({
       counts[cat.id] = liveProducts.filter(item => {
         const cleanName = (item.name || '').toLowerCase();
         if (cat.id === 'smartphones') return isSmartphoneProduct(item);
+        if (cat.id === 'feature-phones') return isFeaturePhoneProduct(item);
         if (cat.id === 'used-mobiles') return item.type === 'refurbished' || item.category === 'Used Mobiles';
         if (cat.id === 'audio') return cleanName.includes('earbuds') || cleanName.includes('airpods') || cleanName.includes('airdopes') || cleanName.includes('audio') || cleanName.includes('headphone');
         if (cat.id === 'chargers') return cleanName.includes('charger') || cleanName.includes('adapter') || cleanName.includes('cable') || cleanName.includes('power bank');
