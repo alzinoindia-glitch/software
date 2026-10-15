@@ -43,6 +43,8 @@ export default function CustomerKhata({
   setSuppliers = () => {},
   invoices = [],
   repairJobs = [],
+  setInvoices = () => {},
+  setRepairJobs = () => {},
   shopConfig = {},
   onPrintKhataStatement = () => {},
   onPrintInvoice = () => {},
@@ -52,6 +54,14 @@ export default function CustomerKhata({
   const [typeFilter, setTypeFilter] = useState(initialView === 'khata' ? 'due' : 'all'); // all | both | sales | repairs | due
   const [viewLayout, setViewLayout] = useState('table'); // table | cards
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showKhataModal, setShowKhataModal] = useState(false);
+  const [khataEntityType, setKhataEntityType] = useState('customer');
+  const [khataEntityId, setKhataEntityId] = useState('');
+  const [khataAmount, setKhataAmount] = useState('');
+  const [khataDate, setKhataDate] = useState(new Date().toISOString().slice(0, 10));
+  const [khataDueDate, setKhataDueDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10); });
+  const [khataDescription, setKhataDescription] = useState('');
+  const [khataReference, setKhataReference] = useState('');
   const [portalEntity, setPortalEntity] = useState('customers');
   const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState(null);
   const [supplierPaymentAmount, setSupplierPaymentAmount] = useState('');
@@ -105,6 +115,7 @@ export default function CustomerKhata({
         gstin: c.gstin || '',
         totalSpent: Number(c.totalSpent) || 0,
         balanceDue: Number(c.balanceDue) || 0,
+        khataEntries: c.khataEntries || [],
         createdAt: c.createdAt || new Date().toISOString().split('T')[0],
         invoices: [],
         repairs: [],
@@ -204,7 +215,7 @@ export default function CustomerKhata({
       const totalSpent = Math.max(rec.totalSpent, computedTotal);
 
       // Compute balance dues
-      const salesDue = rec.invoices.reduce((sum, inv) => sum + (Number(inv.balanceDue || inv.khataDue) || 0), 0);
+      const salesDue = rec.invoices.reduce((sum, inv) => sum + (Number(inv.balanceDue ?? inv.khataDue) || 0), 0);
       const repairDue = rec.repairs.reduce((sum, rep) => {
         const cost = Number(rep.finalPrice || rep.finalCost || rep.estimatedCost) || 0;
         const advance = Number(rep.advancePaid) || 0;
@@ -212,7 +223,8 @@ export default function CustomerKhata({
         return sum + (rep.status !== 'Delivered' ? remaining : 0);
       }, 0);
       const computedDue = salesDue + repairDue;
-      const balanceDue = rec.balanceDue > 0 ? rec.balanceDue : computedDue;
+      const manualDue = (rec.khataEntries || []).reduce((sum, entry) => sum + (Number(entry.balanceDue ?? entry.amount) || 0), 0);
+      const balanceDue = Math.max(Number(rec.balanceDue) || 0, computedDue + manualDue);
 
       return {
         ...rec,
@@ -223,7 +235,8 @@ export default function CustomerKhata({
         salesSpend,
         repairSpend,
         totalSpent,
-        balanceDue
+        balanceDue,
+        khataEntries: rec.khataEntries || []
       };
     });
 
@@ -354,6 +367,19 @@ export default function CustomerKhata({
       }
     });
 
+    (cust.khataEntries || []).forEach(entry => entries.push({
+      id: entry.id,
+      date: entry.date,
+      type: 'KHATA',
+      refNo: entry.reference || entry.id,
+      description: `${entry.description || 'Manual Khata entry'}${entry.dueDate ? ` · Due ${entry.dueDate}` : ''}`,
+      debit: Number(entry.amount) || 0,
+      credit: Number(entry.paidAmount) || 0,
+      balanceChange: (Number(entry.amount) || 0) - (Number(entry.paidAmount) || 0),
+      mode: 'Manual Khata',
+      raw: entry
+    }));
+
     // Sort chronologically
     entries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -418,17 +444,46 @@ export default function CustomerKhata({
       return;
     }
 
+    const due = Number(selectedCustomerForPayment.balanceDue) || 0;
+    if (amt > due) { alert(`Payment cannot exceed the outstanding balance of ₹${due.toLocaleString()}.`); return; }
+    let unapplied = amt;
+    const updatedInvoices = invoices.map(invoice => {
+      const invoicePhone = normalizePhone(invoice.customerPhone || invoice.phone);
+      const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
+      const matches = (selectedPhone && invoicePhone === selectedPhone)
+        || (!invoicePhone && (invoice.customerName || '').trim().toLowerCase() === selectedCustomerForPayment.name.trim().toLowerCase());
+      if (!matches || unapplied <= 0) return invoice;
+      const invoiceDue = Math.max(0, Number(invoice.balanceDue ?? invoice.khataDue) || 0);
+      const applied = Math.min(invoiceDue, unapplied);
+      unapplied -= applied;
+      const balanceDue = invoiceDue - applied;
+      return { ...invoice, paidAmount: (Number(invoice.paidAmount) || 0) + applied, balanceDue, khataDue: balanceDue };
+    });
+    setInvoices(updatedInvoices);
+    const updatedRepairs = repairJobs.map(job => {
+      const jobPhone = normalizePhone(job.customerPhone || job.phone);
+      const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
+      const matches = (selectedPhone && jobPhone === selectedPhone)
+        || (!jobPhone && (job.customerName || '').trim().toLowerCase() === selectedCustomerForPayment.name.trim().toLowerCase());
+      const alreadyInvoiced = invoices.some(invoice => invoice.repairJobRef === job.id);
+      const jobDue = Math.max(0, (Number(job.finalPrice || job.finalCost || job.estimatedCost) || 0) - (Number(job.advancePaid) || 0));
+      if (!matches || alreadyInvoiced || job.status === 'Delivered' || unapplied <= 0 || jobDue <= 0) return job;
+      const applied = Math.min(jobDue, unapplied);
+      unapplied -= applied;
+      return { ...job, advancePaid: (Number(job.advancePaid) || 0) + applied, balanceDue: jobDue - applied, payments: [{ id: `KHATAPAY-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: applied, mode: paymentMode, reference: paymentUtr, note: paymentNote }, ...(job.payments || [])] };
+    });
+    setRepairJobs(updatedRepairs);
     setCustomers(prev => prev.map(c => {
-      const match = c.id === selectedCustomerForPayment.id || 
-                    (c.phone && normalizePhone(c.phone) === normalizePhone(selectedCustomerForPayment.phone));
-      if (match) {
-        const newBal = Math.max(0, (c.balanceDue || 0) - amt);
-        return {
-          ...c,
-          balanceDue: newBal
-        };
-      }
-      return c;
+      const match = c.id === selectedCustomerForPayment.id || (c.phone && normalizePhone(c.phone) === normalizePhone(selectedCustomerForPayment.phone));
+      if (!match) return c;
+      let left = amt;
+      const khataEntries = (c.khataEntries || []).map(entry => {
+        const entryDue = Math.max(0, Number(entry.balanceDue ?? entry.amount) || 0);
+        const applied = Math.min(entryDue, left);
+        left -= applied;
+        return { ...entry, paidAmount: (Number(entry.paidAmount) || 0) + applied, balanceDue: entryDue - applied };
+      });
+      return { ...c, balanceDue: Math.max(0, (Number(c.balanceDue) || 0) - amt), khataEntries, payments: [{ id: `KHATAPAY-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: amt, mode: paymentMode, utr: paymentUtr, note: paymentNote }, ...(c.payments || [])] };
     }));
 
     alert(`Received ₹${amt.toLocaleString()} via ${paymentMode} from ${selectedCustomerForPayment.name}. Account balance updated!`);
@@ -436,6 +491,55 @@ export default function CustomerKhata({
     setPaymentAmount('');
     setPaymentUtr('');
     setPaymentNote('');
+  };
+
+  const saveManualKhata = (e) => {
+    e.preventDefault();
+    const amount = Number(khataAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || !khataEntityId) return;
+    const entry = { id: `KHATA-${Date.now()}`, date: khataDate, dueDate: khataDueDate, amount, paidAmount: 0, balanceDue: amount, description: khataDescription.trim() || 'Manual Khata entry', reference: khataReference.trim() };
+    if (khataEntityType === 'customer') {
+      const customer = unifiedCustomers.find(item => String(item.id) === khataEntityId);
+      if (!customer) return;
+      setCustomers(prev => {
+        const index = prev.findIndex(item => item.id === customer.id || (customer.phone && normalizePhone(item.phone) === normalizePhone(customer.phone)));
+        if (index >= 0) return prev.map((item, i) => i === index ? { ...item, balanceDue: (Number(item.balanceDue) || 0) + amount, khataEntries: [entry, ...(item.khataEntries || [])] } : item);
+        return [{ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address, gstin: customer.gstin, totalSpent: customer.totalSpent || 0, balanceDue: amount, khataEntries: [entry], createdAt: khataDate }, ...prev];
+      });
+    } else {
+      setSuppliers(prev => prev.map(supplier => String(supplier.id) === khataEntityId ? { ...supplier, balancePayable: (Number(supplier.balancePayable) || 0) + amount, khataEntries: [entry, ...(supplier.khataEntries || [])] } : supplier));
+    }
+    setShowKhataModal(false); setKhataAmount(''); setKhataDescription(''); setKhataReference('');
+  };
+
+  const dueStatus = (entries = []) => {
+    const open = entries.filter(entry => Number(entry.balanceDue ?? entry.amount) > 0);
+    if (!open.length) return null;
+    const dueDates = open.map(entry => entry.dueDate || (entry.date ? (() => { const date = new Date(`${entry.date}T00:00:00`); date.setDate(date.getDate() + 30); return date.toISOString().slice(0, 10); })() : ''))
+      .filter(Boolean).sort();
+    if (!dueDates.length) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const due = new Date(`${dueDates[0]}T00:00:00`);
+    const days = Math.ceil((due - today) / 86400000);
+    return { date: dueDates[0], days, overdue: days <= 0 };
+  };
+
+  const customerDueStatus = (customer) => dueStatus([
+    ...(customer.invoices || []).map(invoice => ({ ...invoice, balanceDue: Number(invoice.balanceDue ?? invoice.khataDue) || 0 })),
+    ...(customer.repairs || []).filter(job => job.status !== 'Delivered' && !invoices.some(invoice => invoice.repairJobRef === job.id)).map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })),
+    ...(customer.khataEntries || [])
+  ]);
+
+  const shareKhata = (entity, kind = 'customer') => {
+    const balance = Number(kind === 'supplier' ? entity.balancePayable : entity.balanceDue) || 0;
+    const entries = kind === 'supplier'
+      ? [...(entity.purchaseBills || []).map(bill => ({ ...bill, balanceDue: Number(bill.balanceDue ?? (Number(bill.totalAmount) - Number(bill.paidAmount))) || 0 })), ...(entity.khataEntries || [])]
+      : [...(entity.invoices || []).map(invoice => ({ ...invoice, balanceDue: Number(invoice.balanceDue ?? invoice.khataDue) || 0 })), ...(entity.repairs || []).filter(job => job.status !== 'Delivered').map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })), ...(entity.khataEntries || [])];
+    const due = dueStatus(entries);
+    const cleanPhone = normalizePhone(entity.phone);
+    if (!cleanPhone) { alert('Add a mobile number to this account before sharing on WhatsApp.'); return; }
+    const message = `ALZINO Khata Statement\n${kind === 'supplier' ? 'Supplier' : 'Customer'}: ${entity.name}\nOutstanding: ₹${balance.toLocaleString()}${due ? `\n${due.overdue ? `Overdue by ${Math.abs(due.days)} days` : `Due in ${due.days} days`} · Due date ${due.date}` : ''}\nPlease contact ALZINO, Bodhan for the account details.`;
+    window.open(`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
 
   const handlePaySupplierKhata = (e) => {
@@ -454,10 +558,20 @@ export default function CustomerKhata({
         bill.balanceDue = Math.max(0, due - applied);
         unappliedPayment -= applied;
       }
+      const khataEntries = [...(supplier.khataEntries || [])].map(entry => ({ ...entry }));
+      for (let index = khataEntries.length - 1; index >= 0 && unappliedPayment > 0; index -= 1) {
+        const entry = khataEntries[index];
+        const entryDue = Math.max(0, Number(entry.balanceDue ?? entry.amount) || 0);
+        const applied = Math.min(entryDue, unappliedPayment);
+        entry.paidAmount = (Number(entry.paidAmount) || 0) + applied;
+        entry.balanceDue = entryDue - applied;
+        unappliedPayment -= applied;
+      }
       return {
         ...supplier,
         balancePayable: Math.max(0, (Number(supplier.balancePayable) || 0) - amount),
         purchaseBills,
+        khataEntries,
         payments: [{
           id: `SUPPAY-${Date.now()}`,
           date: new Date().toISOString().slice(0, 10),
@@ -497,7 +611,7 @@ export default function CustomerKhata({
       <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         <div className="illoca-card" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div><h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>Khata Ledger · Supplier Payables</h2><div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Supplier bills and payments from the Supplier Portal are recorded here.</div></div>
-          <div style={{ display: 'flex', gap: '0.45rem' }}><button type="button" className="btn-outline" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }}>Customer Khata ({unifiedCustomers.length})</button><button type="button" className="btn-primary">Supplier Khata ({suppliers.length})</button></div>
+          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}><button type="button" className="btn-outline" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }}>Customer Khata ({unifiedCustomers.length})</button><button type="button" className="btn-primary">Supplier Khata ({suppliers.length})</button><button type="button" className="btn-primary" onClick={() => { setKhataEntityType('supplier'); setKhataEntityId(''); setShowKhataModal(true); }}><Plus size={14} /> Add Khata</button></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.65rem' }}>
           <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SUPPLIERS</div><strong style={{ fontSize: '1.25rem' }}>{suppliers.length}</strong></div>
@@ -506,17 +620,18 @@ export default function CustomerKhata({
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
           <div style={{ position: 'relative', maxWidth: '520px', marginBottom: '0.75rem' }}><Search size={15} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} /><input className="input-field" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search supplier, phone, or GSTIN..." style={{ paddingLeft: '2rem' }} /></div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Phone</th><th style={{ padding: '0.6rem' }}>Bills</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Payable Due</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Action</th></tr></thead>
-            <tbody>{filteredPortalSuppliers.map(supplier => <tr key={supplier.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.7rem 0.6rem', fontWeight: 700 }}>{supplier.name}<div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{supplier.gstin || supplier.city || 'Supplier account'}</div></td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.phone || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{(supplier.purchaseBills || []).length}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right', fontWeight: 700, color: Number(supplier.balancePayable) > 0 ? 'var(--status-amber)' : 'var(--status-green)' }}>₹{(Number(supplier.balancePayable) || 0).toLocaleString()}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right' }}>{Number(supplier.balancePayable) > 0 && <button type="button" className="btn-primary" onClick={() => setSelectedSupplierForPayment(supplier)}>Record Payment</button>}</td></tr>)}</tbody>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Phone</th><th style={{ padding: '0.6rem' }}>Bills</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Payable Due</th><th style={{ padding: '0.6rem' }}>Due Date</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Action</th></tr></thead>
+            <tbody>{filteredPortalSuppliers.map(supplier => { const supplierDueStatus = dueStatus([...(supplier.purchaseBills || []).map(bill => ({ ...bill, balanceDue: Number(bill.balanceDue ?? (Number(bill.totalAmount) - Number(bill.paidAmount))) || 0 })), ...(supplier.khataEntries || [])]); return <tr key={supplier.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.7rem 0.6rem', fontWeight: 700 }}>{supplier.name}<div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{supplier.gstin || supplier.city || 'Supplier account'}</div></td><td style={{ padding: '0.7rem 0.6rem' }}>{supplier.phone || '—'}</td><td style={{ padding: '0.7rem 0.6rem' }}>{(supplier.purchaseBills || []).length}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right', fontWeight: 700, color: Number(supplier.balancePayable) > 0 ? 'var(--status-red)' : 'var(--status-green)' }}>₹{(Number(supplier.balancePayable) || 0).toLocaleString()}</td><td style={{ padding: '0.7rem 0.6rem', color: supplierDueStatus?.overdue ? 'var(--status-red)' : 'var(--text-secondary)', fontWeight: supplierDueStatus?.overdue ? 800 : 500 }}>{supplierDueStatus ? `${supplierDueStatus.date} · ${supplierDueStatus.overdue ? `${Math.abs(supplierDueStatus.days)}d overdue` : `${supplierDueStatus.days}d left`}` : '—'}</td><td style={{ padding: '0.7rem 0.6rem', textAlign: 'right', whiteSpace: 'nowrap' }}><button type="button" className="btn-outline" title="Share Khata on WhatsApp" onClick={() => shareKhata(supplier, 'supplier')}><Share2 size={14} /></button> {Number(supplier.balancePayable) > 0 && <button type="button" className="btn-primary" onClick={() => setSelectedSupplierForPayment(supplier)}>Record Payment</button>}</td></tr>; })}</tbody>
           </table>
           {!filteredPortalSuppliers.length && <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier balances match your search.</div>}
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}><h3 style={{ margin: '0 0 0.7rem', fontSize: '1rem' }}>Supplier Account Activity</h3>
-          {supplierBills.length || supplierPayments.length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Entry</th><th style={{ padding: '0.6rem' }}>Reference / Details</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Debit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Credit</th></tr></thead><tbody>
-            {[...supplierBills.map(bill => ({ ...bill, kind: 'Bill', detail: `${bill.invoiceNumber} · ${bill.productName}`, debit: bill.totalAmount, credit: 0 })), ...supplierPayments.map(payment => ({ ...payment, kind: 'Payment', detail: `${payment.mode}${payment.note ? ` · ${payment.note}` : ''}`, debit: 0, credit: payment.amount }))].sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(row => <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.65rem' }}>{row.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{row.supplierName}</td><td style={{ padding: '0.65rem' }}>{row.kind}</td><td style={{ padding: '0.65rem' }}>{row.detail}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.debit ? `₹${Number(row.debit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right', color: 'var(--status-green)' }}>{row.credit ? `₹${Number(row.credit).toLocaleString()}` : '—'}</td></tr>)}
+          {supplierBills.length || supplierPayments.length || suppliers.some(supplier => supplier.khataEntries?.length) ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Entry</th><th style={{ padding: '0.6rem' }}>Reference / Details</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Debit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Credit</th></tr></thead><tbody>
+            {[...supplierBills.map(bill => ({ ...bill, kind: 'Bill', detail: `${bill.invoiceNumber || 'Supplier bill'} · ${bill.productName || ''}`, debit: bill.totalAmount, credit: 0 })), ...suppliers.flatMap(supplier => (supplier.khataEntries || []).map(entry => ({ ...entry, supplierName: supplier.name, kind: 'Manual Khata', detail: `${entry.description}${entry.reference ? ` · ${entry.reference}` : ''}`, debit: entry.amount, credit: 0 }))), ...supplierPayments.map(payment => ({ ...payment, kind: 'Payment', detail: `${payment.mode}${payment.note ? ` · ${payment.note}` : ''}`, debit: 0, credit: payment.amount }))].sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(row => <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.65rem' }}>{row.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{row.supplierName}</td><td style={{ padding: '0.65rem' }}>{row.kind}</td><td style={{ padding: '0.65rem' }}>{row.detail}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.debit ? `₹${Number(row.debit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right', color: 'var(--status-green)' }}>{row.credit ? `₹${Number(row.credit).toLocaleString()}` : '—'}</td></tr>)}
           </tbody></table> : <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier bills or payments are recorded yet.</div>}
         </div>
         {selectedSupplierForPayment && <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1000 }}><form onSubmit={handlePaySupplierKhata} className="illoca-card animate-fade-in" style={{ maxWidth: '440px', width: '100%', padding: '1.4rem', background: 'var(--surface-primary)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Pay Supplier Khata</h3><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>✕</button></div><p style={{ marginTop: 0 }}>{selectedSupplierForPayment.name} · Due ₹{(Number(selectedSupplierForPayment.balancePayable) || 0).toLocaleString()}</p><label className="input-label">Payment Amount ₹<input type="number" min="0.01" max={Number(selectedSupplierForPayment.balancePayable) || 0} step="0.01" required className="input-field" value={supplierPaymentAmount} onChange={e => setSupplierPaymentAmount(e.target.value)} /></label><label className="input-label">Paid Via<select className="input-field" value={supplierPaymentMode} onChange={e => setSupplierPaymentMode(e.target.value)}><option>Bank Transfer</option><option>Cash</option><option>UPI</option><option>Cheque</option></select></label><label className="input-label">Reference / Note<input className="input-field" value={supplierPaymentNote} onChange={e => setSupplierPaymentNote(e.target.value)} placeholder="Optional transaction reference" /></label><div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>Cancel</button><button type="submit" className="btn-primary">Save Payment</button></div></form></div>}
+        {showKhataModal && <KhataEntryModal customers={unifiedCustomers} suppliers={suppliers} entityType={khataEntityType} setEntityType={setKhataEntityType} entityId={khataEntityId} setEntityId={setKhataEntityId} amount={khataAmount} setAmount={setKhataAmount} date={khataDate} setDate={setKhataDate} dueDate={khataDueDate} setDueDate={setKhataDueDate} description={khataDescription} setDescription={setKhataDescription} reference={khataReference} setReference={setKhataReference} onSubmit={saveManualKhata} onClose={() => setShowKhataModal(false)} />}
       </div>
     );
   }
@@ -555,14 +670,7 @@ export default function CustomerKhata({
             <button type="button" onClick={() => { setPortalEntity('customers'); setSearchTerm(''); }} className={portalEntity === 'customers' ? 'btn-primary' : 'btn-outline'} style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}>Customer Khata ({unifiedCustomers.length})</button>
             <button type="button" onClick={() => { setPortalEntity('suppliers'); setSearchTerm(''); }} className={portalEntity === 'suppliers' ? 'btn-primary' : 'btn-outline'} style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem' }}>Supplier Khata ({suppliers.length})</button>
           </>}
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="btn-primary"
-            style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-          >
-            <Plus size={14} />
-            <span>New Customer</span>
-          </button>
+          {initialView === 'khata' ? <button onClick={() => { setKhataEntityType(portalEntity === 'suppliers' ? 'supplier' : 'customer'); setKhataEntityId(''); setShowKhataModal(true); }} className="btn-primary" style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Plus size={14} /><span>Add Khata</span></button> : <button onClick={() => setShowAddModal(true)} className="btn-primary" style={{ padding: '0.42rem 0.85rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Plus size={14} /><span>New Customer</span></button>}
         </div>
       </div>
 
@@ -821,6 +929,7 @@ export default function CustomerKhata({
             <tbody>
               {filteredCustomers.map(cust => {
                 const hasDue = cust.balanceDue > 0;
+                const outstandingTiming = customerDueStatus(cust);
                 return (
                   <tr 
                     key={cust.id} 
@@ -1066,8 +1175,8 @@ export default function CustomerKhata({
                         ₹{cust.balanceDue.toLocaleString()}
                       </span>
                       {hasDue && (
-                        <div style={{ fontSize: '0.65rem', color: 'var(--status-red)', fontWeight: 700 }}>
-                          DUE PENDING
+                        <div style={{ fontSize: '0.65rem', color: outstandingTiming?.overdue ? 'var(--status-red)' : 'var(--text-secondary)', fontWeight: 700 }}>
+                          {outstandingTiming ? `${outstandingTiming.days === 0 ? 'DUE TODAY' : outstandingTiming.overdue ? `${Math.abs(outstandingTiming.days)} DAYS OVERDUE` : `${outstandingTiming.days} DAYS LEFT`} · ${outstandingTiming.date}` : 'DUE PENDING'}
                         </div>
                       )}
                     </td>}
@@ -1101,17 +1210,17 @@ export default function CustomerKhata({
                               <QrCode size={12} />
                             </button>
 
-                            {/* 1-Click WhatsApp Reminder */}
+                            {/* Share statement on WhatsApp */}
                             {cust.phone && (
                               <button
                                 type="button"
-                                onClick={() => openWhatsAppKhataReminder(cust, shopConfig)}
+                                onClick={() => shareKhata(cust, 'customer')}
                                 className="btn-secondary"
                                 style={{ padding: '0.28rem 0.5rem', fontSize: '0.74rem', color: '#10B981', borderColor: 'rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
                                 title="1-Click WhatsApp Payment Reminder with UPI ID"
                               >
                                 <Share2 size={12} />
-                                <span>Remind</span>
+                                <span>Share</span>
                               </button>
                             )}
 
@@ -1142,6 +1251,7 @@ export default function CustomerKhata({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.85rem' }}>
           {filteredCustomers.map(cust => {
             const hasDue = cust.balanceDue > 0;
+            const outstandingTiming = customerDueStatus(cust);
             return (
               <div 
                 key={cust.id}
@@ -1195,6 +1305,7 @@ export default function CustomerKhata({
                     }}>
                       ₹{cust.balanceDue.toLocaleString()}
                     </div>
+                    {hasDue && outstandingTiming && <div style={{ fontSize: '0.65rem', color: outstandingTiming.overdue ? 'var(--status-red)' : 'var(--text-secondary)', fontWeight: 700 }}>{outstandingTiming.days === 0 ? 'due today' : outstandingTiming.overdue ? `${Math.abs(outstandingTiming.days)} days overdue` : `${outstandingTiming.days} days left`} · {outstandingTiming.date}</div>}
                   </div>}
                 </div>
 
@@ -1335,13 +1446,13 @@ export default function CustomerKhata({
                       {cust.phone && (
                         <button
                           type="button"
-                          onClick={() => openWhatsAppKhataReminder(cust, shopConfig)}
+                          onClick={() => shareKhata(cust, 'customer')}
                           className="btn-secondary"
                           style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem', color: '#10B981', borderColor: 'rgba(16,185,129,0.3)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
                           title="1-Click WhatsApp Payment Reminder with UPI ID"
                         >
                           <Share2 size={12} />
-                          <span>Remind</span>
+                          <span>Share</span>
                         </button>
                       )}
 
@@ -2049,6 +2160,8 @@ export default function CustomerKhata({
         </div>
       )}
 
+      {showKhataModal && <KhataEntryModal customers={unifiedCustomers} suppliers={suppliers} entityType={khataEntityType} setEntityType={setKhataEntityType} entityId={khataEntityId} setEntityId={setKhataEntityId} amount={khataAmount} setAmount={setKhataAmount} date={khataDate} setDate={setKhataDate} dueDate={khataDueDate} setDueDate={setKhataDueDate} description={khataDescription} setDescription={setKhataDescription} reference={khataReference} setReference={setKhataReference} onSubmit={saveManualKhata} onClose={() => setShowKhataModal(false)} />}
+
       {/* ===================================================================== */}
       {/* 8. ADD NEW CUSTOMER MODAL                                             */}
       {/* ===================================================================== */}
@@ -2120,4 +2233,23 @@ export default function CustomerKhata({
 
     </div>
   );
+}
+
+function KhataEntryModal({ customers, suppliers, entityType, setEntityType, entityId, setEntityId, amount, setAmount, date, setDate, dueDate, setDueDate, description, setDescription, reference, setReference, onSubmit, onClose }) {
+  const entities = entityType === 'supplier' ? suppliers : customers;
+  return <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1000 }}>
+    <form onSubmit={onSubmit} className="illoca-card animate-fade-in" style={{ maxWidth: '500px', width: '100%', padding: '1.35rem', background: 'var(--surface-primary)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Add Khata Entry</h3><button type="button" className="btn-outline" onClick={onClose}>✕</button></div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <label className="input-label">Account Type<select className="input-field" value={entityType} onChange={event => { setEntityType(event.target.value); setEntityId(''); }}><option value="customer">Customer</option><option value="supplier">Supplier</option></select></label>
+        <label className="input-label">Select {entityType}<select required className="input-field" value={entityId} onChange={event => setEntityId(event.target.value)}><option value="">Choose account</option>{entities.map(entity => <option key={entity.id} value={entity.id}>{entity.name}{entity.phone ? ` · ${entity.phone}` : ''}</option>)}</select></label>
+        <label className="input-label">Amount ₹<input required min="0.01" step="0.01" type="number" className="input-field" value={amount} onChange={event => setAmount(event.target.value)} /></label>
+        <label className="input-label">Entry Date<input required type="date" className="input-field" value={date} onChange={event => setDate(event.target.value)} /></label>
+        <label className="input-label" style={{ gridColumn: '1 / -1' }}>Payment Due Date<input required type="date" className="input-field" value={dueDate} onChange={event => setDueDate(event.target.value)} /></label>
+        <label className="input-label" style={{ gridColumn: '1 / -1' }}>Details<input required className="input-field" value={description} onChange={event => setDescription(event.target.value)} placeholder="Invoice, credit, or adjustment details" /></label>
+        <label className="input-label" style={{ gridColumn: '1 / -1' }}>Bill / Reference Number<input className="input-field" value={reference} onChange={event => setReference(event.target.value)} placeholder="Optional" /></label>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={onClose}>Cancel</button><button type="submit" className="btn-primary">Save Khata</button></div>
+    </form>
+  </div>;
 }

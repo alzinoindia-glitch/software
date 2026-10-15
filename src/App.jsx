@@ -706,7 +706,9 @@ export default function App() {
             suppliers={suppliers}
             setSuppliers={setSuppliers}
             invoices={invoices}
+            setInvoices={setInvoices}
             repairJobs={repairJobs}
+            setRepairJobs={setRepairJobs}
             shopConfig={shopConfig}
             onPrintKhataStatement={handlePrintKhataStatement}
             onPrintInvoice={handlePrintInvoice}
