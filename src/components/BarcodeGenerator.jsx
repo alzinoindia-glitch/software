@@ -26,6 +26,7 @@ export default function BarcodeGenerator({
   );
   const [selectedProductIds, setSelectedProductIds] = useState(() => selectedItemForBarcode?.id ? [String(selectedItemForBarcode.id)] : []);
   const [stockSearch, setStockSearch] = useState(initialProduct ? `${initialProduct.brand || ''} ${initialProduct.name || ''}`.trim() : '');
+  const [printCategory, setPrintCategory] = useState('all');
 
   const [customTitle, setCustomTitle] = useState(
     initialProduct?.name || '65W SuperVOOC Fast Power Adapter'
@@ -117,14 +118,23 @@ export default function BarcodeGenerator({
   };
 
   const getProductStockCount = (item) => Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
+  const categories = Array.from(new Set(inventory.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const categoryProducts = printCategory === 'all' ? inventory : inventory.filter(item => String(item.category || '').trim() === printCategory);
   const inStockLabelCount = inventory.reduce((sum, item) => sum + getProductStockCount(item), 0);
+  const categoryBarcodeCount = categoryProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const selectedProducts = inventory.filter(item => selectedProductIds.includes(String(item.id)));
   const selectedLabelCount = selectedProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const bulkPageCapacity = labelFormat === 'sheet40' ? 40 : labelFormat === 'thermalSingle' ? 1 : 24;
   const estimatedBulkPages = Math.ceil(inStockLabelCount / bulkPageCapacity);
   const estimatedSelectedPages = Math.ceil(selectedLabelCount / bulkPageCapacity);
+  const estimatedCategoryBarcodePages = Math.ceil(categoryBarcodeCount / bulkPageCapacity);
+  const estimatedCategoryQrPages = Math.ceil(categoryProducts.length / bulkPageCapacity);
 
-  const buildProductLabels = (products) => products.flatMap(item => {
+  const buildProductLabels = (products, kind = 'barcode') => products.flatMap(item => {
+      if (kind === 'qr') {
+        const productCode = item.barcode || item.barcodes?.[0] || item.units?.find(unit => unit.barcode)?.barcode || `ALZ-${item.id}`;
+        return [{ id: item.id, title: [item.brand, item.name].filter(Boolean).join(' '), barcode: productCode, codeFormat: 'qr', price: item.sellPrice ?? item.price ?? 0, mrp: item.mrp ?? '' }];
+      }
       const quantity = getProductStockCount(item);
       if (!quantity) return [];
       const unitCodes = (item.units || []).map(unit => unit.barcode || unit.imei1 || unit.imei2).filter(Boolean);
@@ -134,19 +144,19 @@ export default function BarcodeGenerator({
         id: item.id,
         title: [item.brand, item.name].filter(Boolean).join(' '),
         barcode: codes[index] || fallbackCode,
-        codeFormat: item.codeFormat || (String(codes[index] || fallbackCode).includes('QR-') ? 'qr' : codeFormat),
+        codeFormat: item.codeFormat || (String(codes[index] || fallbackCode).includes('QR-') ? 'qr' : 'barcode'),
         price: item.sellPrice ?? item.price ?? 0,
         mrp: item.mrp ?? '',
       }));
     });
 
-  const handlePrintProducts = (products, emptyMessage) => {
-    const labels = buildProductLabels(products);
+  const handlePrintProducts = (products, kind, emptyMessage) => {
+    const labels = buildProductLabels(products, kind);
     if (!labels.length) {
       alert(emptyMessage);
       return;
     }
-    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat });
+    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat: kind === 'qr' ? 'qr' : codeFormat, labelKind: kind });
   };
 
   const toggleProductSelection = (id) => setSelectedProductIds(previous => previous.includes(String(id)) ? previous.filter(value => value !== String(id)) : [...previous, String(id)]);
@@ -164,11 +174,8 @@ export default function BarcodeGenerator({
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={() => handlePrintProducts(selectedProducts, 'Selected products have no available stock.')} className="btn-outline" disabled={!selectedLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create labels for all units of the selected products">
+          <button type="button" onClick={() => handlePrintProducts(selectedProducts, 'barcode', 'Selected products have no available stock.')} className="btn-outline" disabled={!selectedLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create labels for all units of the selected products">
             <Printer size={15} /><span>Print Selected ({selectedLabelCount})</span>
-          </button>
-          <button type="button" onClick={() => handlePrintProducts(inventory, 'There are no in-stock product units to print.')} className="btn-outline" disabled={!inStockLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create one label for every unit currently in stock">
-            <PackageCheck size={15} /><span>Print All In-Stock ({inStockLabelCount})</span>
           </button>
           <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
             <Printer size={15} /><span>Print Barcodes</span>
@@ -226,6 +233,23 @@ export default function BarcodeGenerator({
                 </div>
               )}
             </div>
+          </div>
+
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: '0.82rem' }}>Bulk product labels</strong>
+              <select className="input-field" aria-label="Category for bulk barcode and QR printing" value={printCategory} onChange={event => setPrintCategory(event.target.value)} style={{ maxWidth: '240px', padding: '0.35rem 0.55rem' }}>
+                <option value="all">All categories ({inventory.length})</option>
+                {categories.map(category => <option key={category} value={category}>{category} ({inventory.filter(item => String(item.category || '').trim() === category).length})</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn-outline" disabled={!selectedProducts.length} onClick={() => handlePrintProducts(selectedProducts, 'qr', 'Select at least one product to print QR codes.')}><QrCode size={14} /> QR Selected ({selectedProducts.length})</button>
+              <button type="button" className="btn-outline" disabled={!categoryProducts.length} onClick={() => handlePrintProducts(categoryProducts, 'qr', 'No products are available in this category.')}><QrCode size={14} /> QR {printCategory === 'all' ? 'All Products' : printCategory} ({categoryProducts.length})</button>
+              <button type="button" className="btn-outline" disabled={!selectedLabelCount} onClick={() => handlePrintProducts(selectedProducts, 'barcode', 'Selected products have no available stock.')}><Barcode size={14} /> Barcodes Selected ({selectedLabelCount})</button>
+              <button type="button" className="btn-primary" disabled={!categoryBarcodeCount} onClick={() => handlePrintProducts(categoryProducts, 'barcode', 'There is no in-stock stock in this category.')}><PackageCheck size={14} /> Barcodes {printCategory === 'all' ? 'All In-Stock' : printCategory} ({categoryBarcodeCount})</button>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>QR: one storefront product link per product ({categoryProducts.length} labels · about {estimatedCategoryQrPages} {estimatedCategoryQrPages === 1 ? 'page' : 'pages'}). Barcodes: one saved unit code per in-stock unit ({categoryBarcodeCount} labels · about {estimatedCategoryBarcodePages} {estimatedCategoryBarcodePages === 1 ? 'page' : 'pages'}).</div>
           </div>
 
           {/* Code Format Choice */}
