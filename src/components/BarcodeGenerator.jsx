@@ -8,7 +8,8 @@ import {
   Sparkles, 
   Tag,
   QrCode,
-  Search
+  Search,
+  PackageCheck
 } from 'lucide-react';
 import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
 import { buildProductScanUrl } from '../utils/productTerms';
@@ -113,6 +114,33 @@ export default function BarcodeGenerator({
     });
   };
 
+  const inStockLabelCount = inventory.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0)), 0);
+  const bulkPageCapacity = labelFormat === 'sheet40' ? 40 : labelFormat === 'thermalSingle' ? 1 : 24;
+  const estimatedBulkPages = Math.ceil(inStockLabelCount / bulkPageCapacity);
+
+  const handlePrintAllInStock = () => {
+    const labels = inventory.flatMap(item => {
+      const quantity = Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
+      if (!quantity) return [];
+      const unitCodes = (item.units || []).map(unit => unit.barcode || unit.imei1 || unit.imei2).filter(Boolean);
+      const codes = unitCodes.length ? unitCodes : (item.barcodes || []).filter(Boolean);
+      const fallbackCode = item.barcode || `ALZ-${item.id}`;
+      return Array.from({ length: quantity }, (_, index) => ({
+        id: item.id,
+        title: [item.brand, item.name].filter(Boolean).join(' '),
+        barcode: codes[index] || fallbackCode,
+        codeFormat: item.codeFormat || (String(codes[index] || fallbackCode).includes('QR-') ? 'qr' : codeFormat),
+        price: item.sellPrice ?? item.price ?? 0,
+        mrp: item.mrp ?? '',
+      }));
+    });
+    if (!labels.length) {
+      alert('There are no in-stock product units to print.');
+      return;
+    }
+    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat });
+  };
+
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       
@@ -125,14 +153,14 @@ export default function BarcodeGenerator({
           </span>
         </div>
 
-        <button 
-          onClick={handlePrint}
-          className="btn-primary"
-          style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
-        >
-          <Printer size={15} />
-          <span>Print Barcodes</span>
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={handlePrintAllInStock} className="btn-outline" disabled={!inStockLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create one label for every unit currently in stock">
+            <PackageCheck size={15} /><span>Print All In-Stock ({inStockLabelCount})</span>
+          </button>
+          <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+            <Printer size={15} /><span>Print Barcodes</span>
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '1.25rem' }}>
@@ -325,6 +353,9 @@ export default function BarcodeGenerator({
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{fmt.desc}</div>
                 </button>
               ))}
+            </div>
+            <div style={{ marginTop: '0.55rem', padding: '0.55rem 0.7rem', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card-hover)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+              Bulk print will create <strong style={{ color: 'var(--text-primary)' }}>{inStockLabelCount}</strong> labels across <strong style={{ color: 'var(--text-primary)' }}>{estimatedBulkPages}</strong> {estimatedBulkPages === 1 ? 'page' : 'pages'} using this layout.
             </div>
           </div>
         </div>

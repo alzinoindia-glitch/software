@@ -35,7 +35,7 @@ export default function PrintTemplates({
   if (!printData) return null;
 
   const isInvoiceBill = Boolean(printData.invoiceNo || printData.items);
-  const isSingleBarcodeLabel = printMode === 'barcodes' && (printData.copies === 1 || printData.format === 'single');
+  const isSingleBarcodeLabel = printMode === 'barcodes' && !printData.bulk && (printData.copies === 1 || printData.format === 'single');
 
   return (
     <div className="print-modal-container" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -140,7 +140,7 @@ export default function PrintTemplates({
       </div>
 
       {/* Actual Printable Document Container */}
-      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}${printMode === 'barcodes' ? ` print-barcode${isSingleBarcodeLabel ? ' print-barcode-single' : '-sheet'}` : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}${printMode === 'barcodes' ? ` print-barcode${isSingleBarcodeLabel ? ' print-barcode-single' : '-sheet'}${printData.bulk && printData.format === 'thermalSingle' ? ' print-barcode-thermal-bulk' : ''}` : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
         
         {/* ========================================================== */}
         {/* MODE 1A: 3-INCH (80mm) THERMAL POS RECEIPT                 */}
@@ -964,7 +964,9 @@ export default function PrintTemplates({
         {/* MODE 5: BARCODE LABELS PRINT SHEET / SINGLE STICKER        */}
         {/* ========================================================== */}
         {(activeFormat === 'barcodes' || printMode === 'barcodes') && (
-          printData.copies === 1 || printData.format === 'single' ? (
+          printData.bulk && Array.isArray(printData.labels) ? (
+            <BulkBarcodePages labels={printData.labels} format={printData.format} shopName={shopConfig.name} />
+          ) : printData.copies === 1 || printData.format === 'single' ? (
             <div className="product-sticker-single" style={{ width: '50mm', height: '25mm', padding: '1mm', boxSizing: 'border-box', textAlign: 'center', background: '#FFF', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}>
               <div className="product-sticker-shop" style={{ fontSize: '7px', lineHeight: 1.05, fontWeight: 900, letterSpacing: '0.25px' }}>{shopConfig.name} • BODHAN</div>
               <div className="product-sticker-title" style={{ fontSize: '7px', lineHeight: 1.05, fontWeight: 700, overflow: 'hidden', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
@@ -1295,4 +1297,23 @@ export default function PrintTemplates({
       </div>
     </div>
   );
+}
+
+function BulkBarcodePages({ labels, format, shopName }) {
+  const perPage = format === 'sheet40' ? 40 : format === 'thermalSingle' ? 1 : 24;
+  const pages = Array.from({ length: Math.ceil(labels.length / perPage) }, (_, index) => labels.slice(index * perPage, (index + 1) * perPage));
+  return <div className={`barcode-bulk-pages${format === 'thermalSingle' ? ' barcode-bulk-thermal' : ''}`}>
+    {pages.map((pageLabels, pageIndex) => <section className="barcode-sheet-page" key={`page-${pageIndex}`} style={{ display: 'grid', gridTemplateColumns: format === 'sheet40' ? 'repeat(4, 45mm)' : format === 'thermalSingle' ? '50mm' : 'repeat(3, 60mm)', gridTemplateRows: format === 'sheet40' ? 'repeat(10, 26mm)' : format === 'thermalSingle' ? '25mm' : 'repeat(8, 32mm)', gap: format === 'sheet40' ? '1mm 2mm' : '2mm', justifyContent: format === 'thermalSingle' ? 'start' : 'center', alignContent: 'start', width: format === 'thermalSingle' ? '50mm' : '190mm', minHeight: format === 'thermalSingle' ? '25mm' : '277mm', boxSizing: 'border-box', padding: 0, breakAfter: pageIndex < pages.length - 1 ? 'page' : 'auto', pageBreakAfter: pageIndex < pages.length - 1 ? 'always' : 'auto' }}>
+      {pageLabels.map((label, labelIndex) => {
+        const qr = label.codeFormat === 'qr' || String(label.barcode || '').includes('QR-');
+        const scanUrl = buildProductScanUrl({ id: label.id || label.barcode, barcode: label.barcode }, '', { addToCart: true });
+        return <article className="barcode-bulk-label" key={`${label.id}-${label.barcode}-${labelIndex}`} style={{ width: format === 'sheet40' ? '45mm' : format === 'thermalSingle' ? '50mm' : '60mm', height: format === 'sheet40' ? '26mm' : format === 'thermalSingle' ? '25mm' : '32mm', boxSizing: 'border-box', border: format === 'thermalSingle' ? 'none' : '0.25mm solid #bbb', padding: '1mm', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'center', color: '#111', background: '#fff', pageBreakInside: 'avoid' }}>
+          <div style={{ fontSize: '7px', lineHeight: 1, fontWeight: 900 }}>{shopName || 'ALZINO'} · BODHAN</div>
+          <div style={{ fontSize: format === 'sheet40' ? '6px' : '7px', lineHeight: 1.05, fontWeight: 700, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{label.title}</div>
+          <div style={{ height: format === 'sheet40' ? '12mm' : '15mm', margin: '0 auto', maxWidth: '100%', overflow: 'hidden' }} dangerouslySetInnerHTML={{ __html: renderCodeSvg(label.barcode, qr ? 'qr' : 'barcode', format === 'sheet40' ? 135 : 170, format === 'sheet40' ? 42 : 50, true, scanUrl) }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1mm', fontSize: '7px', lineHeight: 1, fontWeight: 900, whiteSpace: 'nowrap' }}><span>₹{Number(label.price || 0).toLocaleString()}</span>{label.mrp && Number(label.mrp) > Number(label.price) ? <span style={{ textDecoration: 'line-through', color: '#555' }}>MRP ₹{Number(label.mrp).toLocaleString()}</span> : null}</div>
+        </article>;
+      })}
+    </section>)}
+  </div>;
 }

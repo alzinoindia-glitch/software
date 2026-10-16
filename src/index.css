@@ -471,6 +471,16 @@ input, select, textarea {
     margin: 0;
   }
 
+  @page barcode-sheet {
+    size: A4;
+    margin: 10mm;
+  }
+
+  @page barcode-thermal-bulk {
+    size: 50mm 25mm;
+    margin: 0;
+  }
+
   body * {
     visibility: hidden !important;
   }
@@ -523,6 +533,28 @@ input, select, textarea {
     margin: 0 !important;
     overflow: hidden !important;
     box-shadow: none !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .print-container.print-barcode-sheet {
+    page: barcode-sheet;
+    width: 190mm !important;
+    overflow: visible !important;
+  }
+
+  .print-container.print-barcode-thermal-bulk {
+    page: barcode-thermal-bulk;
+    width: 50mm !important;
+    overflow: visible !important;
+  }
+
+  .barcode-sheet-page {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .barcode-bulk-label {
     break-inside: avoid-page;
     page-break-inside: avoid;
   }
