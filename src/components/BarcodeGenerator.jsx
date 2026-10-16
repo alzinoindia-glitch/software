@@ -120,15 +120,15 @@ export default function BarcodeGenerator({
   const getProductStockCount = (item) => Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
   const categories = Array.from(new Set(inventory.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const categoryProducts = printCategory === 'all' ? inventory : inventory.filter(item => String(item.category || '').trim() === printCategory);
-  const inStockLabelCount = inventory.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const categoryBarcodeCount = categoryProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const selectedProducts = inventory.filter(item => selectedProductIds.includes(String(item.id)));
   const selectedLabelCount = selectedProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const bulkPageCapacity = labelFormat === 'sheet40' ? 40 : labelFormat === 'thermalSingle' ? 1 : 24;
-  const estimatedBulkPages = Math.ceil(inStockLabelCount / bulkPageCapacity);
-  const estimatedSelectedPages = Math.ceil(selectedLabelCount / bulkPageCapacity);
-  const estimatedCategoryBarcodePages = Math.ceil(categoryBarcodeCount / bulkPageCapacity);
-  const estimatedCategoryQrPages = Math.ceil(categoryProducts.length / bulkPageCapacity);
+  const bulkProducts = selectedProducts.length ? selectedProducts : categoryProducts;
+  const bulkBarcodeCount = selectedProducts.length ? selectedLabelCount : categoryBarcodeCount;
+  const bulkQrCount = bulkProducts.length;
+  const estimatedBulkQrPages = Math.ceil(bulkQrCount / bulkPageCapacity);
+  const estimatedBulkBarcodePages = Math.ceil(bulkBarcodeCount / bulkPageCapacity);
 
   const buildProductLabels = (products, kind = 'barcode') => products.flatMap(item => {
       if (kind === 'qr') {
@@ -174,9 +174,6 @@ export default function BarcodeGenerator({
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={() => handlePrintProducts(selectedProducts, 'barcode', 'Selected products have no available stock.')} className="btn-outline" disabled={!selectedLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create labels for all units of the selected products">
-            <Printer size={15} /><span>Print Selected ({selectedLabelCount})</span>
-          </button>
           <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
             <Printer size={15} /><span>Print Barcodes</span>
           </button>
@@ -244,12 +241,10 @@ export default function BarcodeGenerator({
               </select>
             </div>
             <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-outline" disabled={!selectedProducts.length} onClick={() => handlePrintProducts(selectedProducts, 'qr', 'Select at least one product to print QR codes.')}><QrCode size={14} /> QR Selected ({selectedProducts.length})</button>
-              <button type="button" className="btn-outline" disabled={!categoryProducts.length} onClick={() => handlePrintProducts(categoryProducts, 'qr', 'No products are available in this category.')}><QrCode size={14} /> QR {printCategory === 'all' ? 'All Products' : printCategory} ({categoryProducts.length})</button>
-              <button type="button" className="btn-outline" disabled={!selectedLabelCount} onClick={() => handlePrintProducts(selectedProducts, 'barcode', 'Selected products have no available stock.')}><Barcode size={14} /> Barcodes Selected ({selectedLabelCount})</button>
-              <button type="button" className="btn-primary" disabled={!categoryBarcodeCount} onClick={() => handlePrintProducts(categoryProducts, 'barcode', 'There is no in-stock stock in this category.')}><PackageCheck size={14} /> Barcodes {printCategory === 'all' ? 'All In-Stock' : printCategory} ({categoryBarcodeCount})</button>
+              <button type="button" className="btn-outline" disabled={!bulkQrCount} onClick={() => handlePrintProducts(bulkProducts, 'qr', 'No products are available in the selected category or product selection.')}><QrCode size={14} /> Print QR Codes ({bulkQrCount} products)</button>
+              <button type="button" className="btn-primary" disabled={!bulkBarcodeCount} onClick={() => handlePrintProducts(bulkProducts, 'barcode', 'There are no in-stock units in the selected category or product selection.')}><Barcode size={14} /> Print Barcodes ({bulkBarcodeCount} units)</button>
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>QR: one storefront product link per product ({categoryProducts.length} labels · about {estimatedCategoryQrPages} {estimatedCategoryQrPages === 1 ? 'page' : 'pages'}). Barcodes: one saved unit code per in-stock unit ({categoryBarcodeCount} labels · about {estimatedCategoryBarcodePages} {estimatedCategoryBarcodePages === 1 ? 'page' : 'pages'}).</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{selectedProducts.length ? `Using ${selectedProducts.length} individually selected products.` : `Using ${printCategory === 'all' ? 'all categories' : printCategory} from the category dropdown.`} QR: one storefront product link per product ({bulkQrCount} labels · about {estimatedBulkQrPages} {estimatedBulkQrPages === 1 ? 'page' : 'pages'}). Barcodes: one saved unit code per in-stock unit ({bulkBarcodeCount} labels · about {estimatedBulkBarcodePages} {estimatedBulkBarcodePages === 1 ? 'page' : 'pages'}).</div>
           </div>
 
           {/* Code Format Choice */}
@@ -398,9 +393,6 @@ export default function BarcodeGenerator({
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{fmt.desc}</div>
                 </button>
               ))}
-            </div>
-            <div style={{ marginTop: '0.55rem', padding: '0.55rem 0.7rem', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card-hover)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-              Selected products: <strong style={{ color: 'var(--text-primary)' }}>{selectedLabelCount}</strong> labels across <strong style={{ color: 'var(--text-primary)' }}>{estimatedSelectedPages}</strong> {estimatedSelectedPages === 1 ? 'page' : 'pages'}. All in-stock products: {inStockLabelCount} labels across {estimatedBulkPages} {estimatedBulkPages === 1 ? 'page' : 'pages'}.
             </div>
           </div>
         </div>
