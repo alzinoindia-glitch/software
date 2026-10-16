@@ -24,6 +24,7 @@ export default function BarcodeGenerator({
   const [selectedProductId, setSelectedProductId] = useState(
     initialProduct?.id || ''
   );
+  const [selectedProductIds, setSelectedProductIds] = useState(() => selectedItemForBarcode?.id ? [String(selectedItemForBarcode.id)] : []);
   const [stockSearch, setStockSearch] = useState(initialProduct ? `${initialProduct.brand || ''} ${initialProduct.name || ''}`.trim() : '');
 
   const [customTitle, setCustomTitle] = useState(
@@ -49,6 +50,7 @@ export default function BarcodeGenerator({
   React.useEffect(() => {
     if (selectedItemForBarcode) {
       setSelectedProductId(selectedItemForBarcode.id);
+      setSelectedProductIds([String(selectedItemForBarcode.id)]);
       setStockSearch(`${selectedItemForBarcode.brand || ''} ${selectedItemForBarcode.name || ''}`.trim());
       setCustomTitle(selectedItemForBarcode.name);
       setCustomBarcode(selectedItemForBarcode.barcode || `ALZ-${selectedItemForBarcode.id}`);
@@ -99,7 +101,7 @@ export default function BarcodeGenerator({
     return [item.name, item.brand, item.model, item.category, ...identifiers]
       .filter(Boolean)
       .some(value => String(value).toLowerCase().includes(query));
-  }).slice(0, 12);
+  });
 
   const handlePrint = () => {
     onPrintBarcodeSheet({
@@ -114,13 +116,16 @@ export default function BarcodeGenerator({
     });
   };
 
-  const inStockLabelCount = inventory.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0)), 0);
+  const getProductStockCount = (item) => Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
+  const inStockLabelCount = inventory.reduce((sum, item) => sum + getProductStockCount(item), 0);
+  const selectedProducts = inventory.filter(item => selectedProductIds.includes(String(item.id)));
+  const selectedLabelCount = selectedProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
   const bulkPageCapacity = labelFormat === 'sheet40' ? 40 : labelFormat === 'thermalSingle' ? 1 : 24;
   const estimatedBulkPages = Math.ceil(inStockLabelCount / bulkPageCapacity);
+  const estimatedSelectedPages = Math.ceil(selectedLabelCount / bulkPageCapacity);
 
-  const handlePrintAllInStock = () => {
-    const labels = inventory.flatMap(item => {
-      const quantity = Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
+  const buildProductLabels = (products) => products.flatMap(item => {
+      const quantity = getProductStockCount(item);
       if (!quantity) return [];
       const unitCodes = (item.units || []).map(unit => unit.barcode || unit.imei1 || unit.imei2).filter(Boolean);
       const codes = unitCodes.length ? unitCodes : (item.barcodes || []).filter(Boolean);
@@ -134,12 +139,17 @@ export default function BarcodeGenerator({
         mrp: item.mrp ?? '',
       }));
     });
+
+  const handlePrintProducts = (products, emptyMessage) => {
+    const labels = buildProductLabels(products);
     if (!labels.length) {
-      alert('There are no in-stock product units to print.');
+      alert(emptyMessage);
       return;
     }
     onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat });
   };
+
+  const toggleProductSelection = (id) => setSelectedProductIds(previous => previous.includes(String(id)) ? previous.filter(value => value !== String(id)) : [...previous, String(id)]);
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -154,7 +164,10 @@ export default function BarcodeGenerator({
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={handlePrintAllInStock} className="btn-outline" disabled={!inStockLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create one label for every unit currently in stock">
+          <button type="button" onClick={() => handlePrintProducts(selectedProducts, 'Selected products have no available stock.')} className="btn-outline" disabled={!selectedLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create labels for all units of the selected products">
+            <Printer size={15} /><span>Print Selected ({selectedLabelCount})</span>
+          </button>
+          <button type="button" onClick={() => handlePrintProducts(inventory, 'There are no in-stock product units to print.')} className="btn-outline" disabled={!inStockLabelCount} style={{ padding: '0.45rem 0.8rem', fontSize: '0.82rem' }} title="Create one label for every unit currently in stock">
             <PackageCheck size={15} /><span>Print All In-Stock ({inStockLabelCount})</span>
           </button>
           <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
@@ -185,19 +198,27 @@ export default function BarcodeGenerator({
                 style={{ paddingLeft: '2rem' }}
               />
             </div>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.45rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{selectedProductIds.length} product{selectedProductIds.length === 1 ? '' : 's'} selected · {selectedLabelCount} labels</span>
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => setSelectedProductIds(previous => Array.from(new Set([...previous, ...stockMatches.map(item => String(item.id))])))}>Select matching</button>
+                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => setSelectedProductIds([])}>Clear</button>
+              </div>
+            </div>
             <div style={{ marginTop: '0.4rem', maxHeight: '190px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-primary)' }}>
               {stockMatches.length ? stockMatches.map(item => {
                 const codes = [item.barcode, ...(item.barcodes || []), ...(item.units || []).map(unit => unit.barcode), ...(item.imeis || []), ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2])].filter(Boolean);
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => handleProductSelect(item.id)}
-                    style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.15rem', padding: '0.55rem 0.65rem', border: 'none', borderBottom: '1px solid var(--border-color)', background: selectedProductId === item.id ? 'var(--illoca-blue-subtle)' : 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer' }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.55rem', padding: '0.5rem 0.65rem', borderBottom: '1px solid var(--border-color)', background: selectedProductIds.includes(String(item.id)) ? 'var(--illoca-blue-subtle)' : 'transparent' }}
                   >
-                    <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{item.brand || 'Stock'} · {item.name} · ₹{item.sellPrice || 0}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{codes.length ? `Saved codes: ${codes.join(' · ')}` : `Product code: ALZ-${item.id}`}</span>
-                  </button>
+                    <input type="checkbox" aria-label={`Select ${item.name} for barcode printing`} checked={selectedProductIds.includes(String(item.id))} onChange={() => toggleProductSelection(item.id)} style={{ width: 16, height: 16, flex: '0 0 auto', accentColor: 'var(--accent-primary)' }} />
+                    <button type="button" onClick={() => handleProductSelect(item.id)} style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.15rem', border: 'none', background: 'transparent', color: 'var(--text-primary)', textAlign: 'left', cursor: 'pointer' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{item.brand || 'Stock'} · {item.name} · ₹{item.sellPrice || 0} <span style={{ color: 'var(--status-green)' }}>({getProductStockCount(item)} in stock)</span></span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{codes.length ? `Saved codes: ${codes.join(' · ')}` : `Product code: ALZ-${item.id}`}</span>
+                    </button>
+                  </div>
                 );
               }) : (
                 <div style={{ padding: '0.65rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
@@ -355,7 +376,7 @@ export default function BarcodeGenerator({
               ))}
             </div>
             <div style={{ marginTop: '0.55rem', padding: '0.55rem 0.7rem', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card-hover)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-              Bulk print will create <strong style={{ color: 'var(--text-primary)' }}>{inStockLabelCount}</strong> labels across <strong style={{ color: 'var(--text-primary)' }}>{estimatedBulkPages}</strong> {estimatedBulkPages === 1 ? 'page' : 'pages'} using this layout.
+              Selected products: <strong style={{ color: 'var(--text-primary)' }}>{selectedLabelCount}</strong> labels across <strong style={{ color: 'var(--text-primary)' }}>{estimatedSelectedPages}</strong> {estimatedSelectedPages === 1 ? 'page' : 'pages'}. All in-stock products: {inStockLabelCount} labels across {estimatedBulkPages} {estimatedBulkPages === 1 ? 'page' : 'pages'}.
             </div>
           </div>
         </div>
