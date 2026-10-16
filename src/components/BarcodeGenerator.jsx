@@ -2,16 +2,10 @@ import React, { useState } from 'react';
 import { 
   Barcode, 
   Printer, 
-  Copy, 
-  CheckCircle, 
-  Layers, 
-  Sparkles, 
-  Tag,
   QrCode,
   Search,
-  PackageCheck
 } from 'lucide-react';
-import { renderBarcodeSvg, renderCodeSvg } from '../utils/barcode';
+import { renderCodeSvg } from '../utils/barcode';
 import { buildProductScanUrl } from '../utils/productTerms';
 
 export default function BarcodeGenerator({ 
@@ -29,19 +23,18 @@ export default function BarcodeGenerator({
   const [printCategory, setPrintCategory] = useState('all');
 
   const [customTitle, setCustomTitle] = useState(
-    initialProduct?.name || '65W SuperVOOC Fast Power Adapter'
+    initialProduct?.name || ''
   );
   const [customBarcode, setCustomBarcode] = useState(
-    initialProduct ? (initialProduct.barcode || initialProduct.barcodes?.[0] || initialProduct.units?.find(unit => unit.barcode)?.barcode || initialProduct.imeis?.[0] || `ALZ-${initialProduct.id}`) : '8901234567890'
+    initialProduct ? (initialProduct.barcode || initialProduct.barcodes?.[0] || initialProduct.units?.find(unit => unit.barcode)?.barcode || initialProduct.imeis?.[0] || `ALZ-${initialProduct.id}`) : ''
   );
   const [customPrice, setCustomPrice] = useState(
-    initialProduct?.sellPrice ?? '1299'
+    initialProduct?.sellPrice ?? ''
   );
   const [customMrp, setCustomMrp] = useState(
-    initialProduct?.mrp ?? '1999'
+    Number(initialProduct?.mrp) > 0 ? initialProduct.mrp : ''
   );
 
-  const [labelCopies, setLabelCopies] = useState(24);
   const [labelFormat, setLabelFormat] = useState('sheet24'); // sheet24 | sheet40 | thermalSingle
   const [codeFormat, setCodeFormat] = useState(
     selectedItemForBarcode?.codeFormat || (selectedItemForBarcode?.barcode?.includes('QR-') ? 'qr' : 'barcode')
@@ -56,7 +49,7 @@ export default function BarcodeGenerator({
       setCustomTitle(selectedItemForBarcode.name);
       setCustomBarcode(selectedItemForBarcode.barcode || `ALZ-${selectedItemForBarcode.id}`);
       setCustomPrice(selectedItemForBarcode.sellPrice);
-      setCustomMrp(selectedItemForBarcode.mrp || selectedItemForBarcode.sellPrice);
+      setCustomMrp(Number(selectedItemForBarcode.mrp) > 0 ? selectedItemForBarcode.mrp : '');
       if (selectedItemForBarcode.codeFormat) {
         setCodeFormat(selectedItemForBarcode.codeFormat);
       } else if (selectedItemForBarcode.barcode?.includes('QR-')) {
@@ -74,7 +67,7 @@ export default function BarcodeGenerator({
       const existingCode = prod.barcode || prod.barcodes?.[0] || prod.units?.find(unit => unit.barcode)?.barcode || prod.imeis?.[0] || prod.units?.find(unit => unit.imei1 || unit.imei2)?.imei1 || `ALZ-${prod.id}`;
       setCustomBarcode(existingCode);
       setCustomPrice(prod.sellPrice);
-      setCustomMrp(prod.mrp || prod.sellPrice);
+      setCustomMrp(Number(prod.mrp) > 0 ? prod.mrp : '');
       if (prod.codeFormat) {
         setCodeFormat(prod.codeFormat);
       } else if (prod.barcode?.includes('QR-')) {
@@ -105,19 +98,22 @@ export default function BarcodeGenerator({
   });
 
   const handlePrint = () => {
-    onPrintBarcodeSheet({
-      id: selectedProductId,
-      title: customTitle,
-      barcode: customBarcode,
-      codeFormat,
-      price: customPrice,
-      mrp: customMrp,
-      copies: parseInt(labelCopies, 10) || 24,
-      format: labelFormat,
-    });
+    const selectedProduct = inventory.find(item => String(item.id) === String(selectedProductId));
+    if (!selectedProduct) {
+      alert('Select a stock item before printing labels.');
+      return;
+    }
+    const labels = buildProductLabels([selectedProduct], codeFormat === 'qr' ? 'qr' : 'barcode');
+    if (!labels.length) {
+      alert('This product has no in-stock units to print labels for.');
+      return;
+    }
+    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat, labelKind: codeFormat === 'qr' ? 'qr' : 'barcode' });
   };
 
   const getProductStockCount = (item) => Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
+  const selectedProduct = inventory.find(item => String(item.id) === String(selectedProductId));
+  const selectedPrintCount = codeFormat === 'qr' ? (selectedProduct ? 1 : 0) : (selectedProduct ? getProductStockCount(selectedProduct) : 0);
   const categories = Array.from(new Set(inventory.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const categoryProducts = printCategory === 'all' ? inventory : inventory.filter(item => String(item.category || '').trim() === printCategory);
   const categoryBarcodeCount = categoryProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
@@ -175,7 +171,7 @@ export default function BarcodeGenerator({
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-            <Printer size={15} /><span>Print Barcodes</span>
+            <Printer size={15} /><span>Print {selectedPrintCount} {codeFormat === 'qr' ? 'QR Label' : 'Barcode Labels'}</span>
           </button>
         </div>
       </div>
@@ -298,101 +294,18 @@ export default function BarcodeGenerator({
             </div>
           </div>
 
-          <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-              Product Label Title:
-            </label>
-            <input
-              type="text"
-              value={customTitle}
-              onChange={(e) => setCustomTitle(e.target.value)}
-              className="input-field"
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Barcode Value / EAN:
-              </label>
-              <input
-                type="text"
-                value={customBarcode}
-                onChange={(e) => setCustomBarcode(e.target.value)}
-                className="input-field"
-                style={{ fontFamily: 'var(--font-mono)' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Selling Price (₹):
-              </label>
-              <input
-                type="number"
-                value={customPrice}
-                onChange={(e) => setCustomPrice(e.target.value)}
-                className="input-field"
-                style={{ fontWeight: 700 }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                MRP (₹):
-              </label>
-              <input
-                type="number"
-                value={customMrp}
-                onChange={(e) => setCustomMrp(e.target.value)}
-                className="input-field"
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                Number of Labels to Print:
-              </label>
-              <input
-                type="number"
-                value={labelCopies}
-                onChange={(e) => setLabelCopies(e.target.value)}
-                className="input-field"
-              />
-            </div>
-          </div>
-
           {/* Paper Format */}
           <div>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
               Sticker Paper Layout:
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-              {[
-                { id: 'sheet24', label: 'A4 (24 Labels/Sheet)', desc: '3 x 8 layout' },
-                { id: 'sheet40', label: 'A4 (40 Labels/Sheet)', desc: '4 x 10 compact' },
-                { id: 'thermalSingle', label: 'Thermal Barcode (50x25mm)', desc: 'Single roll label' },
-              ].map(fmt => (
-                <button
-                  key={fmt.id}
-                  type="button"
-                  onClick={() => setLabelFormat(fmt.id)}
-                  style={{
-                    padding: '0.65rem 0.4rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: `1px solid ${labelFormat === fmt.id ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                    background: labelFormat === fmt.id ? 'var(--illoca-blue-subtle)' : 'var(--surface-primary)',
-                    color: labelFormat === fmt.id ? 'var(--accent-primary)' : 'var(--text-primary)',
-                    textAlign: 'left',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  <div style={{ fontWeight: 700 }}>{fmt.label}</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{fmt.desc}</div>
-                </button>
-              ))}
+            <select className="input-field" value={labelFormat} onChange={event => setLabelFormat(event.target.value)}>
+              <option value="sheet24">A4 · 24 labels per sheet (3 × 8)</option>
+              <option value="sheet40">A4 · 40 labels per sheet (4 × 10)</option>
+              <option value="thermalSingle">Thermal roll · 50 × 25 mm</option>
+            </select>
+            <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+              Labels automatically flow onto additional pages. {selectedProduct ? `${selectedPrintCount} ${codeFormat === 'qr' ? 'QR label' : 'barcode labels'} · about ${Math.ceil(selectedPrintCount / bulkPageCapacity)} ${Math.ceil(selectedPrintCount / bulkPageCapacity) === 1 ? 'page' : 'pages'}.` : 'Select a stock item to see its label quantity.'}
             </div>
           </div>
         </div>
@@ -433,7 +346,7 @@ export default function BarcodeGenerator({
 
             {/* Pricing */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem', padding: '0 0.5rem' }}>
-              {customMrp && (
+              {Number(customMrp) > Number(customPrice) && (
                 <span style={{ fontSize: '0.72rem', textDecoration: 'line-through', color: '#666' }}>
                   MRP: ₹{customMrp}
                 </span>
@@ -449,9 +362,10 @@ export default function BarcodeGenerator({
             onClick={handlePrint}
             className="btn-primary"
             style={{ marginTop: '1rem' }}
+            disabled={!selectedProduct || !selectedPrintCount}
           >
             <Printer size={16} />
-            <span>Print {labelCopies} Labels Now</span>
+            <span>Print {selectedPrintCount} {codeFormat === 'qr' ? 'QR Label' : 'Barcode Labels'} Now</span>
           </button>
         </div>
 
