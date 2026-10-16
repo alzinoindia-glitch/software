@@ -18,23 +18,12 @@ export default function BarcodeGenerator({
   const [selectedProductId, setSelectedProductId] = useState(
     initialProduct?.id || ''
   );
+  const [manualProductId, setManualProductId] = useState(initialProduct?.id ? String(initialProduct.id) : '');
   const [selectedProductIds, setSelectedProductIds] = useState(() => selectedItemForBarcode?.id ? [String(selectedItemForBarcode.id)] : []);
   const [stockSearch, setStockSearch] = useState(initialProduct ? `${initialProduct.brand || ''} ${initialProduct.name || ''}`.trim() : '');
   const [printCategory, setPrintCategory] = useState('all');
-
-  const [customTitle, setCustomTitle] = useState(
-    initialProduct?.name || ''
-  );
-  const [customBarcode, setCustomBarcode] = useState(
-    initialProduct ? (initialProduct.barcode || initialProduct.barcodes?.[0] || initialProduct.units?.find(unit => unit.barcode)?.barcode || initialProduct.imeis?.[0] || `ALZ-${initialProduct.id}`) : ''
-  );
-  const [customPrice, setCustomPrice] = useState(
-    initialProduct?.sellPrice ?? ''
-  );
-  const [customMrp, setCustomMrp] = useState(
-    Number(initialProduct?.mrp) > 0 ? initialProduct.mrp : ''
-  );
-
+  const [bulkPreviewKind, setBulkPreviewKind] = useState(null);
+  const [previewPage, setPreviewPage] = useState(0);
   const [labelFormat, setLabelFormat] = useState('sheet24'); // sheet24 | sheet40 | thermalSingle
   const [codeFormat, setCodeFormat] = useState(
     selectedItemForBarcode?.codeFormat || (selectedItemForBarcode?.barcode?.includes('QR-') ? 'qr' : 'barcode')
@@ -44,12 +33,9 @@ export default function BarcodeGenerator({
   React.useEffect(() => {
     if (selectedItemForBarcode) {
       setSelectedProductId(selectedItemForBarcode.id);
+      setManualProductId(String(selectedItemForBarcode.id));
       setSelectedProductIds([String(selectedItemForBarcode.id)]);
       setStockSearch(`${selectedItemForBarcode.brand || ''} ${selectedItemForBarcode.name || ''}`.trim());
-      setCustomTitle(selectedItemForBarcode.name);
-      setCustomBarcode(selectedItemForBarcode.barcode || `ALZ-${selectedItemForBarcode.id}`);
-      setCustomPrice(selectedItemForBarcode.sellPrice);
-      setCustomMrp(Number(selectedItemForBarcode.mrp) > 0 ? selectedItemForBarcode.mrp : '');
       if (selectedItemForBarcode.codeFormat) {
         setCodeFormat(selectedItemForBarcode.codeFormat);
       } else if (selectedItemForBarcode.barcode?.includes('QR-')) {
@@ -60,14 +46,13 @@ export default function BarcodeGenerator({
 
   const handleProductSelect = (id) => {
     setSelectedProductId(id);
+    setManualProductId(String(id));
+    setSelectedProductIds([]);
+    setBulkPreviewKind(null);
+    setPreviewPage(0);
     const prod = inventory.find(p => p.id === id);
     if (prod) {
       setStockSearch(`${prod.brand || ''} ${prod.name || ''}`.trim());
-      setCustomTitle(prod.name);
-      const existingCode = prod.barcode || prod.barcodes?.[0] || prod.units?.find(unit => unit.barcode)?.barcode || prod.imeis?.[0] || prod.units?.find(unit => unit.imei1 || unit.imei2)?.imei1 || `ALZ-${prod.id}`;
-      setCustomBarcode(existingCode);
-      setCustomPrice(prod.sellPrice);
-      setCustomMrp(Number(prod.mrp) > 0 ? prod.mrp : '');
       if (prod.codeFormat) {
         setCodeFormat(prod.codeFormat);
       } else if (prod.barcode?.includes('QR-')) {
@@ -97,23 +82,8 @@ export default function BarcodeGenerator({
       .some(value => String(value).toLowerCase().includes(query));
   });
 
-  const handlePrint = () => {
-    const selectedProduct = inventory.find(item => String(item.id) === String(selectedProductId));
-    if (!selectedProduct) {
-      alert('Select a stock item before printing labels.');
-      return;
-    }
-    const labels = buildProductLabels([selectedProduct], codeFormat === 'qr' ? 'qr' : 'barcode');
-    if (!labels.length) {
-      alert('This product has no in-stock units to print labels for.');
-      return;
-    }
-    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat, labelKind: codeFormat === 'qr' ? 'qr' : 'barcode' });
-  };
-
   const getProductStockCount = (item) => Math.max(0, Math.floor(Number(item.stock ?? item.quantity ?? item.units?.length ?? 0) || 0));
   const selectedProduct = inventory.find(item => String(item.id) === String(selectedProductId));
-  const selectedPrintCount = codeFormat === 'qr' ? (selectedProduct ? 1 : 0) : (selectedProduct ? getProductStockCount(selectedProduct) : 0);
   const categories = Array.from(new Set(inventory.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const categoryProducts = printCategory === 'all' ? inventory : inventory.filter(item => String(item.category || '').trim() === printCategory);
   const categoryBarcodeCount = categoryProducts.reduce((sum, item) => sum + getProductStockCount(item), 0);
@@ -146,16 +116,34 @@ export default function BarcodeGenerator({
       }));
     });
 
-  const handlePrintProducts = (products, kind, emptyMessage) => {
-    const labels = buildProductLabels(products, kind);
-    if (!labels.length) {
-      alert(emptyMessage);
+  const manualPreviewProducts = selectedProducts.length
+    ? selectedProducts
+    : manualProductId
+      ? inventory.filter(item => String(item.id) === manualProductId)
+      : stockSearch.trim()
+        ? stockMatches
+        : selectedProduct ? [selectedProduct] : [];
+  const previewKind = bulkPreviewKind || (codeFormat === 'qr' ? 'qr' : 'barcode');
+  const previewProducts = bulkPreviewKind ? bulkProducts : manualPreviewProducts;
+  const previewLabels = buildProductLabels(previewProducts, previewKind);
+  const previewPageCount = Math.max(1, Math.ceil(previewLabels.length / bulkPageCapacity));
+  const safePreviewPage = Math.min(previewPage, previewPageCount - 1);
+  const pagePreviewLabels = previewLabels.slice(safePreviewPage * bulkPageCapacity, (safePreviewPage + 1) * bulkPageCapacity);
+
+  const handlePrint = () => {
+    if (!previewLabels.length) {
+      alert(previewKind === 'qr' ? 'No products are available for QR labels.' : 'No in-stock units are available for barcode labels.');
       return;
     }
-    onPrintBarcodeSheet({ bulk: true, labels, copies: labels.length, format: labelFormat, codeFormat: kind === 'qr' ? 'qr' : codeFormat, labelKind: kind });
+    onPrintBarcodeSheet({ bulk: true, labels: previewLabels, copies: previewLabels.length, format: labelFormat, codeFormat: previewKind === 'qr' ? 'qr' : 'barcode', labelKind: previewKind });
   };
 
-  const toggleProductSelection = (id) => setSelectedProductIds(previous => previous.includes(String(id)) ? previous.filter(value => value !== String(id)) : [...previous, String(id)]);
+  const toggleProductSelection = (id) => {
+    setManualProductId('');
+    setBulkPreviewKind(null);
+    setPreviewPage(0);
+    setSelectedProductIds(previous => previous.includes(String(id)) ? previous.filter(value => value !== String(id)) : [...previous, String(id)]);
+  };
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -170,8 +158,8 @@ export default function BarcodeGenerator({
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button onClick={handlePrint} className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
-            <Printer size={15} /><span>Print {selectedPrintCount} {codeFormat === 'qr' ? 'QR Label' : 'Barcode Labels'}</span>
+          <button onClick={handlePrint} className="btn-primary" disabled={!previewLabels.length} style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+            <Printer size={15} /><span>Print {previewLabels.length} {previewKind === 'qr' ? 'QR Labels' : 'Barcode Labels'}</span>
           </button>
         </div>
       </div>
@@ -192,7 +180,7 @@ export default function BarcodeGenerator({
               <input
                 type="search"
                 value={stockSearch}
-                onChange={(e) => setStockSearch(e.target.value)}
+                onChange={(e) => { setManualProductId(''); setSelectedProductIds([]); setBulkPreviewKind(null); setPreviewPage(0); setStockSearch(e.target.value); }}
                 placeholder="Search product, brand, barcode, QR value, or IMEI..."
                 className="input-field"
                 style={{ paddingLeft: '2rem' }}
@@ -201,8 +189,8 @@ export default function BarcodeGenerator({
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.45rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{selectedProductIds.length} product{selectedProductIds.length === 1 ? '' : 's'} selected · {selectedLabelCount} labels</span>
               <div style={{ display: 'flex', gap: '0.35rem' }}>
-                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => setSelectedProductIds(previous => Array.from(new Set([...previous, ...stockMatches.map(item => String(item.id))])))}>Select matching</button>
-                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => setSelectedProductIds([])}>Clear</button>
+                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => { setBulkPreviewKind(null); setPreviewPage(0); setSelectedProductIds(previous => Array.from(new Set([...previous, ...stockMatches.map(item => String(item.id))]))); }}>Select matching</button>
+                <button type="button" className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }} onClick={() => { setBulkPreviewKind(null); setPreviewPage(0); setSelectedProductIds([]); }}>Clear</button>
               </div>
             </div>
             <div style={{ marginTop: '0.4rem', maxHeight: '190px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-primary)' }}>
@@ -231,20 +219,20 @@ export default function BarcodeGenerator({
           <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <strong style={{ fontSize: '0.82rem' }}>Bulk product labels</strong>
-              <select className="input-field" aria-label="Category for bulk barcode and QR printing" value={printCategory} onChange={event => setPrintCategory(event.target.value)} style={{ maxWidth: '240px', padding: '0.35rem 0.55rem' }}>
+              <select className="input-field" aria-label="Category for bulk barcode and QR printing" value={printCategory} onChange={event => { setPreviewPage(0); setPrintCategory(event.target.value); }} style={{ maxWidth: '240px', padding: '0.35rem 0.55rem' }}>
                 <option value="all">All categories ({inventory.length})</option>
                 {categories.map(category => <option key={category} value={category}>{category} ({inventory.filter(item => String(item.category || '').trim() === category).length})</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-outline" disabled={!bulkQrCount} onClick={() => handlePrintProducts(bulkProducts, 'qr', 'No products are available in the selected category or product selection.')}><QrCode size={14} /> Print QR Codes ({bulkQrCount} products)</button>
-              <button type="button" className="btn-primary" disabled={!bulkBarcodeCount} onClick={() => handlePrintProducts(bulkProducts, 'barcode', 'There are no in-stock units in the selected category or product selection.')}><Barcode size={14} /> Print Barcodes ({bulkBarcodeCount} units)</button>
+              <button type="button" className={bulkPreviewKind === 'qr' ? 'btn-primary' : 'btn-outline'} disabled={!bulkQrCount} onClick={() => { setPreviewPage(0); setBulkPreviewKind('qr'); }}><QrCode size={14} /> Preview QR Codes ({bulkQrCount} products)</button>
+              <button type="button" className={bulkPreviewKind === 'barcode' ? 'btn-primary' : 'btn-outline'} disabled={!bulkBarcodeCount} onClick={() => { setPreviewPage(0); setBulkPreviewKind('barcode'); }}><Barcode size={14} /> Preview Barcodes ({bulkBarcodeCount} units)</button>
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{selectedProducts.length ? `Using ${selectedProducts.length} individually selected products.` : `Using ${printCategory === 'all' ? 'all categories' : printCategory} from the category dropdown.`} QR: one storefront product link per product ({bulkQrCount} labels · about {estimatedBulkQrPages} {estimatedBulkQrPages === 1 ? 'page' : 'pages'}). Barcodes: one saved unit code per in-stock unit ({bulkBarcodeCount} labels · about {estimatedBulkBarcodePages} {estimatedBulkBarcodePages === 1 ? 'page' : 'pages'}).</div>
           </div>
 
           {/* Code Format Choice */}
-          <div>
+          {!bulkPreviewKind && <div>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
               Sticker Code Format:
             </label>
@@ -292,7 +280,7 @@ export default function BarcodeGenerator({
                 <span>2D QR Code</span>
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Paper Format */}
           <div>
@@ -305,67 +293,51 @@ export default function BarcodeGenerator({
               <option value="thermalSingle">Thermal roll · 50 × 25 mm</option>
             </select>
             <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-              Labels automatically flow onto additional pages. {selectedProduct ? `${selectedPrintCount} ${codeFormat === 'qr' ? 'QR label' : 'barcode labels'} · about ${Math.ceil(selectedPrintCount / bulkPageCapacity)} ${Math.ceil(selectedPrintCount / bulkPageCapacity) === 1 ? 'page' : 'pages'}.` : 'Select a stock item to see its label quantity.'}
+              Labels automatically flow onto pages. {previewLabels.length} {previewKind === 'qr' ? 'QR labels' : 'barcode labels'} · about {previewPageCount} {previewPageCount === 1 ? 'page' : 'pages'}.
             </div>
           </div>
         </div>
 
         {/* Right: Live Label Preview */}
-        <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="illoca-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', minHeight: 0 }}>
           <h4 style={{ fontSize: '0.95rem', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
-            Live Sticker Label Preview:
+            {bulkPreviewKind ? `Bulk ${previewKind === 'qr' ? 'QR' : 'Barcode'} Preview (${previewLabels.length})` : `Product ${previewKind === 'qr' ? 'QR' : 'Barcode'} Preview (${previewLabels.length})`}
           </h4>
-
-          {/* Sticker Preview Card */}
-          <div style={{
-            width: '260px',
-            background: '#FFFFFF',
-            color: '#0A0D14',
-            padding: '0.75rem',
-            borderRadius: '6px',
-            border: '2px solid #E0CFAE',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.08)',
-            textAlign: 'center',
-            marginBottom: '1rem',
-          }}>
-            {/* Header */}
-            <div style={{ fontSize: '0.85rem', fontWeight: 800, fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}>
-              {shopConfig.name} • BODHAN
-            </div>
-            
-            {/* Product Title */}
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0.2rem 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {customTitle}
-            </div>
-
-            {/* SVG Barcode or QR Code */}
-            <div 
-              style={{ margin: '0.35rem 0', display: 'flex', justifyContent: 'center' }}
-              dangerouslySetInnerHTML={{ __html: renderCodeSvg(customBarcode, codeFormat, 220, codeFormat === 'qr' ? 100 : 55, true, buildProductScanUrl({ id: selectedProductId, barcode: customBarcode }, '', { addToCart: true })) }}
-            />
-
-            {/* Pricing */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.2rem', padding: '0 0.5rem' }}>
-              {Number(customMrp) > Number(customPrice) && (
-                <span style={{ fontSize: '0.72rem', textDecoration: 'line-through', color: '#666' }}>
-                  MRP: ₹{customMrp}
-                </span>
-              )}
-              <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0A0D14' }}>
-                OUR PRICE: ₹{customPrice}
-              </span>
-            </div>
+          <div style={{ maxHeight: '580px', minHeight: '220px', overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.65rem', background: 'var(--surface-secondary, #f7f8fa)' }}>
+            {pagePreviewLabels.length ? (
+              <div style={{ display: 'grid', gridTemplateColumns: labelFormat === 'sheet40' ? 'repeat(4, minmax(0, 1fr))' : labelFormat === 'thermalSingle' ? 'minmax(0, 1fr)' : 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' }}>
+                {pagePreviewLabels.map((label, index) => {
+                  const isQr = label.codeFormat === 'qr' || String(label.barcode || '').includes('QR-');
+                  const scanUrl = buildProductScanUrl({ id: label.id || label.barcode, barcode: label.barcode }, '', { addToCart: !isQr });
+                  return (
+                    <article key={`${label.id}-${label.barcode}-${safePreviewPage}-${index}`} style={{ minWidth: 0, minHeight: labelFormat === 'thermalSingle' ? '180px' : '132px', padding: '0.45rem', border: '1px solid #d7dce2', borderRadius: '6px', background: '#fff', color: '#111', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.25rem' }}>
+                      <div style={{ fontSize: '0.6rem', lineHeight: 1, fontWeight: 800 }}>{shopConfig.name} · BODHAN</div>
+                      <div title={label.title} style={{ fontSize: '0.62rem', lineHeight: 1.1, fontWeight: 700, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{label.title}</div>
+                      <div style={{ height: labelFormat === 'sheet40' ? '58px' : '72px', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }} dangerouslySetInnerHTML={{ __html: renderCodeSvg(label.barcode, isQr ? 'qr' : 'barcode', 130, 52, true, scanUrl) }} />
+                      <div style={{ fontSize: '0.62rem', fontWeight: 800 }}>₹{Number(label.price || 0).toLocaleString()}{label.mrp && Number(label.mrp) > Number(label.price) ? <span style={{ marginLeft: '0.25rem', color: '#777', textDecoration: 'line-through', fontWeight: 500 }}>₹{Number(label.mrp).toLocaleString()}</span> : null}</div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ minHeight: '200px', display: 'grid', placeItems: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>
+                {previewKind === 'qr' ? 'No products match this selection for QR labels.' : 'No in-stock units match this selection for barcode labels.'}
+              </div>
+            )}
           </div>
-
-
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
+            <button type="button" className="btn-outline" disabled={safePreviewPage === 0} onClick={() => setPreviewPage(page => Math.max(0, page - 1))}>Previous page</button>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Page {previewLabels.length ? safePreviewPage + 1 : 0} of {previewLabels.length ? previewPageCount : 0} · {pagePreviewLabels.length} labels shown</span>
+            <button type="button" className="btn-outline" disabled={safePreviewPage >= previewPageCount - 1} onClick={() => setPreviewPage(page => Math.min(previewPageCount - 1, page + 1))}>Next page</button>
+          </div>
           <button
             onClick={handlePrint}
             className="btn-primary"
-            style={{ marginTop: '1rem' }}
-            disabled={!selectedProduct || !selectedPrintCount}
+            style={{ marginTop: '0.8rem', alignSelf: 'center' }}
+            disabled={!previewLabels.length}
           >
             <Printer size={16} />
-            <span>Print {selectedPrintCount} {codeFormat === 'qr' ? 'QR Label' : 'Barcode Labels'} Now</span>
+            <span>Print All {previewLabels.length} {previewKind === 'qr' ? 'QR Labels' : 'Barcode Labels'}</span>
           </button>
         </div>
 
