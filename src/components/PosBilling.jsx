@@ -347,6 +347,7 @@ export default function PosBilling({
             storage: product.storage || '',
             warranty: product.warranty || '',
             termsAndConditions: normalizeProductTerms(product.termsAndConditions || product.terms),
+            warrantyIncluded: false,
           }
         ];
       }
@@ -530,6 +531,12 @@ export default function PosBilling({
     }));
   };
 
+  const toggleItemWarranty = (id, included) => {
+    setCart(prev => prev.map(item => item.id === id
+      ? { ...item, warrantyIncluded: included }
+      : item));
+  };
+
   const toggleCartProductTerm = (id, term) => {
     setCart(previous => previous.map(item => {
       if (item.id !== id) return item;
@@ -571,6 +578,7 @@ export default function PosBilling({
       allImeis: customItemImei ? [customItemImei.trim()] : [],
       selectedImeis: customItemImei ? [customItemImei.trim()] : [],
       warranty: customItemWarranty.trim(),
+      warrantyIncluded: false,
       termsAndConditions: [],
       isCustom: true
     };
@@ -808,7 +816,7 @@ export default function PosBilling({
         taxable: item.rate * item.qty,
         total: item.rate * item.qty + (isNonGst ? 0 : item.rate * item.qty * ((item.gstRate || 18) / 100)),
         profit: (item.rate - item.buyPrice) * item.qty,
-        warranty: item.warranty || '',
+        warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
         rack: item.rack || 'R-01',
         bin: item.bin || 'B-01'
@@ -1605,6 +1613,31 @@ export default function PosBilling({
                             </label>
                           );
                         })}
+                      </div>
+                    </details>
+                    <details style={{ marginTop: '0.35rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.35rem' }}>
+                      <summary style={{ cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        Warranty {item.warranty ? `· ${item.warranty}` : '· not set'}
+                      </summary>
+                      <div style={{ display: 'grid', gap: '0.35rem', marginTop: '0.35rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(item.warrantyIncluded)}
+                            onChange={e => toggleItemWarranty(item.id, e.target.checked)}
+                          />
+                          Include warranty for this product on this bill
+                        </label>
+                        <input
+                          type="text"
+                          value={item.warranty || ''}
+                          onChange={e => updateItemWarranty(item.id, e.target.value)}
+                          className="input-field"
+                          placeholder="Enter warranty details for this bill"
+                          aria-label={`Warranty details for ${item.name}`}
+                          style={{ padding: '0.3rem 0.4rem', fontSize: '0.72rem', height: '30px' }}
+                        />
+                        {!item.warranty && <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>No warranty is saved for this product. Add details above if this item is covered.</span>}
                       </div>
                     </details>
                   </div>
