@@ -90,7 +90,7 @@ export default function PosBilling({
   
   // Checkout modal / complete state
   const [showPaymentVerifyModal, setShowPaymentVerifyModal] = useState(false);
-  const [cashDenominationCounts, setCashDenominationCounts] = useState({});
+  const [cashReceivedAmount, setCashReceivedAmount] = useState(0);
   const [sendInvoiceWhatsApp, setSendInvoiceWhatsApp] = useState(false);
   const [upiTxnRef, setUpiTxnRef] = useState('');
   const [upiVerified, setUpiVerified] = useState(false);
@@ -129,11 +129,6 @@ export default function PosBilling({
     return upiAccountsList.find(a => a.id === selectedUpiAccountId) || upiAccountsList[0];
   }, [upiAccountsList, selectedUpiAccountId]);
 
-  const cashDenominations = [500, 200, 100, 50, 20, 10, 5, 2, 1];
-  const cashDenominationTotal = cashDenominations.reduce(
-    (total, denomination) => total + denomination * (Number(cashDenominationCounts[denomination]) || 0),
-    0
-  );
 
   // EMI Financing State (Manual Counter Entry)
   const [emiFinancier, setEmiFinancier] = useState('Bajaj Finserv');
@@ -677,7 +672,7 @@ export default function PosBilling({
     setPaymentMode(initialMode);
     if (def) setSelectedUpiAccountId(def.id);
     setQrDisplayMode('dynamic');
-    setCashDenominationCounts({});
+    setCashReceivedAmount(0);
     setSendInvoiceWhatsApp(sendWhatsApp);
     setUpiTxnRef('');
     setUpiVerified(false);
@@ -699,13 +694,13 @@ export default function PosBilling({
 
   // Step 2: Finalize Sale ONLY AFTER Payment is Confirmed
   const handleConfirmAndGenerateInvoice = () => {
-    const cashReceived = paymentMode === 'Cash' ? cashDenominationTotal : 0;
+    const cashReceived = paymentMode === 'Cash' ? (Number(cashReceivedAmount) || 0) : 0;
     if (paymentMode === 'UPI' && (!upiTxnRef.trim() || !upiVerified)) {
       alert('Enter the UPI UTR / transaction ID and verify that payment was received before completing this sale.');
       return;
     }
     if (paymentMode === 'Cash' && cashReceived < grandTotal) {
-      alert('Enter the cash note and coin counts. The amount received must cover the total due.');
+      alert('Enter the cash received. The amount must cover the total due.');
       return;
     }
     if (paymentMode === 'EMI' && (!emiApprovalCode.trim() || !emiVerified || (emiDownPaymentMode === 'UPI' && Number(emiDownPayment) > 0 && !emiDownPaymentUpiRef.trim()))) {
@@ -2598,28 +2593,19 @@ export default function PosBilling({
                 </div>
 
                 <div style={{ marginBottom: '0.85rem' }}>
-                  <label className="input-label" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Count the notes and coins received:</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(82px, 1fr))', gap: '0.4rem' }}>
-                    {cashDenominations.map(denomination => (
-                      <label key={denomination} style={{ display: 'grid', gap: '0.2rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                        ₹{denomination} notes / coins
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={cashDenominationCounts[denomination] ?? ''}
-                          onChange={event => setCashDenominationCounts(current => ({ ...current, [denomination]: Math.max(0, Math.floor(Number(event.target.value) || 0)) }))}
-                          className="input-field"
-                          inputMode="numeric"
-                          aria-label={`Count of ₹${denomination} notes or coins`}
-                          style={{ padding: '0.4rem', fontFamily: 'var(--font-mono)' }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontWeight: 800 }}>
-                    <span>Cash received</span><span>₹{cashDenominationTotal.toLocaleString()}</span>
-                  </div>
+                  <label className="input-label" htmlFor="cash-received-amount" style={{ fontWeight: 700, marginBottom: '0.4rem' }}>Cash received (₹):</label>
+                  <input
+                    id="cash-received-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={cashReceivedAmount || ''}
+                    onChange={event => setCashReceivedAmount(Math.max(0, Number(event.target.value) || 0))}
+                    className="input-field"
+                    inputMode="decimal"
+                    placeholder="Enter amount received"
+                    style={{ padding: '0.55rem 0.65rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+                  />
                 </div>
 
                 {/* Live Return Change Calculator */}
@@ -2640,16 +2626,16 @@ export default function PosBilling({
                     fontSize: '1.25rem',
                     fontWeight: 900,
                     fontFamily: 'var(--font-mono)',
-                    color: cashDenominationTotal >= grandTotal ? 'var(--status-green)' : 'var(--status-amber)'
+                    color: cashReceivedAmount >= grandTotal ? 'var(--status-green)' : 'var(--status-amber)'
                   }}>
-                    ₹{Math.max(0, cashDenominationTotal - grandTotal).toLocaleString()}
+                    ₹{Math.max(0, cashReceivedAmount - grandTotal).toLocaleString()}
                   </span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => handleConfirmAndGenerateInvoice()}
-                  disabled={cashDenominationTotal < grandTotal}
+                  disabled={cashReceivedAmount < grandTotal}
                   className="btn-primary"
                   style={{ width: '100%', justifyContent: 'center', padding: '0.75rem', fontSize: '0.92rem' }}
                 >
