@@ -1,23 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import Header from './components/Header';
-import ExecutiveDashboard from './components/ExecutiveDashboard';
-import PosBilling from './components/PosBilling';
-import UsedMobileModule from './components/UsedMobileModule';
-import RepairLab from './components/RepairLab';
-import InventoryManager from './components/InventoryManager';
-import BarcodeGenerator from './components/BarcodeGenerator';
-import CustomerKhata from './components/CustomerKhata';
-import ExpenseSupplier from './components/ExpenseSupplier';
-import AnalyticsReports from './components/AnalyticsReports';
-import InvoicesHub from './components/InvoicesHub';
-import SettingsBackup from './components/SettingsBackup';
-import IllocaPulloutDrawer from './components/IllocaPulloutDrawer';
-import UniversalSearchModal from './components/UniversalSearchModal';
-import PrintTemplates from './components/PrintTemplates';
+const ExecutiveDashboard = lazy(() => import('./components/ExecutiveDashboard'));
+const PosBilling = lazy(() => import('./components/PosBilling'));
+const UsedMobileModule = lazy(() => import('./components/UsedMobileModule'));
+const RepairLab = lazy(() => import('./components/RepairLab'));
+const InventoryManager = lazy(() => import('./components/InventoryManager'));
+const BarcodeGenerator = lazy(() => import('./components/BarcodeGenerator'));
+const CustomerKhata = lazy(() => import('./components/CustomerKhata'));
+const ExpenseSupplier = lazy(() => import('./components/ExpenseSupplier'));
+const AnalyticsReports = lazy(() => import('./components/AnalyticsReports'));
+const InvoicesHub = lazy(() => import('./components/InvoicesHub'));
+const SettingsBackup = lazy(() => import('./components/SettingsBackup'));
+const IllocaPulloutDrawer = lazy(() => import('./components/IllocaPulloutDrawer'));
+const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal'));
+const PrintTemplates = lazy(() => import('./components/PrintTemplates'));
 import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
-import CustomerStorefront from './components/CustomerStorefront';
-import ProductScanDetailsModal from './components/ProductScanDetailsModal';
+const CustomerStorefront = lazy(() => import('./components/CustomerStorefront'));
+const ProductScanDetailsModal = lazy(() => import('./components/ProductScanDetailsModal'));
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from './utils/productTerms';
 import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from './utils/customTaxonomy';
 import { 
@@ -597,6 +597,7 @@ export default function App() {
   }
 
   return (
+    <Suspense fallback={<div role="status" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-secondary)' }}>Loading workspace…</div>}>
     <>
       {portal === 'customer' ? (
         <CustomerStorefront
@@ -897,5 +898,6 @@ export default function App() {
       )}
 
     </>
+    </Suspense>
   );
 }

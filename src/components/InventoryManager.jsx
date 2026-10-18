@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { 
   Package, 
   Plus, 
@@ -29,15 +29,17 @@ import {
   Download,
   Layers
 } from 'lucide-react';
-import MarketPriceCompareModal from './MarketPriceCompareModal';
+const MarketPriceCompareModal = lazy(() => import('./MarketPriceCompareModal'));
 import { ProductImagePicker, ProductImageViewer } from './ProductImages';
 import { saveProductImage, getProductImage, deleteProductImages } from '../utils/productImageStore';
 import { renderBarcodeSvg, renderCodeSvg, downloadStickerImage } from '../utils/barcode';
-import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
-import BulkMobileVariantEntryModal, { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS, POPULAR_COLORS } from './BulkMobileVariantEntryModal';
+const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
+const BulkMobileVariantEntryModal = lazy(() => import('./BulkMobileVariantEntryModal'));
+import { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS } from '../utils/productEntryOptions';
+import { POPULAR_COLORS } from '../utils/colorUtils';
 import { getProductColorHex } from '../utils/colorUtils';
-import ModelVariantImeiDirectory from './ModelVariantImeiDirectory';
-import ProductScanDetailsModal from './ProductScanDetailsModal';
+const ModelVariantImeiDirectory = lazy(() => import('./ModelVariantImeiDirectory'));
+const ProductScanDetailsModal = lazy(() => import('./ProductScanDetailsModal'));
 import { 
   STANDARD_PRODUCT_TERMS_PRESETS, 
   normalizeProductTerms, 
@@ -1138,12 +1140,14 @@ export default function InventoryManager({
 
       {/* MAIN VIEWPORT */}
       {viewMode === 'models' ? (
+        <Suspense fallback={<div role="status" className="hud-card" style={{ padding: '1.5rem', textAlign: 'center' }}>Loading model directory…</div>}>
         <ModelVariantImeiDirectory
           inventory={inventory}
           onSelectBarcode={onSelectBarcode}
           onPrintBarcodeSheet={onPrintBarcodeSheet}
           onQuickBill={handleSendToPos}
         />
+        </Suspense>
       ) : filteredProducts.length === 0 ? (
         /* Empty / Zero Match State */
         <div className="hud-card" style={{
@@ -3027,6 +3031,7 @@ export default function InventoryManager({
       )}
 
       {/* ONLINE PRICE COMPARE MODAL */}
+      <Suspense fallback={null}>
       <MarketPriceCompareModal
         isOpen={Boolean(compareProduct)}
         onClose={() => setCompareProduct(null)}
@@ -3036,6 +3041,7 @@ export default function InventoryManager({
         }}
         shopConfig={shopConfig}
       />
+      </Suspense>
 
       {/* QUICK BARCODE STICKER MODAL */}
       {quickBarcodeItem && (
@@ -3286,6 +3292,7 @@ export default function InventoryManager({
 
       {/* Mobile / Webcam Barcode Scanner Modal */}
       {showCameraScanner && (
+        <Suspense fallback={null}>
         <CameraBarcodeScannerModal
           isOpen={showCameraScanner}
           onClose={() => setShowCameraScanner(false)}
@@ -3295,10 +3302,12 @@ export default function InventoryManager({
           title={cameraScanTarget === 'imei1' ? "Scan IMEI 1 Barcode" : cameraScanTarget === 'imei2' ? "Scan IMEI 2 Barcode" : "Scan Product Box Barcode"}
           description="Point your phone camera or webcam at the barcode on the box"
         />
+        </Suspense>
       )}
 
       {/* Bulk Add products, variants, and optional serial tracking */}
       {showBulkModal && (
+        <Suspense fallback={null}>
         <BulkMobileVariantEntryModal
           isOpen={showBulkModal}
           onClose={() => setShowBulkModal(false)}
@@ -3306,10 +3315,12 @@ export default function InventoryManager({
           onPrintBarcodeSheet={onPrintBarcodeSheet}
           inventory={inventory}
         />
+        </Suspense>
       )}
 
       {/* Product QR Specs & Terms Details Modal */}
       {activeScanPreviewItem && (
+        <Suspense fallback={null}>
         <ProductScanDetailsModal
           product={activeScanPreviewItem}
           inventory={inventory}
@@ -3319,6 +3330,7 @@ export default function InventoryManager({
           shopConfig={shopConfig}
           role={role}
         />
+        </Suspense>
       )}
 
       {/* Quick IMEI Inspector Modal */}

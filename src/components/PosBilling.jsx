@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
   ShoppingCart, 
@@ -40,7 +40,7 @@ import {
 import confetti from 'canvas-confetti';
 import { getUpiQrUrl } from '../utils/barcode';
 import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareDevices';
-import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
@@ -3239,6 +3239,7 @@ export default function PosBilling({
 
       {/* Mobile / Webcam Barcode Scanner for POS Billing */}
       {showPosCameraScanner && (
+        <Suspense fallback={null}>
         <CameraBarcodeScannerModal
           isOpen={showPosCameraScanner}
           onClose={() => setShowPosCameraScanner(false)}
@@ -3249,6 +3250,7 @@ export default function PosBilling({
           title="POS Camera Barcode Scanner"
           description="Scan every unit barcode; matching items combine as quantities in the cart"
         />
+        </Suspense>
       )}
 
     </div>
