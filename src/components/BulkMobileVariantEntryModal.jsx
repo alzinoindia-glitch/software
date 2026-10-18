@@ -66,7 +66,7 @@ export default function BulkMobileVariantEntryModal({
     gstRate: 18,
     rack: 'R-01',
     bin: 'B-01',
-    warranty: '1 Year Brand Warranty',
+    warranty: '',
     receivedDate: new Date().toISOString().split('T')[0],
   });
 

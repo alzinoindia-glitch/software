@@ -43,7 +43,7 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
-import { findProductFromScan } from '../utils/productTerms';
+import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 
 
 export default function PosBilling({ 
@@ -156,7 +156,7 @@ export default function PosBilling({
   const [customItemBuyCost, setCustomItemBuyCost] = useState('0');
   const [customItemQty, setCustomItemQty] = useState('1');
   const [customItemHsn, setCustomItemHsn] = useState('851712');
-  const [customItemWarranty, setCustomItemWarranty] = useState('Standard Shop Warranty');
+  const [customItemWarranty, setCustomItemWarranty] = useState('');
   const [customItemImei, setCustomItemImei] = useState('');
 
   // Editing Line Item Modal / Inline state
@@ -345,7 +345,8 @@ export default function PosBilling({
             color: product.color || '',
             ram: product.ram || '',
             storage: product.storage || '',
-            warranty: product.warranty || '1 Year Official Warranty',
+            warranty: product.warranty || '',
+            termsAndConditions: normalizeProductTerms(product.termsAndConditions || product.terms),
           }
         ];
       }
@@ -529,6 +530,17 @@ export default function PosBilling({
     }));
   };
 
+  const toggleCartProductTerm = (id, term) => {
+    setCart(previous => previous.map(item => {
+      if (item.id !== id) return item;
+      const terms = normalizeProductTerms(item.termsAndConditions);
+      return {
+        ...item,
+        termsAndConditions: terms.includes(term) ? terms.filter(value => value !== term) : [...terms, term],
+      };
+    }));
+  };
+
   // Add custom / unlisted item to cart
   const handleAddCustomItem = (e) => {
     e.preventDefault();
@@ -558,7 +570,8 @@ export default function PosBilling({
       availableStock: 999,
       allImeis: customItemImei ? [customItemImei.trim()] : [],
       selectedImeis: customItemImei ? [customItemImei.trim()] : [],
-      warranty: customItemWarranty.trim() || 'Standard Shop Warranty',
+      warranty: customItemWarranty.trim(),
+      termsAndConditions: [],
       isCustom: true
     };
 
@@ -568,6 +581,7 @@ export default function PosBilling({
     setCustomItemBuyCost('0');
     setCustomItemQty('1');
     setCustomItemImei('');
+    setCustomItemWarranty('');
     setShowAddCustomModal(false);
   };
 
@@ -795,6 +809,7 @@ export default function PosBilling({
         total: item.rate * item.qty + (isNonGst ? 0 : item.rate * item.qty * ((item.gstRate || 18) / 100)),
         profit: (item.rate - item.buyPrice) * item.qty,
         warranty: item.warranty || '',
+        termsAndConditions: normalizeProductTerms(item.termsAndConditions),
         rack: item.rack || 'R-01',
         bin: item.bin || 'B-01'
       })),
@@ -1576,6 +1591,22 @@ export default function PosBilling({
                         ₹{(item.rate * item.qty).toLocaleString()}
                       </div>
                     </div>
+                    <details style={{ marginTop: '0.45rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.35rem' }}>
+                      <summary style={{ cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        Product policies ({normalizeProductTerms(item.termsAndConditions).length}) · choose for this bill
+                      </summary>
+                      <div style={{ display: 'grid', gap: '0.2rem', marginTop: '0.35rem' }}>
+                        {STANDARD_PRODUCT_TERMS_PRESETS.map(preset => {
+                          const checked = normalizeProductTerms(item.termsAndConditions).includes(preset.text);
+                          return (
+                            <label key={preset.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem', padding: '0.25rem', fontSize: '0.68rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleCartProductTerm(item.id, preset.text)} />
+                              <span>{preset.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </details>
                   </div>
                 ))
               )}

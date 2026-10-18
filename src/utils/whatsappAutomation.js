@@ -16,7 +16,11 @@ export function generateWhatsAppInvoiceText(invoice, shopConfig = {}) {
   const itemsList = (invoice.items || []).map((item, idx) => {
     const imeisStr = (item.imeis && item.imeis.length > 0) ? `\n   IMEI: ${item.imeis.join(', ')}` : '';
     const warrantyStr = item.warranty ? `\n   🛡️ Warranty: ${item.warranty}` : '';
-    return `${idx + 1}. *${item.name}*\n   Qty: ${item.qty} × ₹${Number(item.rate).toLocaleString('en-IN')}${imeisStr}${warrantyStr}`;
+    const policies = Array.isArray(item.termsAndConditions)
+      ? item.termsAndConditions.map(term => typeof term === 'string' ? term.trim() : term?.text || '').filter(Boolean)
+      : typeof item.termsAndConditions === 'string' ? item.termsAndConditions.split(/\r?\n|•/).map(term => term.trim()).filter(Boolean) : [];
+    const policiesStr = policies.length ? `\n   📜 Policies: ${policies.join('; ')}` : '';
+    return `${idx + 1}. *${item.name}*\n   Qty: ${item.qty} × ₹${Number(item.rate).toLocaleString('en-IN')}${imeisStr}${warrantyStr}${policiesStr}`;
   }).join('\n\n');
 
   const paymentMode = invoice.paymentMode || 'Cash';

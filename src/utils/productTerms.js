@@ -44,12 +44,7 @@ export const STANDARD_PRODUCT_TERMS_PRESETS = [
   }
 ];
 
-export const DEFAULT_PRODUCT_TERMS = [
-  STANDARD_PRODUCT_TERMS_PRESETS[0].text,
-  STANDARD_PRODUCT_TERMS_PRESETS[1].text,
-  STANDARD_PRODUCT_TERMS_PRESETS[2].text,
-  STANDARD_PRODUCT_TERMS_PRESETS[3].text
-];
+export const DEFAULT_PRODUCT_TERMS = [];
 
 /**
  * Normalizes terms and conditions from any format (string, array of strings, or undefined)

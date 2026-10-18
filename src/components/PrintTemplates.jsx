@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
-import { buildProductScanUrl } from '../utils/productTerms';
+import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 
 // Number to Words converter for Indian Rupee
@@ -197,12 +197,13 @@ export default function PrintTemplates({
                       </tr>
                     )}
                     {/* Print Refurbished / Device Condition, Warranty, Accessories */}
-                    {(item.condition || item.warranty || item.accessories) && (
+                    {(item.condition || item.warranty || item.accessories || normalizeProductTerms(item.termsAndConditions).length > 0) && (
                       <tr>
                         <td colSpan={3} style={{ fontSize: '8.5px', paddingLeft: '4px', color: '#444', lineHeight: 1.25 }}>
                           {item.condition && <div>• Cond: {item.condition}</div>}
                           {item.warranty && <div>• Warranty: {item.warranty}</div>}
                           {item.accessories && <div>• Included: {item.accessories}</div>}
+                          {normalizeProductTerms(item.termsAndConditions).map((term, termIndex) => <div key={termIndex}>• {term}</div>)}
                         </td>
                       </tr>
                     )}
@@ -413,6 +414,14 @@ export default function PrintTemplates({
                         </td>
                       </tr>
                     )}
+                    {(item.warranty || normalizeProductTerms(item.termsAndConditions).length > 0) && (
+                      <tr>
+                        <td colSpan={3} style={{ fontSize: '7px', paddingLeft: '2px', color: '#333', lineHeight: 1.2 }}>
+                          {item.warranty && <div>Warranty: {item.warranty}</div>}
+                          {normalizeProductTerms(item.termsAndConditions).map((term, termIndex) => <div key={termIndex}>• {term}</div>)}
+                        </td>
+                      </tr>
+                    )}
                   </React.Fragment>
                 ))}
               </tbody>
@@ -598,11 +607,12 @@ export default function PrintTemplates({
                                 IMEI/Serial: {item.imeis.join(', ')}
                               </div>
                             )}
-                            {(item.condition || item.warranty || item.accessories) && (
+                            {(item.condition || item.warranty || item.accessories || normalizeProductTerms(item.termsAndConditions).length > 0) && (
                               <div style={{ fontSize: '9.5px', color: '#555', marginTop: '2px', lineHeight: 1.3 }}>
                                 {item.condition && <div><span style={{ fontWeight: 600 }}>Condition:</span> {item.condition}</div>}
                                 {item.warranty && <div><span style={{ fontWeight: 600, color: '#3B60C5' }}>Warranty:</span> {item.warranty}</div>}
                                 {item.accessories && <div><span style={{ fontWeight: 600 }}>Included Accessories:</span> {item.accessories}</div>}
+                                {normalizeProductTerms(item.termsAndConditions).map((term, termIndex) => <div key={termIndex}>• {term}</div>)}
                               </div>
                             )}
                           </td>
