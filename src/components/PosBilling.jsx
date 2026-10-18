@@ -3087,24 +3087,6 @@ export default function PosBilling({
               </span>
             </div>
 
-            {/* Security Guarantee Note */}
-            <div style={{
-              background: 'rgba(59, 130, 246, 0.05)',
-              border: '1px solid var(--border-accent)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '0.65rem 0.85rem',
-              fontSize: '0.74rem',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <ShieldCheck size={16} color="var(--accent-primary)" />
-              <span>
-                <strong>Store Counter Safeguard Active:</strong> Real-time inventory deduction and sequential invoice numbers trigger only after payment verification above.
-              </span>
-            </div>
-
           </div>
         </div>
       )}
