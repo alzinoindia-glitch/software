@@ -65,6 +65,28 @@ const getPublicProductFrontImageUrl = (organizationId, productId) => {
   const path = `${organizationId}/${productId}/front.jpg`;
   return client.storage.from('product-images').getPublicUrl(path).data?.publicUrl || null;
 };
+
+// Model photos are a last-resort storefront fallback for older catalog rows
+// that have no saved photo in Storage. Prefer the product's own uploaded photo
+// whenever one exists.
+const getKnownProductImageFallback = product => {
+  const name = `${product?.brand || ''} ${product?.name || ''} ${product?.model || ''} ${product?.color || ''}`.toLowerCase();
+  if (/oppo.*a6s|a6s.*oppo/.test(name)) {
+    if (/plum\s*purple|purple/.test(name)) return 'https://opsg-img-cdn-gl.heytapimg.com/epb/202603/10/ATKWjNX5OFSMmlH4.png';
+    if (/aurora\s*gold|gold/.test(name)) return 'https://opsg-img-cdn-gl.heytapimg.com/epb/202603/10/lFrFr2dJltWRMqku.png';
+    return 'https://www.oppo.com/content/dam/oppo_com/common/mkt/v2-2/a6-series/a6s-5g-in/product/purple-glod.png';
+  }
+  if (/realme.*p4x|p4x.*realme/.test(name)) {
+    return 'https://rukminim2.flixcart.com/image/960/1280/xif0q/mobile/2/x/l/-original-imahgdr4xzbh4yhz.jpeg?q=60';
+  }
+  if (/realme.*p4\s*lite|p4\s*lite.*realme/.test(name)) {
+    return 'https://image.rakuten.co.jp/cellux/cabinet/2026/realme/p4lite5g_1i.jpg';
+  }
+  if (/oppo.*a6x|a6x.*oppo/.test(name)) {
+    return 'https://www.oppo.com/content/dam/oppo_com/oppo/product-asset-library/series-a/a6-series/a6x-5g-in/images/pc/colordetail.png';
+  }
+  return null;
+};
 import { sanitizePublicSpecifications } from '../utils/productSpecifications';
 
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
@@ -282,7 +304,10 @@ export default function CustomerStorefront({
           capacity: specifications.capacity || '',
           color: specifications.color || '',
           image: item.image_url || null,
-          imageFallbacks: [getPublicProductFrontImageUrl(item.organization_id, item.id)].filter(Boolean),
+          imageFallbacks: [
+            getPublicProductFrontImageUrl(item.organization_id, item.id),
+            getKnownProductImageFallback(item)
+          ].filter(Boolean),
           type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
         };
       })
@@ -363,6 +388,7 @@ export default function CustomerStorefront({
           color: item.color || '',
           image: item.image || item.frontImage || null,
           images: item.images || null,
+          imageFallbacks: [getKnownProductImageFallback(item)].filter(Boolean),
           type: itemType
         });
       });
