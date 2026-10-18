@@ -18,7 +18,7 @@ import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
 import CustomerStorefront from './components/CustomerStorefront';
 import ProductScanDetailsModal from './components/ProductScanDetailsModal';
-import { findProductFromScan } from './utils/productTerms';
+import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from './utils/productTerms';
 import { applyCustomTaxonomy, applyCustomTechnicians, getCustomTaxonomy, getCustomTechnicians } from './utils/customTaxonomy';
 import { 
   pullAllFromCloud, 
@@ -45,6 +45,29 @@ import {
 
 const OFFICIAL_INSTAGRAM_URL = 'https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr';
 const LEGACY_INSTAGRAM_URL = 'https://instagram.com/alzino.bodhan';
+const PRODUCT_POLICY_CLEANUP_VERSION = 1;
+
+function removeDefaultProductPolicies(inventory) {
+  const defaultPolicyText = new Set(STANDARD_PRODUCT_TERMS_PRESETS.map(preset => preset.text));
+  let changed = false;
+  const updated = inventory.map(item => {
+    const sourceTerms = item.termsAndConditions ?? item.terms;
+    const existingTerms = normalizeProductTerms(sourceTerms);
+    const termsAndConditions = existingTerms.filter(term => !defaultPolicyText.has(term));
+    const hadLegacyTerms = Object.prototype.hasOwnProperty.call(item, 'terms');
+    const legacyTerms = hadLegacyTerms ? normalizeProductTerms(item.terms).filter(term => !defaultPolicyText.has(term)) : undefined;
+    const termsChanged = termsAndConditions.length !== existingTerms.length ||
+      (hadLegacyTerms && legacyTerms.length !== normalizeProductTerms(item.terms).length);
+    if (!termsChanged) return item;
+    changed = true;
+    return {
+      ...item,
+      termsAndConditions,
+      ...(hadLegacyTerms ? { terms: legacyTerms } : {}),
+    };
+  });
+  return changed ? updated : inventory;
+}
 
 function normalizeShopConfig(config = {}) {
   const updated = { ...config };
@@ -105,6 +128,7 @@ export default function App() {
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
   const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier');
   const [cloudHydrated, setCloudHydrated] = useState(false);
+  const [productPolicyCleanupReady, setProductPolicyCleanupReady] = useState(false);
   const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
 
@@ -255,15 +279,15 @@ export default function App() {
   useEffect(() => { setStorageData('ROLE', role); }, [role]);
   useEffect(() => { 
     setStorageData('SHOP_CONFIG', shopConfig); 
-    if (cloudHydrated) pushCollectionToCloud('SHOP_CONFIG', shopConfig);
-  }, [shopConfig, cloudHydrated]);
+    if (cloudHydrated && productPolicyCleanupReady) pushCollectionToCloud('SHOP_CONFIG', shopConfig);
+  }, [shopConfig, cloudHydrated, productPolicyCleanupReady]);
   useEffect(() => { 
     setStorageData('INVENTORY', inventory); 
-    if (cloudHydrated) {
+    if (cloudHydrated && productPolicyCleanupReady) {
       pushCollectionToCloud('INVENTORY', inventory);
       syncPublishedCatalog(inventory);
     }
-  }, [inventory, cloudHydrated]);
+  }, [inventory, cloudHydrated, productPolicyCleanupReady]);
   useEffect(() => { 
     setStorageData('USED_PURCHASES', usedPurchases); 
     if (cloudHydrated) pushCollectionToCloud('USED_PURCHASES', usedPurchases);
@@ -299,6 +323,20 @@ export default function App() {
     pushCollectionToCloud('CUSTOM_TECHNICIANS', getCustomTechnicians());
   }, [cloudHydrated]);
 
+  // Clear legacy auto-added preset policies once per shop, after cloud hydration.
+  // The marker is shared in shopConfig so other devices do not clear policies
+  // that an admin intentionally selects after this cleanup.
+  useEffect(() => {
+    if (!cloudHydrated) return;
+    if (Number(shopConfig.productPolicyCleanupVersion) >= PRODUCT_POLICY_CLEANUP_VERSION) {
+      setProductPolicyCleanupReady(true);
+      return;
+    }
+    setInventory(current => removeDefaultProductPolicies(current));
+    setShopConfig(current => ({ ...current, productPolicyCleanupVersion: PRODUCT_POLICY_CLEANUP_VERSION }));
+    setProductPolicyCleanupReady(true);
+  }, [cloudHydrated, shopConfig.productPolicyCleanupVersion]);
+
   // Initial Cloud Sync & Realtime multi-device subscription on mount
   useEffect(() => {
     if (portal === 'customer' || (portal === 'admin' && isAdminAuthModalOpen) || (portal === 'cashier' && isCashierAuthOpen)) {
@@ -307,6 +345,7 @@ export default function App() {
     }
     let cancelled = false;
     setCloudHydrated(false);
+    setProductPolicyCleanupReady(false);
     const setters = {
       INVENTORY: setInventory,
       INVOICES: setInvoices,
