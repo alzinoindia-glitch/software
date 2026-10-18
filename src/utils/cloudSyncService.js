@@ -61,6 +61,37 @@ const rememberCloudDomain = (orgId, key) => {
 
 let publicCatalogTimer = null;
 let publicCatalogRevision = 0;
+// Keep a per-session catalog snapshot so an inventory edit does not download
+// every public product row again just to compute the next incremental upsert.
+const publishedCatalogSnapshots = new Map();
+
+const fetchPublishedCatalogSnapshot = async (client, organizationId) => {
+  const fullColumns = 'id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published, specifications, description';
+  const legacyColumns = 'id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published';
+  const fetchAllRows = async columns => {
+    const rows = [];
+    const pageSize = 500;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await client.from('catalog_products')
+        .select(columns)
+        .eq('organization_id', organizationId)
+        .order('id')
+        .range(from, from + pageSize - 1);
+      if (error) return { rows: null, error };
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) return { rows, error: null };
+    }
+  };
+
+  let result = await fetchAllRows(fullColumns);
+  let supportsProductDetails = true;
+  if (result.error && /specifications|description|column/i.test(result.error.message || '')) {
+    supportsProductDetails = false;
+    result = await fetchAllRows(legacyColumns);
+  }
+  if (result.error) throw result.error;
+  return { rows: result.rows, supportsProductDetails };
+};
 
 export const getActiveOrgId = async (client = getSupabaseClient()) => {
   if (!client) return null;
@@ -157,7 +188,9 @@ export const purgeArchivedCloudRecords = async (archiveOrganizationId, archiveCu
 export const syncPublishedCatalog = (inventory = []) => {
   if (!isSupabaseConfigured()) return;
   if (publicCatalogTimer) clearTimeout(publicCatalogTimer);
-  const snapshot = Array.isArray(inventory) ? inventory.map(item => ({ ...item })) : [];
+  // Inventory updates are immutable in the app; keep the existing array
+  // reference instead of cloning every product and its nested IMEI/image data.
+  const snapshot = Array.isArray(inventory) ? inventory : [];
   const revision = ++publicCatalogRevision;
   publicCatalogTimer = setTimeout(async () => {
     try {
@@ -202,24 +235,17 @@ export const syncPublishedCatalog = (inventory = []) => {
         };
       });
 
-      let { data: existing, error: existingError } = await client
-        .from('catalog_products')
-        .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published, specifications, description')
-        .eq('organization_id', organizationId);
-      let supportsProductDetails = true;
-      if (existingError && /specifications|description|column/i.test(existingError.message || '')) {
-        supportsProductDetails = false;
-        ({ data: existing, error: existingError } = await client
-          .from('catalog_products')
-          .select('id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, is_published')
-          .eq('organization_id', organizationId));
+      let catalogSnapshot = publishedCatalogSnapshots.get(organizationId);
+      if (!catalogSnapshot) {
+        catalogSnapshot = await fetchPublishedCatalogSnapshot(client, organizationId);
+        if (revision !== publicCatalogRevision) return;
+        catalogSnapshot.products = new Map(catalogSnapshot.rows.map(item => [String(item.id), item]));
+        delete catalogSnapshot.rows;
+        publishedCatalogSnapshots.set(organizationId, catalogSnapshot);
       }
-      if (existingError) throw existingError;
-      if (revision !== publicCatalogRevision) return;
-
-      const existingById = new Map((existing || []).map(item => [item.id, item]));
+      const { products: existingById, supportsProductDetails } = catalogSnapshot;
       const changedProducts = products.filter(product => {
-        const current = existingById.get(product.id);
+        const current = existingById.get(String(product.id));
         if (!current) return true;
         return current.name !== product.name ||
           current.brand !== product.brand ||
@@ -242,15 +268,17 @@ export const syncPublishedCatalog = (inventory = []) => {
       }
 
       const currentIds = new Set(products.map(item => item.id));
-      const removedIds = (existing || []).map(item => item.id).filter(id => !currentIds.has(id));
-      for (const id of removedIds) {
+      const removedIds = [...existingById.keys()].filter(id => !currentIds.has(id));
+      for (let offset = 0; offset < removedIds.length; offset += 500) {
         if (revision !== publicCatalogRevision) return;
         const { error } = await client.from('catalog_products')
           .delete()
           .eq('organization_id', organizationId)
-          .eq('id', id);
+          .in('id', removedIds.slice(offset, offset + 500));
         if (error) throw error;
       }
+      if (revision !== publicCatalogRevision) return;
+      catalogSnapshot.products = new Map(products.map(product => [String(product.id), product]));
     } catch (error) {
       console.warn('[PublicCatalog] Could not sync storefront products:', error.message);
     }
