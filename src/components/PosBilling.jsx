@@ -794,7 +794,7 @@ export default function PosBilling({
       emiDetails,
       splitDetails,
       cashTendered: paymentMode === 'Cash' ? cashReceived : null,
-      cashDenominations: paymentMode === 'Cash' ? { ...cashDenominationCounts } : null,
+      cashDenominations: null,
       changeReturned: paymentMode === 'Cash' ? Math.max(0, cashReceived - grandTotal) : 0,
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
