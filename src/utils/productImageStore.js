@@ -37,6 +37,23 @@ const openDb = () => {
 const keyFor = (productId, side) => `${productId}:${side}`;
 const remotePath = (organizationId, productId, side) => `${organizationId}/${productId}/${side}.jpg`;
 
+/** Convert an expired signed URL only for the public storefront image bucket. */
+export const getPublicProductImageUrlFromSignedUrl = (value) => {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value);
+    if (!url.hostname.endsWith('.supabase.co')) return null;
+    const signedImagePath = url.pathname.match(/^\/storage\/v1\/object\/sign\/product-images\/(.+)$/);
+    if (!signedImagePath) return null;
+    url.pathname = `/storage/v1/object/public/product-images/${signedImagePath[1]}`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
 const getAuthorizedOrganization = async () => {
   if (!isSupabaseConfigured()) return null;
   if (authorizedOrgCache.expiresAt > Date.now()) return authorizedOrgCache.orgId;

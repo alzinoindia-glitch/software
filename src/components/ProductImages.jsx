@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Camera, X, RotateCcw, ImageOff } from 'lucide-react';
-import { compressImageFile, useProductImages } from '../utils/productImageStore';
+import { compressImageFile, getPublicProductImageUrlFromSignedUrl, useProductImages } from '../utils/productImageStore';
 
 const SIDE_LABELS = { front: 'Front', back: 'Back' };
 
@@ -133,11 +133,11 @@ export function ProductImageViewer({ product, height = 140, dark = false, placeh
   const activeSide = images[side] ? side : available[0];
   const sourceKey = `${product?.id || ''}:${side}`;
   const failedSources = sourceFailures.key === sourceKey ? sourceFailures.sources : [];
+  const savedImageSources = [product?.imageUrl, product?.image_url, product?.image];
   const sources = [
     activeSide ? images[activeSide] : null,
-    product?.imageUrl,
-    product?.image_url,
-    product?.image,
+    ...savedImageSources,
+    ...savedImageSources.map(getPublicProductImageUrlFromSignedUrl),
     ...(Array.isArray(product?.imageFallbacks) ? product.imageFallbacks : [])
   ].filter((source, index, all) => typeof source === 'string' && source && all.indexOf(source) === index);
   const src = sources.find((source) => !failedSources.includes(source)) || null;

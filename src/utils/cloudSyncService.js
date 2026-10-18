@@ -1,7 +1,7 @@
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import { getAuthenticatorIdentity } from './authenticatorSession';
 import { clearSsdIndexedDb } from './syncAndStorageEngine';
-import { clearAllProductImages, syncAllProductImagesToCloud, getPublishedProductImageUrls } from './productImageStore';
+import { clearAllProductImages, syncAllProductImagesToCloud, getPublishedProductImageUrls, getPublicProductImageUrlFromSignedUrl } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
 import { sanitizePublicSpecifications } from './productSpecifications';
 
@@ -170,8 +170,10 @@ export const syncPublishedCatalog = (inventory = []) => {
       const products = snapshot.filter(item => item?.id && item?.name).map(item => {
         const stock = Math.max(0, Number(item.stock) || 0);
         const sellPrice = getProductSellingPrice(item);
-        const publicImage = [item.imageUrl, item.publicImageUrl, item.image]
+        const imageCandidates = [item.imageUrl, item.publicImageUrl, item.image];
+        const publicImage = imageCandidates
           .find(image => typeof image === 'string' && /^https?:\/\//i.test(image) && !/\/storage\/v1\/object\/sign\//i.test(image)) ||
+          imageCandidates.map(getPublicProductImageUrlFromSignedUrl).find(Boolean) ||
           catalogImageUrls.get(String(item.id)) || null;
         const publicSpecifications = sanitizePublicSpecifications(item.specifications);
         const specifications = { ...(publicSpecifications && typeof publicSpecifications === 'object' && !Array.isArray(publicSpecifications) ? publicSpecifications : {}) };
