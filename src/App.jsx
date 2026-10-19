@@ -10,6 +10,7 @@ const CustomerKhata = lazy(() => import('./components/CustomerKhata'));
 const ExpenseSupplier = lazy(() => import('./components/ExpenseSupplier'));
 const AnalyticsReports = lazy(() => import('./components/AnalyticsReports'));
 const InvoicesHub = lazy(() => import('./components/InvoicesHub'));
+const ReturnsManager = lazy(() => import('./components/ReturnsManager'));
 const SettingsBackup = lazy(() => import('./components/SettingsBackup'));
 const IllocaPulloutDrawer = lazy(() => import('./components/IllocaPulloutDrawer'));
 const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModal'));
@@ -725,6 +726,15 @@ export default function App() {
             shopConfig={shopConfig}
             onPrintInvoice={handlePrintInvoice}
             onNavigateTab={handleSelectTab}
+          />
+        )}
+
+        {activeTab === 'returns' && role === 'admin' && (
+          <ReturnsManager
+            invoices={invoices}
+            setInvoices={setInvoices}
+            inventory={inventory}
+            setInventory={setInventory}
           />
         )}
 
