@@ -15,56 +15,56 @@ export function generateWhatsAppInvoiceText(invoice, shopConfig = {}) {
 
   const itemsList = (invoice.items || []).map((item, idx) => {
     const imeisStr = (item.imeis && item.imeis.length > 0) ? `\n   IMEI: ${item.imeis.join(', ')}` : '';
-    const warrantyStr = item.warranty ? `\n   🛡️ Warranty: ${item.warranty}` : '';
+    const warrantyStr = item.warranty ? `\n   Warranty: ${item.warranty}` : '';
     const policies = Array.isArray(item.termsAndConditions)
       ? item.termsAndConditions.map(term => typeof term === 'string' ? term.trim() : term?.text || '').filter(Boolean)
       : typeof item.termsAndConditions === 'string' ? item.termsAndConditions.split(/\r?\n|•/).map(term => term.trim()).filter(Boolean) : [];
-    const policiesStr = policies.length ? `\n   📜 Policies: ${policies.join('; ')}` : '';
+    const policiesStr = policies.length ? `\n   Policies: ${policies.join('; ')}` : '';
     return `${idx + 1}. *${item.name}*\n   Qty: ${item.qty} × ₹${Number(item.rate).toLocaleString('en-IN')}${imeisStr}${warrantyStr}${policiesStr}`;
   }).join('\n\n');
 
   const paymentMode = invoice.paymentMode || 'Cash';
-  const paymentStatus = invoice.paymentStatus === 'KHATA_DUE' 
-    ? '⚠️ Khata Credit (Payment Due)' 
-    : 'PAID ✅';
+  const paymentStatus = invoice.paymentStatus === 'KHATA_DUE'
+    ? 'Khata Credit (Payment Due)'
+    : 'PAID';
 
-  let text = `🧾 *${shopName.toUpperCase()} • ${title}*\n`;
-  text += `📍 ${shopAddress}\n`;
-  text += `📞 Helpline: ${shopPhone}\n`;
+  let text = `*${shopName.toUpperCase()} • ${title}*\n`;
+  text += `${shopAddress}\n`;
+  text += `Helpline: ${shopPhone}\n`;
   if (!isNonGst && gstin) {
-    text += `🏛️ GSTIN: ${gstin}\n`;
+    text += `GSTIN: ${gstin}\n`;
   }
   text += `--------------------------------\n`;
-  text += `📄 *Bill No:* ${invoice.invoiceNo}\n`;
-  text += `📅 *Date:* ${invoice.date}\n`;
-  text += `👤 *Customer:* ${invoice.customerName || 'Walk-in'}\n`;
+  text += `*Bill No:* ${invoice.invoiceNo}\n`;
+  text += `*Date:* ${invoice.date}\n`;
+  text += `*Customer:* ${invoice.customerName || 'Walk-in'}\n`;
   if (invoice.customerPhone) {
-    text += `📱 *Phone:* ${invoice.customerPhone}\n`;
+    text += `*Phone:* ${invoice.customerPhone}\n`;
   }
   text += `--------------------------------\n`;
-  text += `📦 *ITEMS PURCHASED:*\n\n${itemsList}\n`;
+  text += `*ITEMS PURCHASED:*\n\n${itemsList}\n`;
   text += `--------------------------------\n`;
   if (invoice.discount > 0) {
-    text += `🏷️ *Discount Applied:* ₹${Number(invoice.discount).toLocaleString('en-IN')}\n`;
+    text += `*Discount Applied:* ₹${Number(invoice.discount).toLocaleString('en-IN')}\n`;
   }
-  text += `💰 *Total Bill Amount:* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
+  text += `*Total Bill Amount:* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
   if (invoice.advancePaid > 0) {
-    text += `💵 *Advance Paid Earlier (Intake):* -₹${Number(invoice.advancePaid).toLocaleString('en-IN')}\n`;
+    text += `*Advance Paid Earlier (Intake):* -₹${Number(invoice.advancePaid).toLocaleString('en-IN')}\n`;
     if (invoice.khataDue === 0) {
-      text += `✅ *Amount Collected Today:* ₹${Number(invoice.balanceCollectedNow ?? (invoice.grandTotal - invoice.advancePaid)).toLocaleString('en-IN')} (${paymentMode})\n`;
-      text += `✨ *Total Paid (Advance + Today):* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
-      text += `🏁 *Balance Remaining Due:* ₹0 (Paid in Full)\n`;
+      text += `*Amount Collected Today:* ₹${Number(invoice.balanceCollectedNow ?? (invoice.grandTotal - invoice.advancePaid)).toLocaleString('en-IN')} (${paymentMode})\n`;
+      text += `*Total Paid (Advance + Today):* ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}\n`;
+      text += `*Balance Remaining Due:* ₹0 (Paid in Full)\n`;
     }
   } else {
-    text += `💳 *Paid via:* ${paymentMode} (${paymentStatus})\n`;
+    text += `*Paid via:* ${paymentMode} (${paymentStatus})\n`;
   }
   
   if (invoice.khataDue > 0) {
-    text += `⚠️ *Balance Remaining (Khata):* ₹${Number(invoice.khataDue).toLocaleString('en-IN')}\n`;
+    text += `*Balance Remaining (Khata):* ₹${Number(invoice.khataDue).toLocaleString('en-IN')}\n`;
   }
   text += `--------------------------------\n`;
-  text += `🙏 *Thank you for choosing ${shopName}!* Official box with warranty registered.\n`;
-  text += `💬 Need assistance or accessories? Reply to this message anytime.`;
+  text += `*Thank you for choosing ${shopName}!* Official box with warranty registered.\n`;
+  text += `Need assistance or accessories? Reply to this message anytime.`;
 
   return text;
 }
