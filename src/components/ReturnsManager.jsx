@@ -75,12 +75,17 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       id: `RET-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       date: new Date().toISOString(), status: 'completed', type: action,
       originalItemIndex: Number(lineIndex), originalProductId: selectedLine.id,
-      originalProductName: selectedLine.name, quantity: Number(quantity),
+      originalProductName: selectedLine.name, originalCategory: selectedLine.category,
+      originalUnitProfit: Number(selectedLine.profit ?? ((Number(selectedLine.rate || 0) - Number(selectedLine.buyPrice || 0)) * Number(selectedLine.qty || 1))) / Math.max(1, Number(selectedLine.qty || 1)),
+      originalUnitCost: Number(selectedLine.buyPrice || 0), quantity: Number(quantity),
       originalUnitPaid: lineUnitPaid, refundAmount, refundMethod: action === 'refund' ? refundMethod : '',
       condition, restocked: Boolean(restock), returnedImeis,
       replacement: action === 'replacement' ? {
         productId: replaceProduct.id, productName: replaceProduct.name, quantity: Number(quantity),
-        imeis: replacementImeis, unitPrice: Number(replaceProduct.sellPrice ?? replaceProduct.price ?? 0), valueDifference: replacementDelta,
+        imeis: replacementImeis, unitPrice: Number(replaceProduct.sellPrice ?? replaceProduct.price ?? 0),
+        unitProfit: Number(replaceProduct.sellPrice ?? replaceProduct.price ?? 0) - Number(replaceProduct.buyPrice || 0),
+        unitCost: Number(replaceProduct.buyPrice || 0),
+        valueDifference: replacementDelta,
       } : null,
     };
 

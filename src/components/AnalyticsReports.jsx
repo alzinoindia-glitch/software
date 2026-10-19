@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments } from '../utils/returnAccounting';
 import { 
   TrendingUp, 
   IndianRupee, 
@@ -73,6 +74,19 @@ export default function AnalyticsReports({
       return true;
     });
   }, [invoices, dateFilter, todayStr, currentMonthStr]);
+  const inSelectedRange = (entry) => isDateInReportRange(entry.date, dateFilter, todayStr, currentMonthStr);
+  const selectedReturnEntries = useMemo(
+    () => getInvoiceReturns(invoices, inSelectedRange),
+    [invoices, dateFilter, todayStr, currentMonthStr]
+  );
+  const selectedTransactionEntries = useMemo(
+    () => getInvoiceTransactions(invoices, inSelectedRange),
+    [invoices, dateFilter, todayStr, currentMonthStr]
+  );
+  const selectedRefundTotal = selectedReturnEntries.reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
+  const selectedCashRefunds = selectedReturnEntries.filter((entry) => entry.refundMethod === 'Cash').reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
+  const selectedUpiRefunds = selectedReturnEntries.filter((entry) => String(entry.refundMethod || '').includes('UPI')).reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
+  const selectedCardRefunds = selectedReturnEntries.filter((entry) => String(entry.refundMethod || '').includes('Card')).reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
 
   // 2. Filtered Expenses by Date
   const filteredExpenses = useMemo(() => {
@@ -98,17 +112,23 @@ export default function AnalyticsReports({
   // Inflow from POS product sales
   const posInflow = filteredInvoices
     .filter(i => !i.isRefurbishedResale && !i.isRepairInvoice)
-    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
+      .filter((entry) => entry.refundMethod !== 'Khata credit' && !entry.isRefurbishedResale && !entry.isRepairInvoice && entry.originalCategory !== 'Used Mobiles' && entry.originalCategory !== 'Repair Services')
+      .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
 
   // Inflow from Refurbished Mobiles sales
   const refurbInflow = filteredInvoices
     .filter(i => i.isRefurbishedResale || (i.items && i.items.some(it => it.category === 'Used Mobiles')))
-    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
+      .filter((entry) => entry.refundMethod !== 'Khata credit' && (entry.isRefurbishedResale || entry.originalCategory === 'Used Mobiles'))
+      .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
 
   // Inflow from Mobile Repairs & Servicing
   const repairInflow = filteredInvoices
     .filter(i => i.isRepairInvoice || i.repairJobRef || (i.items && i.items.some(it => it.category === 'Repair Services')))
-    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+    .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
+      .filter((entry) => entry.refundMethod !== 'Khata credit' && (entry.isRepairInvoice || entry.repairJobRef || entry.originalCategory === 'Repair Services'))
+      .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
 
   // Repair intake advance payments collected
   const repairAdvancesCollected = repairJobs
@@ -122,10 +142,10 @@ export default function AnalyticsReports({
   const totalCashInflow = posInflow + refurbInflow + repairInflow;
 
   // Breakdown by payment instrument
-  const cashInflow = filteredInvoices.filter(i => i.paymentMode === 'Cash').reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
-  const upiInflow = filteredInvoices.filter(i => i.paymentMode?.includes('UPI')).reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
-  const cardInflow = filteredInvoices.filter(i => i.paymentMode === 'Card' || i.paymentMode?.includes('Card')).reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
-  const totalKhataGiven = filteredInvoices.reduce((s, i) => s + (Number(i.khataDue) || 0), 0);
+  const cashInflow = filteredInvoices.filter(i => i.paymentMode === 'Cash').reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedCashRefunds;
+  const upiInflow = filteredInvoices.filter(i => i.paymentMode?.includes('UPI')).reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedUpiRefunds;
+  const cardInflow = filteredInvoices.filter(i => i.paymentMode === 'Card' || i.paymentMode?.includes('Card')).reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedCardRefunds;
+  const totalKhataGiven = filteredInvoices.reduce((s, i) => s + (Number(i.khataDue) || 0), 0) - selectedReturnEntries.filter((entry) => entry.refundMethod === 'Khata credit').reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
 
   // =========================================================================
   // CASH OUTFLOW TRACKING
@@ -144,8 +164,8 @@ export default function AnalyticsReports({
   // =========================================================================
   // FINANCIAL P&L AND PROFIT TRACKING (MRP vs SELLING vs BUY COST)
   // =========================================================================
-  const totalRevenue = filteredInvoices.reduce((sum, i) => sum + (Number(i.grandTotal) || 0), 0);
-  const totalGrossProfit = filteredInvoices.reduce((sum, i) => sum + (Number(i.totalProfit) || 0), 0);
+  const totalRevenue = filteredInvoices.reduce((sum, i) => sum + (Number(i.grandTotal) || 0), 0) - selectedRefundTotal + sumReplacementRevenueAdjustments(invoices, inSelectedRange);
+  const totalGrossProfit = filteredInvoices.reduce((sum, i) => sum + (Number(i.totalProfit) || 0), 0) - sumReturnProfitAdjustments(invoices, inSelectedRange) + sumReplacementProfitAdjustments(invoices, inSelectedRange);
   const netProfit = totalGrossProfit - totalExpensesAmt;
 
   // =========================================================================
@@ -192,13 +212,46 @@ export default function AnalyticsReports({
       });
     });
 
+    selectedReturnEntries.forEach((entry) => {
+      const key = entry.originalProductName?.trim() || 'Returned Product';
+      const qty = Number(entry.quantity || 0);
+      const returnedAmount = Number(entry.refundAmount || 0);
+      const unitBuy = Number(entry.originalUnitCost || 0);
+      const profitAdjustment = Number(entry.originalUnitProfit || 0) * qty + (entry.restocked ? 0 : unitBuy * qty);
+      const invMatch = inventory.find((invIt) => String(invIt.id) === String(entry.originalProductId) || invIt.name?.toLowerCase() === key.toLowerCase());
+      const category = entry.originalCategory || invMatch?.category || 'Mobile Accessories';
+      if (!map[key]) map[key] = { name: key, category, brand: invMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: invMatch?.mrp || 0, totalMrp: 0, unitBuy, totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 };
+      map[key].unitsSold -= qty;
+      map[key].totalRevenue -= returnedAmount;
+      map[key].totalProfit -= profitAdjustment;
+      if (entry.restocked) map[key].totalBuyCost -= unitBuy * qty;
+    });
+    selectedTransactionEntries.filter((entry) => entry.type === 'replacement').forEach((entry) => {
+      const qty = Number(entry.quantity || 0);
+      const originalName = entry.originalProductName?.trim() || 'Returned Product';
+      const originalMatch = inventory.find((invIt) => String(invIt.id) === String(entry.originalProductId) || invIt.name?.toLowerCase() === originalName.toLowerCase());
+      const original = map[originalName] || (map[originalName] = { name: originalName, category: entry.originalCategory || originalMatch?.category || 'Mobile Accessories', brand: originalMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: originalMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(entry.originalUnitCost || 0), totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 });
+      original.unitsSold -= qty;
+      original.totalRevenue -= Number(entry.originalUnitPaid || 0) * qty;
+      original.totalProfit -= Number(entry.originalUnitProfit || 0) * qty;
+      if (entry.restocked) original.totalBuyCost -= Number(entry.originalUnitCost || 0) * qty;
+
+      const replacementName = entry.replacement?.productName?.trim() || 'Replacement Product';
+      const replacementMatch = inventory.find((invIt) => String(invIt.id) === String(entry.replacement?.productId) || invIt.name?.toLowerCase() === replacementName.toLowerCase());
+      const replacement = map[replacementName] || (map[replacementName] = { name: replacementName, category: replacementMatch?.category || 'Mobile Accessories', brand: replacementMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: replacementMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(entry.replacement?.unitCost || 0), totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 });
+      replacement.unitsSold += qty;
+      replacement.totalRevenue += Number(entry.replacement?.unitPrice || 0) * qty;
+      replacement.totalProfit += Number(entry.replacement?.unitProfit || 0) * qty;
+      replacement.totalBuyCost += Number(entry.replacement?.unitCost || 0) * qty;
+    });
+
     return Object.values(map).map(p => {
       p.avgSellPrice = p.unitsSold > 0 ? Math.round(p.totalRevenue / p.unitsSold) : 0;
       p.marginPct = p.totalRevenue > 0 ? Math.round((p.totalProfit / p.totalRevenue) * 100) : 0;
       p.discountFromMrp = p.totalMrp > p.totalRevenue ? Math.round(((p.totalMrp - p.totalRevenue) / p.totalMrp) * 100) : 0;
       return p;
     });
-  }, [filteredInvoices, inventory]);
+  }, [filteredInvoices, inventory, selectedReturnEntries, selectedTransactionEntries]);
 
   // Aggregate Category Level Stats
   const categoryStats = useMemo(() => {
@@ -246,23 +299,25 @@ export default function AnalyticsReports({
   // DAY-END CASH DRAWER (Z-REPORT) CALCULATIONS
   // =========================================================================
   const todayInvoices = useMemo(() => invoices.filter(inv => inv.date === todayStr), [invoices, todayStr]);
+  const todayReportReturn = (entry) => String(entry.date || '').slice(0, 10) === todayStr;
+  const todayCashRefundTotal = sumRefunds(invoices, todayReportReturn, (method) => method === 'Cash');
   const todayCashSales = useMemo(() => {
     return todayInvoices
       .filter(inv => inv.paymentMode === 'Cash' || inv.paymentMode?.includes('Cash'))
-      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
-  }, [todayInvoices]);
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayCashRefundTotal;
+  }, [todayInvoices, todayCashRefundTotal]);
 
   const todayUpiSales = useMemo(() => {
     return todayInvoices
       .filter(inv => inv.paymentMode?.includes('UPI'))
-      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
-  }, [todayInvoices]);
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - sumRefunds(invoices, todayReportReturn, (method) => String(method).includes('UPI'));
+  }, [todayInvoices, todayReportReturn, invoices]);
 
   const todayCardSales = useMemo(() => {
     return todayInvoices
       .filter(inv => inv.paymentMode === 'Card' || inv.paymentMode?.includes('Card'))
-      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
-  }, [todayInvoices]);
+      .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - sumRefunds(invoices, todayReportReturn, (method) => String(method).includes('Card'));
+  }, [todayInvoices, todayReportReturn, invoices]);
 
   const todayExpensesList = useMemo(() => expenses.filter(e => e.date === todayStr), [expenses, todayStr]);
   const todayCashExpenses = useMemo(() => {

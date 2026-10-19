@@ -27,6 +27,7 @@ import {
   Plus
 } from 'lucide-react';
 import { getAgingDays, applyOffer, removeOffer, recommendedOfferPct } from '../utils/stockOffers';
+import { sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments } from '../utils/returnAccounting';
 
 export default function ExecutiveDashboard({
   invoices = [],
@@ -67,8 +68,14 @@ export default function ExecutiveDashboard({
   }, [invoices, todayStr]);
 
   const todayBillsCount = todayInvoices.length;
-  const todayTotalSale = todayInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0);
-  const todayPaidReceived = todayInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+  const todayReturnDate = (entry) => String(entry.date || '').slice(0, 10) === todayStr;
+  const todayRefundTotal = sumRefunds(invoices, todayReturnDate);
+  const todayReplacementDelta = sumReplacementRevenueAdjustments(invoices, todayReturnDate);
+  const todayCashRefunds = sumRefunds(invoices, todayReturnDate, (method) => method === 'Cash');
+  const todayUpiRefunds = sumRefunds(invoices, todayReturnDate, (method) => method.includes('UPI'));
+  const todayOtherRefunds = sumRefunds(invoices, todayReturnDate, (method) => method !== 'Cash' && !method.includes('UPI') && method !== 'Khata credit');
+  const todayTotalSale = todayInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0) - todayRefundTotal + todayReplacementDelta;
+  const todayPaidReceived = todayInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayCashRefunds - todayUpiRefunds - todayOtherRefunds;
 
   // 2. AAJ KA GROSS PROFIT (Gross Profit after purchase cost)
   const todayGrossProfit = todayInvoices.reduce((sum, inv) => {
@@ -80,7 +87,7 @@ export default function ExecutiveDashboard({
       return itemSum + ((sellRate - buyRate) * (Number(item.qty) || 1));
     }, 0);
     return sum + (itemsProfit - (Number(inv.discount) || 0));
-  }, 0);
+  }, 0) - sumReturnProfitAdjustments(invoices, todayReturnDate) + sumReplacementProfitAdjustments(invoices, todayReturnDate);
 
   const todayProfitMarginPercent = todayTotalSale > 0 
     ? ((todayGrossProfit / todayTotalSale) * 100).toFixed(1) 
@@ -89,15 +96,15 @@ export default function ExecutiveDashboard({
   // 3. CASH / UPI ALAG COLLECTION
   const todayCashCollection = todayInvoices
     .filter(inv => inv.paymentMode === 'Cash')
-    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayCashRefunds;
 
   const todayUpiCollection = todayInvoices
     .filter(inv => inv.paymentMode === 'UPI' || inv.paymentMode === 'UPI / QR' || inv.paymentMode?.includes('UPI'))
-    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayUpiRefunds;
 
   const todayOtherCollection = todayInvoices
     .filter(inv => inv.paymentMode !== 'Cash' && !inv.paymentMode?.includes('UPI'))
-    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
+    .reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayOtherRefunds;
 
   // 4. STOCK VALUE AT PURCHASE RATE
   const totalStockUnits = inventory.reduce((sum, i) => sum + (Number(i.stock) || 0), 0);
