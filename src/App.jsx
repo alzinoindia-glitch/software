@@ -133,6 +133,37 @@ export default function App() {
   const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
 
+  // Keep browser titles and share metadata aligned with the active portal.
+  // The static HTML defaults to the public storefront for link preview crawlers.
+  useEffect(() => {
+    const isInternalPortal = portal === 'admin' || portal === 'cashier';
+    const title = isInternalPortal
+      ? 'ALZINO Retail ERP | Bodhan, Telangana'
+      : 'ALZINO Mobiles & Home Appliances | Bodhan';
+    const description = isInternalPortal
+      ? 'ALZINO retail ERP system for inventory, billing, repairs, and store operations.'
+      : 'Explore mobiles, home appliances, accessories, and in-store offers at ALZINO, Bodhan.';
+    document.title = title;
+
+    const setMeta = (selector, attribute, value, content) => {
+      let element = document.head.querySelector(selector);
+      if (!element) {
+        element = document.createElement('meta');
+        element.setAttribute(attribute, value);
+        document.head.appendChild(element);
+      }
+      element.content = content;
+    };
+
+    setMeta('meta[name="description"]', 'name', 'description', description);
+    setMeta('meta[property="og:site_name"]', 'property', 'og:site_name', isInternalPortal ? 'ALZINO Retail ERP' : 'ALZINO Mobiles & Home Appliances');
+    setMeta('meta[property="og:title"]', 'property', 'og:title', title);
+    setMeta('meta[property="og:description"]', 'property', 'og:description', description);
+    setMeta('meta[property="og:url"]', 'property', 'og:url', window.location.href);
+    setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', title);
+    setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', description);
+  }, [portal]);
+
   const [shopConfig, setShopConfig] = useState(() => {
     const cfg = getStorageData('SHOP_CONFIG', defaultShopConfig);
     const updated = normalizeShopConfig(cfg);

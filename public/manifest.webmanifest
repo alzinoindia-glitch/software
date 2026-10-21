@@ -1,8 +1,8 @@
 {
   "id": "/admin",
-  "name": "ALZINO ERP & POS",
-  "short_name": "ALZINO",
-  "description": "ALZINO store administration and point of sale",
+  "name": "ALZINO Retail ERP",
+  "short_name": "ALZINO ERP",
+  "description": "ALZINO retail ERP system for inventory, billing, repairs, and store operations",
   "start_url": "/admin",
   "scope": "/",
   "display": "standalone",

@@ -142,7 +142,7 @@ export default function ProductScanDetailsModal({
 
   const handleWhatsAppShare = () => {
     const scanUrl = buildProductScanUrl(product);
-    const text = `Check out ${product.brand || ''} ${product.name || ''} at ALZINO: ${scanUrl}`;
+    const text = `Check out ${product.brand || ''} ${product.name || ''} at ALZINO Mobiles & Home Appliances: ${scanUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
     setShowShareOptions(false);
   };
@@ -160,7 +160,7 @@ export default function ProductScanDetailsModal({
       try {
         await navigator.share({
           title: `${product.brand || ''} ${product.name || ''}`.trim(),
-          text: 'View this product at ALZINO',
+          text: 'View this product at ALZINO Mobiles & Home Appliances',
           url: scanUrl
         });
       } catch (error) {
