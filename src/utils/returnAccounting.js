@@ -34,7 +34,21 @@ export const sumReplacementRevenueAdjustments = (invoices = [], predicate = () =
 
 export const sumReplacementProfitAdjustments = (invoices = [], predicate = () => true) =>
   getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
-    .reduce((sum, entry) => sum + (Number(entry.replacement?.unitProfit || 0) - Number(entry.originalUnitProfit || 0)) * Number(entry.quantity || 0), 0);
+    .reduce((sum, entry) => {
+      const replacements = entry.replacements || (entry.replacement ? [entry.replacement] : []);
+      const replacementProfit = replacements.reduce((rowSum, row) => rowSum + Number(row.unitProfit || 0) * Number(row.quantity || 0), 0);
+      return sum + replacementProfit - Number(entry.originalUnitProfit || 0) * Number(entry.quantity || 0);
+    }, 0);
+
+export const sumReplacementSettlement = (invoices = [], predicate = () => true, methodPredicate = () => true) =>
+  getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
+    .reduce((sum, entry) => {
+      const settlement = entry.settlement || {};
+      if (!methodPredicate(settlement.method || '', settlement.direction || '', entry)) return sum;
+      if (settlement.direction === 'collect') return sum + Number(settlement.amount || 0);
+      if (settlement.direction === 'refund') return sum - Number(settlement.amount || 0);
+      return sum;
+    }, 0);
 
 export const isDateInReportRange = (date, dateFilter, todayStr, currentMonthStr) => {
   if (dateFilter === 'today') return String(date || '').slice(0, 10) === todayStr;
