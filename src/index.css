@@ -463,7 +463,7 @@ input, select, textarea {
 @media print {
   @page invoice-a4 {
     size: A4;
-    margin: 8mm;
+    margin: 0;
   }
 
   @page product-label {
@@ -521,6 +521,7 @@ input, select, textarea {
   }
 
   .print-container.print-invoice-a4 {
+    page: invoice-a4;
     width: 100% !important;
     max-width: 100% !important;
     overflow: visible !important;
@@ -955,9 +956,13 @@ input, select, textarea {
   .print-invoice-a4 .invoice-a4-sheet {
     width: 100% !important;
     min-height: 0 !important;
-    padding: 0.85rem !important;
-    font-size: 10px !important;
-    zoom: 1;
+    max-height: 287mm !important;
+    padding: 4mm !important;
+    font-size: 9px !important;
+    zoom: var(--invoice-print-zoom, 0.82);
+    overflow: hidden !important;
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
   }
 
   .print-invoice-a4 .invoice-a4-sheet table {

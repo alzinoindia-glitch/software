@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
@@ -26,11 +26,35 @@ export default function PrintTemplates({
   shopConfig, 
   onClosePrint 
 }) {
+  const printContainerRef = useRef(null);
   const [activeFormat, setActiveFormat] = useState(() => {
     if (printMode === 'a4') return 'a4';
     if (printMode === 'thermal-58') return 'thermal-58';
     return printMode || 'thermal';
   });
+
+  useEffect(() => {
+    const resetPrintScale = () => {
+      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
+      if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
+    };
+    window.addEventListener('afterprint', resetPrintScale);
+    return () => window.removeEventListener('afterprint', resetPrintScale);
+  }, []);
+
+  const handlePrint = () => {
+    if (activeFormat === 'a4') {
+      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
+      if (sheet) {
+        // Leave a small safety margin inside the A4 page at 96 DPI.
+        const printableHeight = (287 / 25.4) * 96;
+        const contentHeight = Math.max(sheet.scrollHeight, sheet.getBoundingClientRect().height);
+        const zoom = Math.min(1, printableHeight / contentHeight);
+        sheet.style.setProperty('--invoice-print-zoom', String(zoom));
+      }
+    }
+    window.requestAnimationFrame(() => window.print());
+  };
 
   if (!printData) return null;
 
@@ -107,7 +131,7 @@ export default function PrintTemplates({
         )}
 
         <button
-          onClick={() => window.print()}
+          onClick={handlePrint}
           style={{
             background: 'var(--accent-primary)',
             color: '#FFF',
@@ -140,7 +164,7 @@ export default function PrintTemplates({
       </div>
 
       {/* Actual Printable Document Container */}
-      <div className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}${printMode === 'barcodes' ? ` print-barcode${isSingleBarcodeLabel ? ' print-barcode-single' : '-sheet'}${printData.bulk && printData.format === 'thermalSingle' ? ' print-barcode-thermal-bulk' : ''}` : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+      <div ref={printContainerRef} className={`print-container${activeFormat === 'a4' ? ' print-invoice-a4' : ''}${printMode === 'barcodes' ? ` print-barcode${isSingleBarcodeLabel ? ' print-barcode-single' : '-sheet'}${printData.bulk && printData.format === 'thermalSingle' ? ' print-barcode-thermal-bulk' : ''}` : ''}`} style={{ background: '#FFFFFF', color: '#000000', margin: '0 auto', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
         
         {/* ========================================================== */}
         {/* MODE 1A: 3-INCH (80mm) THERMAL POS RECEIPT                 */}
@@ -158,13 +182,13 @@ export default function PrintTemplates({
               {!printData.isNonGst ? (
                 <div style={{ fontSize: '10px', fontWeight: 'bold' }}>GSTIN: {shopConfig.gstin}</div>
               ) : (
-                <div style={{ fontSize: '10px', fontWeight: 'bold' }}>*** ESTIMATE / CASH MEMO (NON-GST) ***</div>
+                <div style={{ fontSize: '10px', fontWeight: 'bold' }}>*** CASH MEMO (NON-GST) ***</div>
               )}
             </div>
 
             {/* Invoice Meta */}
             <div style={{ borderBottom: '1px dashed #000', paddingBottom: '2mm', marginBottom: '2mm', fontSize: '10px' }}>
-              <div><strong>{printData.isNonGst ? 'ESTIMATE NO:' : 'INVOICE:'}</strong> {printData.invoiceNo}</div>
+              <div><strong>{printData.isNonGst ? 'BILL NO:' : 'INVOICE:'}</strong> {printData.invoiceNo}</div>
               <div><strong>DATE:</strong> {printData.date} | <strong>ADMIN:</strong> ALZINO POS</div>
               <div><strong>CUSTOMER:</strong> {printData.customerName || 'Walk-in'}</div>
               {printData.customerPhone && <div><strong>PHONE:</strong> {printData.customerPhone}</div>}
@@ -378,13 +402,13 @@ export default function PrintTemplates({
               {!printData.isNonGst ? (
                 <div style={{ fontSize: '8.5px', fontWeight: 'bold' }}>GST: {shopConfig.gstin}</div>
               ) : (
-                <div style={{ fontSize: '8.5px', fontWeight: 'bold' }}>* ESTIMATE / CASH MEMO *</div>
+                <div style={{ fontSize: '8.5px', fontWeight: 'bold' }}>* CASH MEMO *</div>
               )}
             </div>
 
             {/* Meta */}
             <div style={{ borderBottom: '1px dashed #000', paddingBottom: '1.5mm', marginBottom: '1.5mm', fontSize: '8.5px' }}>
-              <div><strong>{printData.isNonGst ? 'EST:' : 'INV:'}</strong> {printData.invoiceNo}</div>
+              <div><strong>{printData.isNonGst ? 'BILL:' : 'INV:'}</strong> {printData.invoiceNo}</div>
               <div><strong>DT:</strong> {printData.date}</div>
               <div><strong>CUST:</strong> {printData.customerName || 'Walk-in'}</div>
               {printData.customerPhone && <div><strong>PH:</strong> {printData.customerPhone}</div>}
@@ -522,15 +546,15 @@ export default function PrintTemplates({
 
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: '#111', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {printData.isNonGst ? 'ESTIMATE / CASH MEMO' : 'TAX INVOICE'}
+                      {printData.isNonGst ? 'CASH MEMO' : 'TAX INVOICE'}
                     </div>
                     <div style={{ fontSize: '10px', color: '#666', fontWeight: 700 }}>
                       {printData.isNonGst 
-                        ? (copyNum === 1 ? '(COMMERCIAL ESTIMATE / BILL OF SUPPLY)' : '(SHOP RECORD COPY)') 
+                        ? (copyNum === 1 ? '(NON-GST BILL)' : '(SHOP RECORD COPY)')
                         : (copyNum === 1 ? '(ORIGINAL FOR RECIPIENT)' : '(DUPLICATE FOR SUPPLIER / SHOP RECORD)')}
                     </div>
                     <div style={{ marginTop: '4mm', fontSize: '12px' }}>
-                      <div><strong>{printData.isNonGst ? 'Estimate No:' : 'Invoice No:'}</strong> {printData.invoiceNo}</div>
+                      <div><strong>{printData.isNonGst ? 'Bill No:' : 'Invoice No:'}</strong> {printData.invoiceNo}</div>
                       <div><strong>Date:</strong> {printData.date}</div>
                       <div><strong>Place of Supply:</strong> Telangana (36)</div>
                       {!printData.isNonGst && <div><strong>Reverse Charge:</strong> No</div>}
@@ -699,7 +723,7 @@ export default function PrintTemplates({
                       </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #3B60C5', marginTop: '3mm', paddingTop: '2mm', fontSize: '16px', fontWeight: 800, color: '#3B60C5' }}>
-                      <span>{printData.isRepairInvoice ? 'TOTAL SERVICE AMOUNT:' : (printData.isNonGst ? 'TOTAL ESTIMATE AMOUNT:' : 'GRAND TOTAL:')}</span>
+                      <span>{printData.isRepairInvoice ? 'TOTAL SERVICE AMOUNT:' : (printData.isNonGst ? 'TOTAL AMOUNT:' : 'GRAND TOTAL:')}</span>
                       <span>₹{printData.grandTotal.toLocaleString()}</span>
                     </div>
 
