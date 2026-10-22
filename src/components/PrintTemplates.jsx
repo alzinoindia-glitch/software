@@ -37,12 +37,14 @@ export default function PrintTemplates({
     const resetPrintScale = () => {
       const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
       if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
+      document.body.classList.remove('print-document-mode');
     };
     window.addEventListener('afterprint', resetPrintScale);
     return () => window.removeEventListener('afterprint', resetPrintScale);
   }, []);
 
   const handlePrint = () => {
+    document.body.classList.add('print-document-mode');
     if (activeFormat === 'a4') {
       const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
       if (sheet) {

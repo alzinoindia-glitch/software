@@ -461,6 +461,10 @@ input, select, textarea {
 
 /* Print Styles */
 @media print {
+  @page {
+    margin: 0;
+  }
+
   @page invoice-a4 {
     size: A4;
     margin: 0;
@@ -505,6 +509,23 @@ input, select, textarea {
     background: #FFFFFF !important;
     color: #000000 !important;
     background-image: none !important;
+  }
+
+  body.print-document-mode {
+    margin: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+  }
+
+  body.print-document-mode > #root {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body.print-document-mode > #root > :not(.print-modal-container) {
+    display: none !important;
   }
   .no-print {
     display: none !important;
