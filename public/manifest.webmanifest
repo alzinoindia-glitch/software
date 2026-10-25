@@ -1,8 +1,8 @@
 {
   "id": "/admin",
-  "name": "ALZINO Retail ERP",
-  "short_name": "ALZINO ERP",
-  "description": "ALZINO retail ERP system for inventory, billing, repairs, and store operations",
+  "name": "ALZINO Mobiles & Home Appliances",
+  "short_name": "ALZINO",
+  "description": "Official ALZINO mobiles, accessories, and home appliances store in Bodhan",
   "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
