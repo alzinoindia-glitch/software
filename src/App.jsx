@@ -139,10 +139,10 @@ export default function App() {
     const isInternalPortal = portal === 'admin' || portal === 'cashier';
     const title = isInternalPortal
       ? 'ALZINO Retail ERP | Bodhan, Telangana'
-      : 'ALZINO Mobiles & Home Appliances | Bodhan';
+      : 'ALZINO Mobiles & Home Appliances – Official Store in Bodhan';
     const description = isInternalPortal
       ? 'ALZINO retail ERP system for inventory, billing, repairs, and store operations.'
-      : 'Explore mobiles, home appliances, accessories, and in-store offers at ALZINO, Bodhan.';
+      : 'New smartphones, accessories and home appliances arrive daily at ALZINO, Bodhan. Official sales, service and accessories.';
     document.title = title;
 
     const setMeta = (selector, attribute, value, content) => {
