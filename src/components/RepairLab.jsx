@@ -20,7 +20,8 @@ import {
   User,
   Phone,
   Box,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
 import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxonomy';
@@ -683,6 +684,7 @@ export default function RepairLab({
                     )}
                   </div>
 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <select
                     value={job.status}
                     onChange={(e) => updateStatus(job.jobId, e.target.value)}
@@ -704,6 +706,13 @@ export default function RepairLab({
                     <option value="Ready for Delivery">Ready for Delivery</option>
                     <option value="Delivered">Delivered</option>
                   </select>
+                  <button type="button" onClick={() => {
+                    if (!window.confirm(`Delete repair card ${job.jobId}? Any invoice already created will remain in Invoices.`)) return;
+                    setRepairJobs(prev => prev.filter(row => row.jobId !== job.jobId));
+                  }} className="btn-outline" title="Delete repair card" aria-label={`Delete repair card ${job.jobId}`} style={{ padding: '0.3rem', color: 'var(--status-red)', borderColor: 'var(--status-red)' }}>
+                    <Trash2 size={14} />
+                  </button>
+                  </div>
                 </div>
 
                 {/* Device & Customer Info */}

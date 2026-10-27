@@ -72,6 +72,10 @@ export const STANDARD_CATEGORIES = BASE_CATEGORIES;
 export const getBrandsForCategory = (category, inv = []) => getAvailableBrandsForCategory(category, inv);
 
 const parseImeiLines = value => String(value || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
+const isMobileStockCategory = category => {
+  const value = normalizeProductCategory(category).trim().toLowerCase();
+  return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
+};
 
 // Older inventory records can have IMEIs on the product (`imeis` / `imei1` /
 // `imei2`) while newer records keep them on `units`. Prefer unit data when it
@@ -190,6 +194,7 @@ export default function InventoryManager({
     barcode: '',
     imei1: '',
     imei2: '',
+    serialNumbers: '',
     warranty: '',
     termsAndConditions: [],
     receivedDate: new Date().toISOString().split('T')[0],
@@ -312,7 +317,8 @@ export default function InventoryManager({
       // 1. Assign to barcode or IMEI fields
       if (is15DigitImei || targetField === 'imei1' || targetField === 'imei2') {
         const appendImei = current => [...new Set([...parseImeiLines(current), raw])].join('\n');
-        if (targetField === 'imei2') next.imei2 = appendImei(next.imei2);
+        if (!isMobileStockCategory(next.category)) next.serialNumbers = appendImei(next.serialNumbers);
+        else if (targetField === 'imei2') next.imei2 = appendImei(next.imei2);
         else if (targetField === 'imei1') next.imei1 = appendImei(next.imei1);
         else if (parseImeiLines(next.imei1).length <= parseImeiLines(next.imei2).length) next.imei1 = appendImei(next.imei1);
         else next.imei2 = appendImei(next.imei2);
@@ -473,6 +479,7 @@ export default function InventoryManager({
       barcode: `ALZ-${Date.now().toString().slice(-6)}`,
       imei1: '',
       imei2: '',
+      serialNumbers: '',
       warranty: '',
       termsAndConditions: [],
       receivedDate: new Date().toISOString().split('T')[0],
@@ -525,6 +532,9 @@ export default function InventoryManager({
       barcode: item.barcode || '',
       imei1: imei1Values.filter(Boolean).join('\n') || item.imei1 || '',
       imei2: imei2Values.filter(Boolean).join('\n') || item.imei2 || '',
+      serialNumbers: !isMobileStockCategory(normalizedCategory)
+        ? (Array.isArray(item.serialNumbers) ? item.serialNumbers : storedImeis.legacyImeis).filter(Boolean).join('\n')
+        : '',
       warranty: item.warranty || '',
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
@@ -628,21 +638,28 @@ export default function InventoryManager({
     }
     const parsedStock = Number.parseInt(formData.stock, 10);
     const calculatedStock = Number.isFinite(parsedStock) ? Math.max(0, parsedStock) : 0;
-    const mobileCategory = ['New Mobiles', 'Used Mobiles'].includes(formData.category);
-    const imei1Values = parseImeiLines(formData.imei1);
-    const imei2Values = parseImeiLines(formData.imei2);
+    const mobileCategory = isMobileStockCategory(formData.category);
+    const imei1Values = mobileCategory ? parseImeiLines(formData.imei1) : [];
+    const imei2Values = mobileCategory ? parseImeiLines(formData.imei2) : [];
+    const serialNumberValues = mobileCategory ? [] : parseImeiLines(formData.serialNumbers);
     const enteredImeis = [...imei1Values, ...imei2Values];
     const originalUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
     const storedImeis = readStoredImeiFields(editingItem);
     const originalImeis = storedImeis.legacyImeis;
     const originalImei1 = storedImeis.imei1.filter(Boolean);
     const originalImei2 = storedImeis.imei2.filter(Boolean);
-    const imeisUnchanged = Boolean(editingItem) &&
+    const imeisUnchanged = Boolean(editingItem) && mobileCategory &&
       imei1Values.join('\n') === originalImei1.join('\n') &&
       imei2Values.join('\n') === originalImei2.join('\n');
+    const originalSerialNumbers = Array.isArray(editingItem?.serialNumbers)
+      ? editingItem.serialNumbers
+      : (!isMobileStockCategory(editingItem?.category) ? originalImeis : []);
+    const serialNumbersUnchanged = Boolean(editingItem) && !mobileCategory &&
+      serialNumberValues.join('\n') === originalSerialNumbers.join('\n');
+    const identifiersUnchanged = mobileCategory ? imeisUnchanged : serialNumbersUnchanged;
     const stockUnchanged = Boolean(editingItem) && calculatedStock === Math.max(0, Number.parseInt(editingItem.stock, 10) || 0);
     const categoryUnchanged = Boolean(editingItem) && normalizeProductCategory(formData.category) === normalizeProductCategory(editingItem.category);
-    const shouldValidateImeis = !editingItem || !imeisUnchanged || !stockUnchanged || !categoryUnchanged;
+    const shouldValidateImeis = !editingItem || !identifiersUnchanged || !stockUnchanged || !categoryUnchanged;
     if (shouldValidateImeis && mobileCategory && calculatedStock > 0 &&
         (imei1Values.length !== calculatedStock || imei2Values.length !== calculatedStock)) {
       alert(`Enter one IMEI 1 and one IMEI 2 for each of the ${calculatedStock} mobile unit(s). Put one IMEI on each line.`);
@@ -652,19 +669,25 @@ export default function InventoryManager({
       alert('Each mobile IMEI must contain exactly 15 digits.');
       return;
     }
-    const normalizedImeis = enteredImeis.map(imei => imei.trim());
+    if (shouldValidateImeis && !mobileCategory && serialNumberValues.length > 0 && serialNumberValues.length !== calculatedStock) {
+      alert(`Enter one serial number for each of the ${calculatedStock} stock unit(s), or clear the serial number field to leave this product untracked by serial.`);
+      return;
+    }
+    const enteredIdentifiers = mobileCategory ? enteredImeis : serialNumberValues;
+    const normalizedImeis = enteredIdentifiers.map(imei => imei.trim());
     const inventoryImeis = new Set(inventory
       .filter(item => item.id !== editingItem?.id)
       .flatMap(item => [
         ...(item.imeis || []),
+        ...(item.serialNumbers || []),
         item.imei1,
         item.imei2,
-        ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2])
+        ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2, unit.serialNumber])
       ])
       .filter(Boolean)
       .map(imei => String(imei).trim()));
     if (shouldValidateImeis && (new Set(normalizedImeis).size !== normalizedImeis.length || normalizedImeis.some(imei => inventoryImeis.has(imei)))) {
-      alert('One or more IMEIs are duplicated in this entry or already assigned to another stock item.');
+      alert(`One or more ${mobileCategory ? 'IMEIs' : 'serial numbers'} are duplicated in this entry or already assigned to another stock item.`);
       return;
     }
 
@@ -685,9 +708,14 @@ export default function InventoryManager({
       imagesMeta = editingItem?.images || null;
     }
 
-    const imeisArray = imeisUnchanged && editingItem
-      ? (originalImeis.length ? originalImeis : originalUnits.flatMap(unit => [unit.imei1, unit.imei2]).filter(Boolean))
-      : [...new Set(enteredImeis)];
+    const serialNumbersArray = mobileCategory ? [] : (serialNumbersUnchanged && editingItem
+      ? originalSerialNumbers
+      : [...new Set(serialNumberValues)]);
+    const imeisArray = mobileCategory
+      ? (imeisUnchanged && editingItem
+        ? (originalImeis.length ? originalImeis : originalUnits.flatMap(unit => [unit.imei1, unit.imei2]).filter(Boolean))
+        : [...new Set(enteredImeis)])
+      : serialNumbersArray;
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
@@ -709,6 +737,23 @@ export default function InventoryManager({
           imei2,
           barcode: existingUnit?.barcode || (index === 0 ? formData.barcode : ''),
           color: formData.color || existingUnit?.color || '',
+          rack: existingUnit?.rack || rackVal,
+          bin: existingUnit?.bin || binVal,
+          status: 'In Stock'
+        };
+      })
+      : !mobileCategory && serialNumbersUnchanged && editingItem && existingUnits.length
+      ? existingUnits
+      : !mobileCategory && serialNumbersArray.length > 0
+      ? serialNumbersArray.map((serialNumber, index) => {
+        const existingUnit = existingUnits.find(unit => unit.serialNumber === serialNumber) || existingUnits[index];
+        return {
+          ...(existingUnit || {}),
+          unitId: existingUnit?.unitId || `UNIT-${Date.now()}-${index}`,
+          serialNumber,
+          imei1: '',
+          imei2: '',
+          barcode: existingUnit?.barcode || (index === 0 ? formData.barcode : ''),
           rack: existingUnit?.rack || rackVal,
           bin: existingUnit?.bin || binVal,
           status: 'In Stock'
@@ -751,6 +796,7 @@ export default function InventoryManager({
             barcode: (formData.barcode || '').trim(),
             codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
             imeis: imeisArray,
+            serialNumbers: serialNumbersArray,
             imei1: imeisUnchanged ? (item.imei1 || originalImei1[0] || '') : (imei1Values[0] || ''),
             imei2: imeisUnchanged ? (item.imei2 || originalImei2[0] || '') : (imei2Values[0] || ''),
             units: unitRecords,
@@ -792,6 +838,7 @@ export default function InventoryManager({
         barcode: (formData.barcode || '').trim(),
         codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
         imeis: imeisArray,
+        serialNumbers: serialNumbersArray,
         imei1: imei1Values[0] || '',
         imei2: imei2Values[0] || '',
         units: unitRecords,
@@ -879,7 +926,7 @@ export default function InventoryManager({
           <Search size={15} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
-            placeholder="Search / Scan barcode, model, IMEI..."
+            placeholder="Search / Scan barcode, model, IMEI or serial number..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="input-field"
@@ -991,7 +1038,7 @@ export default function InventoryManager({
                 alignItems: 'center',
                 gap: '0.2rem'
               }}
-              title="Model-Wise, Colour-Wise & IMEI Directory"
+              title="Model, colour and unit identifier directory"
             >
               <Smartphone size={14} />
             </button>
@@ -1367,10 +1414,10 @@ export default function InventoryManager({
                         alignItems: 'center',
                         gap: '0.25rem'
                       }}
-                      title="Inspect all registered IMEIs for this model"
+              title="Inspect this product's unit identifiers"
                     >
                       <Smartphone size={10} />
-                      <span>{item.units?.length || item.imeis?.length} IMEIs</span>
+                      <span>{item.units?.length || item.serialNumbers?.length || item.imeis?.length} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}</span>
                     </button>
                   )}
                 </div>
@@ -1639,7 +1686,7 @@ export default function InventoryManager({
                               cursor: 'pointer'
                             }}
                           >
-                            📱 {item.units?.length || item.imeis?.length} IMEIs
+                            {isMobileStockCategory(item.category) ? '📱' : '🔢'} {item.units?.length || item.serialNumbers?.length || item.imeis?.length} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}
                           </button>
                         )}
                       </div>
@@ -2756,10 +2803,11 @@ export default function InventoryManager({
                 />
               </div>
 
-              {/* IMEI 1 & IMEI 2 with Camera Scanner */}
+              {/* Handsets use their two IMEIs; other stock uses one serial number per unit. */}
+              {isMobileStockCategory(formData.category) ? <>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){['New Mobiles', 'Used Mobiles'].includes(formData.category) ? ' *' : ''}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){Number(formData.stock) > 0 ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -2784,7 +2832,7 @@ export default function InventoryManager({
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){['New Mobiles', 'Used Mobiles'].includes(formData.category) ? ' *' : ''}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){Number(formData.stock) > 0 ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -2806,6 +2854,13 @@ export default function InventoryManager({
                   style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
                 />
               </div>
+              </> : <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Serial No. (one per unit, optional)</label>
+                  <button type="button" onClick={() => { setCameraScanTarget('imei1'); setShowCameraScanner(true); }} style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }} title="Scan serial number"><Camera size={13} /></button>
+                </div>
+                <textarea rows={Math.min(5, Math.max(2, Number(formData.stock) || 1))} placeholder={Number(formData.stock) > 1 ? `Enter up to ${formData.stock} serial numbers, one per line` : 'Enter or scan serial number'} value={formData.serialNumbers || ''} onChange={event => setFormData(prev => ({ ...prev, serialNumbers: event.target.value }))} className="input-field" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }} />
+              </div>}
 
               {/* TERMS & CONDITIONS (SHOWN UPON SCANNING QR OR BARCODE) */}
               <div style={{
@@ -3299,7 +3354,7 @@ export default function InventoryManager({
           onScan={(scannedCode) => {
             handleBarcodeOrImeiScanned(scannedCode, cameraScanTarget);
           }}
-          title={cameraScanTarget === 'imei1' ? "Scan IMEI 1 Barcode" : cameraScanTarget === 'imei2' ? "Scan IMEI 2 Barcode" : "Scan Product Box Barcode"}
+          title={cameraScanTarget === 'imei1' ? (isMobileStockCategory(formData.category) ? 'Scan IMEI 1 Barcode' : 'Scan Serial Number') : cameraScanTarget === 'imei2' ? 'Scan IMEI 2 Barcode' : 'Scan Product Box Barcode'}
           description="Point your phone camera or webcam at the barcode on the box"
         />
         </Suspense>
@@ -3341,7 +3396,7 @@ export default function InventoryManager({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Smartphone size={18} color="#10B981" />
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Registered IMEIs & Units</h3>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>{isMobileStockCategory(activeImeiViewerItem.category) ? 'Registered IMEIs & Units' : 'Registered Serial Numbers & Units'}</h3>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                     {activeImeiViewerItem.name} ({activeImeiViewerItem.stock} in stock)
                   </div>
@@ -3376,8 +3431,8 @@ export default function InventoryManager({
                           <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Shelf: {u.rack || activeImeiViewerItem.rack}/{u.bin || activeImeiViewerItem.bin}</span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.85rem', marginTop: '0.25rem', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
-                          {u.imei1 && (
-                            <span style={{ color: '#10B981', fontWeight: 700 }}>IMEI 1: {u.imei1}</span>
+                          {(u.imei1 || u.serialNumber) && (
+                            <span style={{ color: '#10B981', fontWeight: 700 }}>{isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEI 1' : 'Serial No.'}: {u.imei1 || u.serialNumber}</span>
                           )}
                           {u.imei2 && (
                             <span style={{ color: 'var(--text-muted)' }}>IMEI 2: {u.imei2}</span>
@@ -3406,7 +3461,7 @@ export default function InventoryManager({
                         )}
                         <button
                           type="button"
-                          onClick={() => handleCopy(u.imei1 || u.barcode, `view-${idx}`)}
+                          onClick={() => handleCopy(u.imei1 || u.imei2 || u.serialNumber || u.barcode, `view-${idx}`)}
                           className="btn-secondary"
                           style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
                         >
@@ -3433,7 +3488,7 @@ export default function InventoryManager({
                         fontSize: '0.78rem'
                       }}
                     >
-                      <span style={{ fontWeight: 700, color: '#10B981' }}>#{idx + 1} IMEI: {im}</span>
+                      <span style={{ fontWeight: 700, color: '#10B981' }}>#{idx + 1} {isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEI' : 'Serial No.'}: {im}</span>
                       <button
                         type="button"
                         onClick={() => handleCopy(im, `raw-${idx}`)}
@@ -3447,7 +3502,7 @@ export default function InventoryManager({
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  No IMEIs assigned to this item.
+                  No {isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEIs' : 'serial numbers'} assigned to this item.
                 </div>
               )}
             </div>

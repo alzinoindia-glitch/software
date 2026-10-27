@@ -25,6 +25,11 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
+const isMobileStockCategory = category => {
+  const value = String(category || '').trim().toLowerCase();
+  return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
+};
+
 export default function InvoicesHub({ 
   invoices = [], 
   setInvoices = () => {}, 
@@ -47,6 +52,9 @@ export default function InvoicesHub({
 
   // View Invoice Modal State
   const [selectedViewInvoice, setSelectedViewInvoice] = useState(null);
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectMode, setCollectMode] = useState('Cash');
+  const [collectReference, setCollectReference] = useState('');
 
   // Customer Profile Modal State (from Customer page)
   const [selectedCustomerModal, setSelectedCustomerModal] = useState(null);
@@ -56,6 +64,41 @@ export default function InvoicesHub({
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const getInvoiceBalance = invoice => Math.max(0, Number(invoice?.balanceDue ?? invoice?.khataDue ?? 0));
+
+  const handleCollectBalance = invoice => {
+    const due = getInvoiceBalance(invoice);
+    const amount = Number(collectAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > due) {
+      showToast(`Enter an amount between ₹1 and ₹${due.toLocaleString('en-IN')}.`);
+      return;
+    }
+    if (collectMode !== 'Cash' && !collectReference.trim()) {
+      showToast(`Enter the ${collectMode} transaction or approval reference.`);
+      return;
+    }
+    const newDue = due - amount;
+    const updatedInvoice = {
+      ...invoice,
+      paidAmount: Number(invoice.paidAmount || 0) + amount,
+      balanceDue: newDue,
+      khataDue: newDue,
+      paymentStatus: newDue > 0 ? 'PARTIAL' : 'PAID',
+      payments: [...(invoice.payments || []), { id: `PAY-${Date.now()}`, date: new Date().toISOString(), amount, mode: collectMode, reference: collectReference.trim() }]
+    };
+    setInvoices(prev => prev.map(row => row.invoiceNo === invoice.invoiceNo ? updatedInvoice : row));
+    if (invoice.customerPhone) {
+      const phone = invoice.customerPhone.replace(/\D/g, '');
+      setCustomers(prev => prev.map(customer => customer.phone?.replace(/\D/g, '') === phone
+        ? { ...customer, balanceDue: Math.max(0, Number(customer.balanceDue || 0) - amount) }
+        : customer));
+    }
+    setSelectedViewInvoice(updatedInvoice);
+    setCollectAmount('');
+    setCollectReference('');
+    showToast(`₹${amount.toLocaleString('en-IN')} received for ${invoice.invoiceNo}.`);
   };
 
   // Filtered Invoices
@@ -99,7 +142,7 @@ export default function InvoicesHub({
   const totalBilled = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0);
   const totalProfit = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.totalProfit) || 0), 0);
   const totalPaid = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
-  const totalDueKhata = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.khataDue) || 0), 0);
+  const totalDueKhata = filteredInvoices.reduce((sum, inv) => sum + getInvoiceBalance(inv), 0);
 
   // Breakdown by Category
   const posCount = invoices.filter(i => !i.isRefurbishedResale && !i.isRepairInvoice).length;
@@ -131,8 +174,12 @@ export default function InvoicesHub({
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
-    const paid = invoiceToEdit.paymentMode === 'Khata' ? 0 : grand;
-    const khata = invoiceToEdit.paymentMode === 'Khata' ? grand : 0;
+    const previousDue = getInvoiceBalance(invoiceToEdit);
+    const existingPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
+    const paid = Math.min(grand, existingPaid);
+    const khata = invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
+      ? 0
+      : Math.max(0, grand - paid);
 
     const updatedInvoice = {
       ...invoiceToEdit,
@@ -146,7 +193,11 @@ export default function InvoicesHub({
       sgstTotal: sgst,
       grandTotal: grand,
       paidAmount: paid,
+      balanceDue: khata,
       khataDue: khata,
+      paymentStatus: invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
+        ? 'EMI_SANCTIONED'
+        : (khata > 0 ? 'PARTIAL' : 'PAID'),
       totalProfit: invoiceToEdit.items.reduce((s, it) => s + ((Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)), 0) - disc
     };
 
@@ -156,8 +207,10 @@ export default function InvoicesHub({
     if (updatedInvoice.customerPhone) {
       setCustomers(prev => prev.map(c => {
         if (c.phone && c.phone.replace(/\D/g, '') === updatedInvoice.customerPhone.replace(/\D/g, '')) {
+          const updatedCustomerDue = Math.max(0, Number(c.balanceDue || 0) + khata - previousDue);
           return {
             ...c,
+            balanceDue: updatedCustomerDue,
             name: updatedInvoice.customerName || c.name,
             address: updatedInvoice.customerAddress || c.address,
             gstin: updatedInvoice.customerGstin || c.gstin
@@ -226,7 +279,7 @@ export default function InvoicesHub({
         <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${idx + 1}</td>
         <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">
           <strong style="color: #0f172a;">${it.name}</strong>
-          ${it.imeis && it.imeis.length > 0 ? `<div style="font-size: 11px; color: #64748b; font-family: monospace;">IMEI/Ref: ${it.imeis.join(', ')}</div>` : ''}
+          ${it.imeis && it.imeis.length > 0 ? `<div style="font-size: 11px; color: #64748b; font-family: monospace;">${isMobileStockCategory(it.category) ? 'IMEI' : 'Serial No.'}: ${it.imeis.join(', ')}</div>` : ''}
           ${it.warranty ? `<div style="font-size: 11px; color: #4338ca;">🛡️ Warranty: ${it.warranty}</div>` : ''}
         </td>
         <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${it.qty || 1}</td>
@@ -281,10 +334,10 @@ export default function InvoicesHub({
       ${shopConfig?.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' ? `<h1 class="title">${shopConfig.name}</h1>` : ''}
       <div class="meta">${shopConfig?.tagline || 'Smart Mobiles • Used Devices • Electronics • Repairing Lab'}</div>
       <div class="meta">${shopConfig?.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}</div>
-      <div class="meta">Ph: ${shopConfig?.phone || '+91 91212 12292'} ${shopConfig?.gstin ? `| GSTIN: ${shopConfig.gstin}` : ''}</div>
+      <div class="meta">Ph: ${shopConfig?.phone || '+91 91212 12292'} ${!inv.isNonGst && shopConfig?.gstin ? `| GSTIN: ${shopConfig.gstin}` : ''}</div>
     </div>
     <div style="text-align: right;">
-      <h2 style="margin: 0; font-size: 18px; color: #1e1b4b; font-weight: 800;">${inv.invoiceType || (inv.isNonGst ? 'Cash Memo' : 'Tax Invoice')}</h2>
+      <h2 style="margin: 0; font-size: 18px; color: #1e1b4b; font-weight: 800;">${inv.isNonGst ? 'Cash Memo' : (inv.invoiceType || 'Tax Invoice')}</h2>
       <div class="badge">BILL #: ${inv.invoiceNo}</div>
       <div class="meta"><strong>Date:</strong> ${inv.date}</div>
       <div class="meta"><strong>Payment:</strong> ${inv.paymentMode}</div>
@@ -344,19 +397,16 @@ export default function InvoicesHub({
         <span>Grand Total:</span>
         <span style="font-family: monospace;">₹${Number(inv.grandTotal).toLocaleString('en-IN')}</span>
       </div>
-      ${inv.advancePaid > 0 ? `
+      ${Number(inv.paidAmount || 0) > 0 && Number(inv.paidAmount) < Number(inv.grandTotal) ? `
       <div class="summary-row" style="color: #64748b;">
-        <span>Advance Paid:</span>
-        <span style="font-family: monospace;">-₹${Number(inv.advancePaid).toLocaleString('en-IN')}</span>
+        <span>Amount Paid:</span>
+        <span style="font-family: monospace;">-₹${Number(inv.paidAmount).toLocaleString('en-IN')}</span>
       </div>
-      <div class="summary-row" style="font-weight: 700; color: #047857;">
-        <span>Balance Collected:</span>
-        <span style="font-family: monospace;">₹${Number(inv.balanceCollectedNow ?? (inv.grandTotal - inv.advancePaid)).toLocaleString('en-IN')}</span>
-      </div>` : ''}
-      ${inv.khataDue > 0 ? `
+      ` : ''}
+      ${(inv.balanceDue ?? inv.khataDue) > 0 ? `
       <div class="summary-row" style="color: #dc2626; font-weight: 800;">
-        <span>Balance Due (Khata):</span>
-        <span style="font-family: monospace;">₹${Number(inv.khataDue).toLocaleString('en-IN')}</span>
+        <span>Balance Due:</span>
+        <span style="font-family: monospace;">₹${Number(inv.balanceDue ?? inv.khataDue).toLocaleString('en-IN')}</span>
       </div>` : ''}
     </div>
   </div>
@@ -405,7 +455,7 @@ export default function InvoicesHub({
         address: inv.customerAddress || 'Bodhan, Telangana',
         gstin: inv.customerGstin || '',
         totalSpent: inv.grandTotal || 0,
-        balanceDue: inv.khataDue || 0,
+        balanceDue: getInvoiceBalance(inv),
         isNew: true
       });
     }
@@ -778,9 +828,9 @@ export default function InvoicesHub({
                             )}
                           </div>
                         )}
-                        {inv.khataDue > 0 && (
+                        {getInvoiceBalance(inv) > 0 && (
                           <div style={{ fontSize: '0.7rem', color: 'var(--status-red)', fontWeight: 700, marginTop: '0.15rem' }}>
-                            Due: ₹{inv.khataDue.toLocaleString()}
+                            Due: ₹{getInvoiceBalance(inv).toLocaleString()}
                           </div>
                         )}
                       </td>
@@ -1294,7 +1344,7 @@ export default function InvoicesHub({
                           <strong style={{ display: 'block', fontSize: '0.85rem' }}>{it.name}</strong>
                           {it.imeis && it.imeis.length > 0 && (
                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                              IMEI: {it.imeis.join(', ')}
+                              {isMobileStockCategory(it.category) ? 'IMEI' : 'Serial No.'}: {it.imeis.join(', ')}
                             </span>
                           )}
                           {it.warranty && (
@@ -1354,20 +1404,32 @@ export default function InvoicesHub({
                     <span>Grand Total:</span>
                     <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{Number(selectedViewInvoice.grandTotal).toLocaleString('en-IN')}</strong>
                   </div>
-                  {selectedViewInvoice.advancePaid > 0 && (
+                  {Number(selectedViewInvoice.paidAmount || 0) > 0 && Number(selectedViewInvoice.paidAmount) < Number(selectedViewInvoice.grandTotal) && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                      <span>Advance Paid Earlier:</span>
-                      <strong style={{ fontFamily: 'var(--font-mono)' }}>-₹{Number(selectedViewInvoice.advancePaid).toLocaleString('en-IN')}</strong>
+                      <span>Paid So Far:</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>-₹{Number(selectedViewInvoice.paidAmount).toLocaleString('en-IN')}</strong>
                     </div>
                   )}
-                  {selectedViewInvoice.khataDue > 0 && (
+                  {getInvoiceBalance(selectedViewInvoice) > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--status-red)', fontWeight: 800 }}>
-                      <span>Khata Balance Due:</span>
-                      <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{Number(selectedViewInvoice.khataDue).toLocaleString('en-IN')}</strong>
+                      <span>Balance Due:</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>₹{getInvoiceBalance(selectedViewInvoice).toLocaleString('en-IN')}</strong>
                     </div>
                   )}
                 </div>
               </div>
+
+              {getInvoiceBalance(selectedViewInvoice) > 0 && (
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.85rem 1rem', background: 'var(--surface-secondary)' }}>
+                  <strong style={{ display: 'block', marginBottom: '0.6rem' }}>Receive remaining payment</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.55rem', alignItems: 'end' }}>
+                    <label style={{ fontSize: '0.72rem' }}>Amount received<input className="input-field" type="number" min="1" max={getInvoiceBalance(selectedViewInvoice)} step="0.01" value={collectAmount} onChange={event => setCollectAmount(event.target.value)} placeholder={`Up to ₹${getInvoiceBalance(selectedViewInvoice)}`} /></label>
+                    <label style={{ fontSize: '0.72rem' }}>Method<select className="input-field" value={collectMode} onChange={event => setCollectMode(event.target.value)}><option>Cash</option><option>UPI</option><option>Card</option></select></label>
+                    {collectMode !== 'Cash' && <label style={{ fontSize: '0.72rem' }}>Transaction reference<input className="input-field" value={collectReference} onChange={event => setCollectReference(event.target.value)} placeholder="Enter reference" /></label>}
+                    <button type="button" className="btn-primary" onClick={() => handleCollectBalance(selectedViewInvoice)} style={{ justifyContent: 'center', padding: '0.55rem' }}>Record payment</button>
+                  </div>
+                </div>
+              )}
 
             </div>
 

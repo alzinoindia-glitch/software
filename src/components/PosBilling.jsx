@@ -45,6 +45,10 @@ import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 
+const isMobileStockCategory = category => {
+  const value = String(category || '').trim().toLowerCase();
+  return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
+};
 
 export default function PosBilling({ 
   inventory, 
@@ -100,6 +104,10 @@ export default function PosBilling({
   const [splitUpiAmount, setSplitUpiAmount] = useState(0);
   const [splitUpiTxnRef, setSplitUpiTxnRef] = useState('');
   const [splitVerified, setSplitVerified] = useState(false);
+  const [advancePaymentAmount, setAdvancePaymentAmount] = useState('');
+  const [advancePaymentMethod, setAdvancePaymentMethod] = useState('Cash');
+  const [advancePaymentReference, setAdvancePaymentReference] = useState('');
+  const [advancePaymentConfirmed, setAdvancePaymentConfirmed] = useState(false);
 
   // Multi-Bank UPI & Standee QR state
   const upiAccountsList = useMemo(() => {
@@ -208,8 +216,8 @@ export default function PosBilling({
         item.description || '',
         item.barcode || '',
         ...(item.barcodes || []),
-        ...(item.imeis || []),
-        ...((item.units || []).flatMap(u => [u.imei1, u.imei2, u.barcode, u.color].filter(Boolean)))
+        ...(item.serialNumbers || item.imeis || []),
+        ...((item.units || []).flatMap(u => [u.imei1, u.imei2, u.serialNumber, u.barcode, u.color].filter(Boolean)))
       ].join(' ').toLowerCase();
 
       return matchesCategory && matchesTax && words.every(word => haystack.includes(word));
@@ -228,12 +236,12 @@ export default function PosBilling({
   const getTrackedUnits = (product) => {
     if (Array.isArray(product.units) && product.units.length > 0) {
       return product.units.map(unit => ({
-        id: unit.imei1 || unit.imei2 || unit.barcode || '',
-        imei: unit.imei1 || unit.imei2 || '',
+        id: unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode || '',
+        imei: unit.imei1 || unit.imei2 || unit.serialNumber || '',
         barcode: unit.barcode || ''
       })).filter(unit => unit.id);
     }
-    return (product.imeis || []).map(imei => ({ id: imei, imei, barcode: '' }));
+    return [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])].map(imei => ({ id: imei, imei, barcode: '' }));
   };
 
   // Add product to cart
@@ -333,7 +341,8 @@ export default function PosBilling({
             gstRate: product.gstRate || 18,
             qty: quantity,
             availableStock: product.stock,
-            allImeis: product.imeis || [],
+            allImeis: [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])],
+            identifierLabel: isMobileStockCategory(product.category) ? 'IMEI' : 'Serial No.',
             selectedImeis: initialImeis,
             allTrackedUnits: trackedUnits,
             selectedUnitIds: initialUnits.map(unit => unit.id),
@@ -362,14 +371,14 @@ export default function PosBilling({
         return;
       }
       let matchedUnit = (exactMatch.units || []).find(un =>
-        [un.barcode, un.imei1, un.imei2].some(value => value && value.trim().toLowerCase() === clean)
+        [un.barcode, un.imei1, un.imei2, un.serialNumber].some(value => value && value.trim().toLowerCase() === clean)
       );
-      let matchedImei = exactMatch.imeis ? exactMatch.imeis.find(i => i.trim().toLowerCase() === clean) : null;
+      let matchedImei = [...(exactMatch.serialNumbers || []), ...(exactMatch.imeis || [])].find(i => i.trim().toLowerCase() === clean) || null;
       if (!matchedImei && exactMatch.units) {
-        if (matchedUnit) matchedImei = matchedUnit.imei1 || matchedUnit.imei2;
+        if (matchedUnit) matchedImei = matchedUnit.imei1 || matchedUnit.imei2 || matchedUnit.serialNumber;
       }
       const trackedUnitId = matchedUnit
-        ? (matchedUnit.imei1 || matchedUnit.imei2 || matchedUnit.barcode || null)
+        ? (matchedUnit.imei1 || matchedUnit.imei2 || matchedUnit.serialNumber || matchedUnit.barcode || null)
         : (matchedImei || null);
       const added = addToCart(exactMatch, matchedImei, 1, trackedUnitId);
       if (!added) {
@@ -682,6 +691,10 @@ export default function PosBilling({
     setSplitUpiAmount(grandTotal - Math.round(grandTotal / 2));
     setSplitUpiTxnRef('');
     setSplitVerified(false);
+    setAdvancePaymentAmount('');
+    setAdvancePaymentMethod('Cash');
+    setAdvancePaymentReference('');
+    setAdvancePaymentConfirmed(false);
     setEmiDownPayment(0);
     setEmiDownPaymentMode('Cash');
     setEmiDownPaymentUpiRef('');
@@ -715,6 +728,21 @@ export default function PosBilling({
       alert('Enter the card terminal approval / transaction ID before completing the sale.');
       return;
     }
+    if (paymentMode === 'Advance') {
+      const amount = Number(advancePaymentAmount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount >= grandTotal) {
+        alert(`Enter an advance greater than ₹0 and less than the bill total of ₹${grandTotal.toLocaleString()}.`);
+        return;
+      }
+      if (!advancePaymentConfirmed) {
+        alert('Confirm that the advance payment has been received before completing the sale.');
+        return;
+      }
+      if (advancePaymentMethod !== 'Cash' && !advancePaymentReference.trim()) {
+        alert(`Enter the ${advancePaymentMethod} transaction or approval reference.`);
+        return;
+      }
+    }
     const stockChanged = cart.find(cartItem => {
       const currentProduct = inventory.find(item => item.id === cartItem.id);
       return !currentProduct || Number(currentProduct.stock) < Number(cartItem.qty);
@@ -735,6 +763,7 @@ export default function PosBilling({
 
     const isEmi = paymentMode === 'EMI';
     const isSplit = paymentMode === 'Split';
+    const isAdvance = paymentMode === 'Advance';
 
     let actualPaid = 0;
     let khataDue = 0;
@@ -753,6 +782,10 @@ export default function PosBilling({
       actualPaid = (Number(splitCashAmount) || 0) + (Number(splitUpiAmount) || 0);
       khataDue = Math.max(0, grandTotal - actualPaid);
       effectivePaymentMode = 'Split (Cash + UPI)';
+    } else if (isAdvance) {
+      actualPaid = Number(advancePaymentAmount) || 0;
+      khataDue = Math.max(0, grandTotal - actualPaid);
+      effectivePaymentMode = `Advance (${advancePaymentMethod})`;
     } else {
       actualPaid = Number(paidAmount);
       khataDue = Math.max(0, grandTotal - actualPaid);
@@ -782,13 +815,13 @@ export default function PosBilling({
       date: today,
       isNonGst,
       priceIncludesGst: false,
-      invoiceType: isNonGst ? 'Non-GST Cash Memo / Estimate' : 'GST Tax Invoice',
+      invoiceType: isNonGst ? 'Cash Memo' : 'GST Tax Invoice',
       customerName: customerName.trim() || 'Counter Customer',
       customerPhone: customerPhone.trim(),
       customerAddress: customerAddress.trim() || 'Bodhan, Telangana',
       customerGstin: isNonGst ? '' : customerGstin.trim(),
       paymentMode: effectivePaymentMode,
-      paymentStatus: paymentMode === 'Khata' ? 'KHATA_DUE' : (isEmi ? 'EMI_SANCTIONED' : 'PAID'),
+      paymentStatus: paymentMode === 'Khata' ? 'KHATA_DUE' : (isEmi ? 'EMI_SANCTIONED' : (isAdvance ? 'PARTIAL' : 'PAID')),
       paymentConfirmedAt: new Date().toISOString(),
       paymentRef: paymentMode === 'UPI' ? upiTxnRef.trim() : (isEmi ? emiApprovalCode.trim() : (isSplit ? splitUpiTxnRef.trim() : (paymentMode === 'Card' ? cardAuthCode.trim() : ''))),
       emiDetails,
@@ -796,6 +829,9 @@ export default function PosBilling({
       cashTendered: paymentMode === 'Cash' ? cashReceived : null,
       cashDenominations: null,
       changeReturned: paymentMode === 'Cash' ? Math.max(0, cashReceived - grandTotal) : 0,
+      advancePaid: isAdvance ? actualPaid : 0,
+      balanceDue: khataDue,
+      payments: isAdvance ? [{ id: `PAY-${Date.now()}`, date: new Date().toISOString(), amount: actualPaid, mode: advancePaymentMethod, reference: advancePaymentReference.trim() }] : [],
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
       items: cart.map(item => ({
@@ -833,8 +869,8 @@ export default function PosBilling({
       const cartItem = cart.find(c => c.id === invItem.id);
       if (cartItem) {
         const removedUnitImeis = (invItem.units || [])
-          .filter(unit => cartItem.selectedUnitIds?.includes(unit.imei1 || unit.imei2 || unit.barcode))
-          .flatMap(unit => [unit.imei1, unit.imei2].filter(Boolean));
+          .filter(unit => cartItem.selectedUnitIds?.includes(unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode))
+          .flatMap(unit => [unit.imei1, unit.imei2, unit.serialNumber].filter(Boolean));
         const remainingImeis = (invItem.imeis || []).filter(
           im => !cartItem.selectedImeis.includes(im) &&
             !cartItem.selectedUnitIds?.includes(im) &&
@@ -843,14 +879,18 @@ export default function PosBilling({
         const remainingUnits = (invItem.units || []).filter(
           u => !cartItem.selectedUnitIds?.includes(u.imei1) &&
             !cartItem.selectedUnitIds?.includes(u.imei2) &&
+            !cartItem.selectedUnitIds?.includes(u.serialNumber) &&
             !cartItem.selectedUnitIds?.includes(u.barcode) &&
             !cartItem.selectedImeis.includes(u.imei1) &&
-            !cartItem.selectedImeis.includes(u.imei2)
+            !cartItem.selectedImeis.includes(u.imei2) &&
+            !cartItem.selectedImeis.includes(u.serialNumber)
         );
+        const remainingSerialNumbers = (invItem.serialNumbers || []).filter(serial => !cartItem.selectedImeis.includes(serial));
         return {
           ...invItem,
           stock: Number(invItem.stock || 0) - Number(cartItem.qty || 0),
           imeis: remainingImeis,
+          serialNumbers: remainingSerialNumbers,
           units: remainingUnits.length > 0 ? remainingUnits : (invItem.units ? [] : undefined)
         };
       }
@@ -943,8 +983,10 @@ export default function PosBilling({
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
-    const paid = invoiceToEdit.paymentMode === 'Khata' ? 0 : grand;
-    const khata = invoiceToEdit.paymentMode === 'Khata' ? grand : 0;
+    const isEmiInvoice = Boolean(invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI'));
+    const previouslyPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
+    const paid = Math.min(grand, previouslyPaid);
+    const khata = isEmiInvoice ? 0 : Math.max(0, grand - paid);
 
     const updatedInvoice = {
       ...invoiceToEdit,
@@ -960,7 +1002,9 @@ export default function PosBilling({
       sgstTotal: sgst,
       grandTotal: grand,
       paidAmount: paid,
+      balanceDue: khata,
       khataDue: khata,
+      paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
       totalProfit: invoiceToEdit.items.reduce((s, it) => s + ((Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)), 0) - disc
     };
 
@@ -1530,7 +1574,7 @@ export default function PosBilling({
                       <div style={{ marginBottom: '0.3rem', padding: '0.2rem 0.35rem', background: 'rgba(169, 188, 92, 0.08)', borderRadius: '4px' }}>
                         {item.selectedImeis.map((selectedImei, idx) => (
                           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>IMEI:</span>
+                            <span style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>{item.identifierLabel || 'IMEI'}:</span>
                             {item.allImeis.length > 0 ? (
                               <select
                                 value={selectedImei}
@@ -1538,7 +1582,7 @@ export default function PosBilling({
                                 className="input-field"
                                 style={{ padding: '0.1rem 0.3rem', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', height: '24px' }}
                               >
-                                <option value="">-- Choose IMEI --</option>
+                                <option value="">-- Choose {item.identifierLabel || 'IMEI'} --</option>
                                 {item.allImeis.map(im => (
                                   <option key={im} value={im}>{im}</option>
                                 ))}
@@ -1546,7 +1590,7 @@ export default function PosBilling({
                             ) : null}
                             <input
                               type="text"
-                              placeholder="Or type IMEI..."
+                              placeholder={`Or type ${item.identifierLabel || 'IMEI'}...`}
                               value={selectedImei}
                               onChange={(e) => updateItemImei(item.id, idx, e.target.value)}
                               className="input-field"
@@ -1815,7 +1859,7 @@ export default function PosBilling({
                           <span style={{ color: 'var(--text-muted)' }}> x{it.qty}</span>
                           {it.imeis && it.imeis.length > 0 && (
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                              IMEI: {it.imeis.join(', ')}
+                              {isMobileStockCategory(it.category) ? 'IMEI' : 'Serial No.'}: {it.imeis.join(', ')}
                             </div>
                           )}
                           {it.warranty && (
@@ -2346,6 +2390,7 @@ export default function PosBilling({
                   { id: 'Split', label: 'Split Cash + UPI', Icon: Zap },
                   { id: 'EMI', label: 'EMI Finance', Icon: Landmark },
                   { id: 'Card', label: 'Card', Icon: CreditCard },
+                  { id: 'Advance', label: 'Advance / Part Payment', Icon: IndianRupee },
                   { id: 'Khata', label: 'Khata', Icon: FileText },
                 ].map(pm => (
                   <button
@@ -3052,6 +3097,21 @@ export default function PosBilling({
                   <CheckCircle2 size={18} />
                   <span>Confirm Khata · Create Invoice (₹{grandTotal.toLocaleString()})</span>
                 </button>
+              </div>
+            )}
+
+            {paymentMode === 'Advance' && (
+              <div style={{ background: 'var(--surface-primary)', border: '1.5px solid var(--accent-primary)', borderRadius: 'var(--radius-md)', padding: '1.15rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: '0.5rem' }}>Receive an advance payment</div>
+                <p style={{ margin: '0 0 0.8rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Create an invoice for this sale now. The remaining amount will stay due on the invoice for later collection.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.6rem', alignItems: 'end' }}>
+                  <label className="input-label">Advance received<input className="input-field" type="number" min="1" max={Math.max(0, grandTotal - 1)} step="0.01" value={advancePaymentAmount} onChange={event => setAdvancePaymentAmount(event.target.value)} placeholder="Amount received" /></label>
+                  <label className="input-label">Method<select className="input-field" value={advancePaymentMethod} onChange={event => setAdvancePaymentMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Card</option></select></label>
+                  {advancePaymentMethod !== 'Cash' && <label className="input-label">Transaction / approval reference<input className="input-field" value={advancePaymentReference} onChange={event => setAdvancePaymentReference(event.target.value)} placeholder="Enter reference" /></label>}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', padding: '0.5rem 0' }}><input type="checkbox" checked={advancePaymentConfirmed} onChange={event => setAdvancePaymentConfirmed(event.target.checked)} /> I confirm this advance was received</label>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0.75rem 0', fontSize: '0.84rem' }}><span>Bill total: ₹{grandTotal.toLocaleString()}</span><strong style={{ color: 'var(--status-red)' }}>Remaining due: ₹{Math.max(0, grandTotal - (Number(advancePaymentAmount) || 0)).toLocaleString()}</strong></div>
+                <button type="button" onClick={handleConfirmAndGenerateInvoice} disabled={!advancePaymentConfirmed || !Number(advancePaymentAmount)} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.75rem' }}><CheckCircle2 size={18} /><span>Confirm Advance · Create Invoice</span></button>
               </div>
             )}
 

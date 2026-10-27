@@ -3,6 +3,8 @@ import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
 
+const isMobileItem = item => /mobile|phone|smartphone|handset/i.test(String(item?.category || ''));
+
 // Number to Words converter for Indian Rupee
 function numberToWords(num) {
   const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
@@ -181,11 +183,8 @@ export default function PrintTemplates({
               <div style={{ fontSize: '10px' }}>{shopConfig.tagline}</div>
               <div style={{ fontSize: '10px' }}>{shopConfig.address}</div>
               <div style={{ fontSize: '10px' }}>Tel: {shopConfig.phone}</div>
-              {!printData.isNonGst ? (
-                <div style={{ fontSize: '10px', fontWeight: 'bold' }}>GSTIN: {shopConfig.gstin}</div>
-              ) : (
-                <div style={{ fontSize: '10px', fontWeight: 'bold' }}>*** CASH MEMO (NON-GST) ***</div>
-              )}
+              {!printData.isNonGst && shopConfig.gstin && <div style={{ fontSize: '10px', fontWeight: 'bold' }}>GSTIN: {shopConfig.gstin}</div>}
+              {printData.isNonGst && <div style={{ fontSize: '10px', fontWeight: 'bold' }}>CASH MEMO</div>}
             </div>
 
             {/* Invoice Meta */}
@@ -218,7 +217,7 @@ export default function PrintTemplates({
                     {item.imeis && item.imeis.length > 0 && (
                       <tr>
                         <td colSpan={3} style={{ fontSize: '9px', paddingLeft: '4px', color: '#222' }}>
-                          IMEI: {item.imeis.join(', ')}
+                          {isMobileItem(item) ? 'IMEI' : 'Serial No.'}: {item.imeis.join(', ')}
                         </td>
                       </tr>
                     )}
@@ -436,7 +435,7 @@ export default function PrintTemplates({
                     {item.imeis && item.imeis.length > 0 && (
                       <tr>
                         <td colSpan={3} style={{ fontSize: '7.5px', paddingLeft: '2px', color: '#333' }}>
-                          IMEI: {item.imeis.join(', ')}
+                          {isMobileItem(item) ? 'IMEI' : 'Serial No.'}: {item.imeis.join(', ')}
                         </td>
                       </tr>
                     )}
@@ -552,7 +551,7 @@ export default function PrintTemplates({
                     </div>
                     <div style={{ fontSize: '10px', color: '#666', fontWeight: 700 }}>
                       {printData.isNonGst 
-                        ? (copyNum === 1 ? '(NON-GST BILL)' : '(SHOP RECORD COPY)')
+                        ? (copyNum === 1 ? '(CUSTOMER COPY)' : '(SHOP RECORD COPY)')
                         : (copyNum === 1 ? '(ORIGINAL FOR RECIPIENT)' : '(DUPLICATE FOR SUPPLIER / SHOP RECORD)')}
                     </div>
                     <div style={{ marginTop: '4mm', fontSize: '12px' }}>
@@ -630,7 +629,7 @@ export default function PrintTemplates({
                             <div style={{ fontWeight: 700 }}>{item.name}</div>
                             {item.imeis && item.imeis.length > 0 && (
                               <div style={{ fontSize: '10px', color: '#333', fontFamily: 'monospace', marginTop: '2px' }}>
-                                IMEI/Serial: {item.imeis.join(', ')}
+                                {isMobileItem(item) ? 'IMEI' : 'Serial No.'}: {item.imeis.join(', ')}
                               </div>
                             )}
                             {(item.condition || item.warranty || item.accessories || normalizeProductTerms(item.termsAndConditions).length > 0) && (
