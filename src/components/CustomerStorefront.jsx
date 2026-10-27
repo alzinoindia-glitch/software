@@ -763,7 +763,7 @@ export default function CustomerStorefront({
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
       }}>
         {/* Main Bar */}
-        <div style={{
+        <div className="storefront-header-main-bar" style={{
           maxWidth: '1280px',
           margin: '0 auto',
           padding: '0.75rem 1rem',
@@ -809,9 +809,16 @@ export default function CustomerStorefront({
             <Search size={18} color="#9CA3AF" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
             <input 
               type="text"
+              aria-label="Search products"
               placeholder='Search "iPhone 15", "OnePlus 80W Charger", "boAt Earbuds", "4K TV"...'
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                if (e.target.value.trim()) setSelectedCategory('all');
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') document.querySelector('.storefront-catalog-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
               style={{
                 width: '100%',
                 padding: '0.75rem 1rem 0.75rem 2.6rem',
@@ -1009,7 +1016,16 @@ export default function CustomerStorefront({
           .storefront-mobile-category-select, .storefront-mobile-bottom-nav, .storefront-mobile-more-menu { display: none; }
           .storefront-mobile-contact-actions { display: none; }
           @media (max-width: 768px) {
-            .storefront-search-bar, .storefront-header-actions { display: none !important; }
+            .storefront-search-bar {
+              display: block !important;
+              order: 3;
+              flex: 0 0 100% !important;
+              width: 100%;
+              max-width: none !important;
+              margin: 0 !important;
+            }
+            .storefront-header-actions { display: none !important; }
+            .storefront-header-main-bar { flex-wrap: wrap !important; gap: 0.55rem !important; }
             .storefront-brand-location-group { flex: 1; justify-content: space-between; gap: 0.45rem !important; min-width: 0; }
             .storefront-mobile-contact-actions { display: flex !important; align-items: center; gap: 0.4rem; flex-shrink: 0; }
             .storefront-mobile-whatsapp-link { width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #25D366; color: #FFFFFF; text-decoration: none; box-shadow: 0 2px 6px rgba(37,211,102,0.25); }
