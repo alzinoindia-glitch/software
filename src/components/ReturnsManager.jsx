@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw,
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const describeReplacement = (entry) => (entry.replacements || (entry.replacement ? [entry.replacement] : []))
-  .map((item) => `${item.productName} × ${item.quantity}`).join(', ');
+  .map((item) => `${item.productName} × ${item.quantity}${Number(item.discountPerUnit || 0) > 0 ? ` (${money(item.discountPerUnit)} discount each)` : ''}`).join(', ');
 
 export default function ReturnsManager({ invoices = [], setInvoices, inventory = [], setInventory }) {
   const [invoiceQuery, setInvoiceQuery] = useState('');
@@ -48,11 +48,14 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       .filter((entry) => entry.status !== 'voided')
       .reduce((sum, entry) => sum + (entry.type === 'refund' ? Number(entry.refundAmount || 0) : (entry.settlement?.direction === 'refund' ? Number(entry.settlement.amount || 0) : 0)), 0))
     : 0;
-  const resolvedReplacementLines = replacementLines.map((line) => ({
-    ...line,
-    product: inventory.find((item) => String(item.id) === String(line.productId)),
-  }));
-  const replacementTotal = resolvedReplacementLines.reduce((sum, line) => sum + Number(line.product?.sellPrice ?? line.product?.price ?? 0) * Number(line.quantity || 0), 0);
+  const resolvedReplacementLines = replacementLines.map((line) => {
+    const product = inventory.find((item) => String(item.id) === String(line.productId));
+    const listPrice = Number(product?.sellPrice ?? product?.price ?? 0);
+    const discountPerUnit = Math.max(0, Number(line.discountPerUnit) || 0);
+    return { ...line, product, listPrice, discountPerUnit, netUnitPrice: Math.max(0, listPrice - discountPerUnit) };
+  });
+  const replacementTotal = resolvedReplacementLines.reduce((sum, line) => sum + line.netUnitPrice * Number(line.quantity || 0), 0);
+  const replacementDiscountTotal = resolvedReplacementLines.reduce((sum, line) => sum + Math.min(line.discountPerUnit, line.listPrice) * Number(line.quantity || 0), 0);
   const replacementDelta = replacementTotal - returnValue;
   const settlementAmount = Math.abs(replacementDelta);
   const settlementDirection = replacementDelta > 0 ? 'collect' : replacementDelta < 0 ? 'refund' : 'even';
@@ -74,6 +77,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     }
     if (action === 'replacement' && (!replacementLines.length || resolvedReplacementLines.some((line) => !line.product || Number(line.quantity) < 1))) {
       setNotice({ kind: 'error', text: 'Add at least one replacement product and set a valid quantity.' }); return;
+    }
+    if (action === 'replacement' && resolvedReplacementLines.some((line) => !Number.isFinite(line.discountPerUnit) || line.discountPerUnit < 0 || line.discountPerUnit > line.listPrice)) {
+      setNotice({ kind: 'error', text: 'Each replacement discount must be zero or more and cannot exceed that product’s selling price.' }); return;
     }
     if (action === 'replacement') {
       const requestedByProduct = new Map();
@@ -98,6 +104,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       date: new Date().toISOString(), status: 'completed', type: action,
       originalItemIndex: Number(lineIndex), originalProductId: selectedLine.id,
       originalProductName: selectedLine.name, originalCategory: selectedLine.category,
+      replacementDiscountTotal: action === 'replacement' ? replacementDiscountTotal : 0,
       originalUnitProfit: Number(selectedLine.profit ?? ((Number(selectedLine.rate || 0) - Number(selectedLine.buyPrice || 0)) * Number(selectedLine.qty || 1))) / Math.max(1, Number(selectedLine.qty || 1)),
       originalUnitCost: Number(selectedLine.buyPrice || 0), quantity: Number(quantity),
       originalUnitPaid: lineUnitPaid, refundAmount, refundMethod: action === 'refund' ? refundMethod : '',
@@ -106,8 +113,10 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       replacements: action === 'replacement' ? resolvedReplacementLines.map((line) => ({
         productId: line.product.id, productName: line.product.name, category: line.product.category,
         quantity: Number(line.quantity), imeis: line.imeis || [],
-        unitPrice: Number(line.product.sellPrice ?? line.product.price ?? 0),
-        unitProfit: Number(line.product.sellPrice ?? line.product.price ?? 0) - Number(line.product.buyPrice || 0),
+        listPrice: line.listPrice,
+        discountPerUnit: Math.min(line.discountPerUnit, line.listPrice),
+        unitPrice: line.netUnitPrice,
+        unitProfit: line.netUnitPrice - Number(line.product.buyPrice || 0),
         unitCost: Number(line.product.buyPrice || 0),
       })) : [],
       replacement: action === 'replacement' ? {
@@ -116,8 +125,10 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
           productName: resolvedReplacementLines[0].product.name,
           quantity: resolvedReplacementLines[0].quantity,
           imeis: resolvedReplacementLines[0].imeis || [],
-          unitPrice: Number(resolvedReplacementLines[0].product.sellPrice ?? resolvedReplacementLines[0].product.price ?? 0),
-          unitProfit: Number(resolvedReplacementLines[0].product.sellPrice ?? resolvedReplacementLines[0].product.price ?? 0) - Number(resolvedReplacementLines[0].product.buyPrice || 0),
+          listPrice: resolvedReplacementLines[0].listPrice,
+          discountPerUnit: Math.min(resolvedReplacementLines[0].discountPerUnit, resolvedReplacementLines[0].listPrice),
+          unitPrice: resolvedReplacementLines[0].netUnitPrice,
+          unitProfit: resolvedReplacementLines[0].netUnitPrice - Number(resolvedReplacementLines[0].product.buyPrice || 0),
           unitCost: Number(resolvedReplacementLines[0].product.buyPrice || 0),
         } : {}),
         quantity: resolvedReplacementLines.reduce((sum, line) => sum + Number(line.quantity), 0),
@@ -215,7 +226,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
               <button onClick={() => { setAction('refund'); setReplacementLines([]); }} style={{ ...inputStyle, cursor: 'pointer', borderColor: action === 'refund' ? '#087452' : '#d5e1dc', background: action === 'refund' ? '#e9f7f0' : '#fff', fontWeight: 700 }}><CircleDollarSign size={16} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Refund money</button>
-              <button onClick={() => { setAction('replacement'); if (!replacementLines.length) setReplacementLines([{ rowId: `replacement-${Date.now()}`, productId: '', quantity: 1, imeis: [] }]); }} style={{ ...inputStyle, cursor: 'pointer', borderColor: action === 'replacement' ? '#087452' : '#d5e1dc', background: action === 'replacement' ? '#e9f7f0' : '#fff', fontWeight: 700 }}><PackageCheck size={16} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Replacement products</button>
+              <button onClick={() => { setAction('replacement'); if (!replacementLines.length) setReplacementLines([{ rowId: `replacement-${Date.now()}`, productId: '', quantity: 1, imeis: [], discountPerUnit: 0 }]); }} style={{ ...inputStyle, cursor: 'pointer', borderColor: action === 'replacement' ? '#087452' : '#d5e1dc', background: action === 'replacement' ? '#e9f7f0' : '#fff', fontWeight: 700 }}><PackageCheck size={16} style={{ verticalAlign: 'middle', marginRight: 5 }} /> Replacement products</button>
             </div>
             {action === 'refund' ? <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Refund method<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Khata credit</option></select></label>
@@ -230,17 +241,19 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
                   ...(line.product.units || []).map((unit) => ({ value: String(unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''), label: `${unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''}${unit.color ? ` · ${unit.color}` : ''}` })).filter((option) => option.value),
                   ...(line.product.imeis || []).filter((imei) => !(line.product.units || []).some((unit) => [unit.imei1, unit.imei2, unit.barcode, unit.id].includes(imei))).map((imei) => ({ value: String(imei), label: String(imei) })),
                 ] : [];
-                return <div key={line.rowId} style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 2fr) minmax(90px, .7fr) auto', gap: 8, alignItems: 'end', padding: 10, background: '#f7faf8', border: '1px solid #dfe9e4', borderRadius: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 700 }}>Product<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={line.productId} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, productId: event.target.value, quantity: 1, imeis: [] } : entry))}><option value="">Choose stock product</option>{inStockProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.stock} in stock · {money(product.sellPrice ?? product.price)}</option>)}</select></label>
+                return <div key={line.rowId} className="replacement-product-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 2fr) minmax(70px, .6fr) minmax(105px, .9fr) auto', gap: 8, alignItems: 'end', padding: 10, background: '#f7faf8', border: '1px solid #dfe9e4', borderRadius: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700 }}>Product<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={line.productId} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, productId: event.target.value, quantity: 1, imeis: [], discountPerUnit: 0 } : entry))}><option value="">Choose stock product</option>{inStockProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.stock} in stock · {money(product.sellPrice ?? product.price)}</option>)}</select></label>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Qty<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="1" max={Math.max(1, maxAvailable)} value={line.quantity} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, quantity: Math.min(Math.max(1, maxAvailable), Math.max(1, Number(event.target.value) || 1)), imeis: (entry.imeis || []).slice(0, Math.max(1, Number(event.target.value) || 1)) } : entry))} /></label>
+                  <label style={{ fontSize: 12, fontWeight: 700 }}>Discount / unit (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={line.listPrice} step="0.01" value={line.discountPerUnit ?? 0} disabled={!line.product} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, discountPerUnit: Math.min(line.listPrice, Math.max(0, Number(event.target.value) || 0)) } : entry))} /></label>
                   <button type="button" aria-label="Remove replacement product" onClick={() => setReplacementLines((current) => current.filter((entry) => entry.rowId !== line.rowId))} style={{ ...inputStyle, width: 44, color: '#a33224', cursor: 'pointer' }}>×</button>
                   {isTracked && <label style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 700 }}>Select {line.quantity} replacement IMEI / unit<select multiple style={{ ...inputStyle, display: 'block', marginTop: 5, minHeight: 84 }} value={line.imeis || []} onChange={(event) => { const values = Array.from(event.target.selectedOptions, (option) => option.value).slice(0, Number(line.quantity)); setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, imeis: values } : entry)); }}>{availableImeiOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small style={{ color: '#667a73' }}>Hold Ctrl or Command to select multiple units.</small></label>}
-                  {line.product && <div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#61756d' }}>{line.product.name}: {money(line.product.sellPrice ?? line.product.price)} × {line.quantity} = <strong>{money(Number(line.product.sellPrice ?? line.product.price) * Number(line.quantity))}</strong></div>}
+                  {line.product && <div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#61756d' }}>{line.product.name}: {money(line.listPrice)} − {money(Math.min(line.discountPerUnit, line.listPrice))} discount = <strong>{money(line.netUnitPrice)} each × {line.quantity} = {money(line.netUnitPrice * Number(line.quantity))}</strong></div>}
                 </div>;
               })}
-              <button type="button" onClick={() => setReplacementLines((current) => [...current, { rowId: `replacement-${Date.now()}-${current.length}`, productId: '', quantity: 1, imeis: [] }])} style={{ ...inputStyle, cursor: 'pointer', background: '#fff', fontWeight: 700 }}>+ Add another replacement product</button>
+              <button type="button" onClick={() => setReplacementLines((current) => [...current, { rowId: `replacement-${Date.now()}-${current.length}`, productId: '', quantity: 1, imeis: [], discountPerUnit: 0 }])} style={{ ...inputStyle, cursor: 'pointer', background: '#fff', fontWeight: 700 }}>+ Add another replacement product</button>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, padding: 12, background: '#edf6f1', borderRadius: 10 }}>
                 <span>Returned item value<strong style={{ display: 'block', marginTop: 4 }}>{money(returnValue)}</strong></span>
+                <span>Replacement discount<strong style={{ display: 'block', marginTop: 4 }}>{money(replacementDiscountTotal)}</strong></span>
                 <span>Replacement total<strong style={{ display: 'block', marginTop: 4 }}>{money(replacementTotal)}</strong></span>
                 <span>{settlementDirection === 'collect' ? 'Collect from customer' : settlementDirection === 'refund' ? 'Refund to customer' : 'Balance'}<strong style={{ display: 'block', marginTop: 4, color: settlementDirection === 'even' ? '#087452' : '#a35d00' }}>{money(settlementAmount)}</strong></span>
               </div>
@@ -252,7 +265,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       </div>
     </div>
 
-    {invoice?.returnTransactions?.length > 0 && <div style={{ ...cardStyle, marginTop: 16 }}><h2 style={{ margin: '0 0 10px', fontSize: 16 }}>Return history · {invoice.invoiceNo}</h2>{invoice.returnTransactions.map((entry) => <div key={entry.id} style={{ padding: '10px 0', borderTop: '1px solid #edf1ef', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><span><strong>{entry.type === 'refund' ? 'Refund' : 'Replacement'} · {entry.originalProductName}</strong><small style={{ display: 'block', color: '#667a73', marginTop: 3 }}>{new Date(entry.date).toLocaleString()} · Qty {entry.quantity} · {entry.condition}{entry.restocked ? ' · restocked' : ' · not restocked'}{entry.type === 'replacement' ? ` · replacement: ${describeReplacement(entry)}` : ''}</small></span><strong>{entry.type === 'refund' ? money(entry.refundAmount) : entry.settlement?.direction === 'collect' ? `Collected / due ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refunded / credited ${money(entry.settlement.amount)}` : 'Even exchange'}</strong></div>)}</div>}
-    <style>{`@media(max-width:760px){.returns-layout{grid-template-columns:1fr!important}}`}</style>
+    {invoice?.returnTransactions?.length > 0 && <div style={{ ...cardStyle, marginTop: 16 }}><h2 style={{ margin: '0 0 10px', fontSize: 16 }}>Return history · {invoice.invoiceNo}</h2>{invoice.returnTransactions.map((entry) => <div key={entry.id} style={{ padding: '10px 0', borderTop: '1px solid #edf1ef', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><span><strong>{entry.type === 'refund' ? 'Refund' : 'Replacement'} · {entry.originalProductName}</strong><small style={{ display: 'block', color: '#667a73', marginTop: 3 }}>{new Date(entry.date).toLocaleString()} · Qty {entry.quantity} · {entry.condition}{entry.restocked ? ' · restocked' : ' · not restocked'}{entry.type === 'replacement' ? ` · replacement: ${describeReplacement(entry)}${entry.replacementDiscountTotal ? ` · total discount ${money(entry.replacementDiscountTotal)}` : ''}` : ''}</small></span><strong>{entry.type === 'refund' ? money(entry.refundAmount) : entry.settlement?.direction === 'collect' ? `Collected / due ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refunded / credited ${money(entry.settlement.amount)}` : 'Even exchange'}</strong></div>)}</div>}
+    <style>{`@media(max-width:760px){.returns-layout{grid-template-columns:1fr!important}.replacement-product-row{grid-template-columns:minmax(0,1fr) minmax(75px,.75fr) auto!important}.replacement-product-row>label:first-child{grid-column:1/-1}}`}</style>
   </section>;
 }
