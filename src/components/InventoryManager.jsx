@@ -54,6 +54,7 @@ import {
   BASE_SPARE_PARTS_BRANDS,
   getAvailableCategories,
   normalizeProductCategory,
+  isImeiTrackedCategory,
   productCategoriesMatch,
   isUsedMobileProduct,
   getAvailableBrandsForCategory,
@@ -72,10 +73,25 @@ export const STANDARD_CATEGORIES = BASE_CATEGORIES;
 export const getBrandsForCategory = (category, inv = []) => getAvailableBrandsForCategory(category, inv);
 
 const parseImeiLines = value => String(value || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
-const isMobileStockCategory = category => {
-  const value = normalizeProductCategory(category).trim().toLowerCase();
-  return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
+const isMobileStockCategory = isImeiTrackedCategory;
+const requiresPairedImeis = category => ['New Mobiles', 'Used Mobiles'].includes(normalizeProductCategory(category));
+const getTrackedIdentifierCount = item => {
+  const identifiers = isMobileStockCategory(item?.category)
+    ? [
+        ...(Array.isArray(item?.imeis) ? item.imeis.filter(value => typeof value === 'string') : []),
+        item?.imei1, item?.imei2,
+        ...(item?.units || []).flatMap(unit => [unit.imei1, unit.imei2])
+      ]
+    : [
+        ...(item?.serialNumbers || []),
+        ...(Array.isArray(item?.imeis) ? item.imeis.filter(value => typeof value === 'string') : []),
+        ...(item?.units || []).flatMap(unit => [unit.serialNumber, unit.imei1, unit.imei2])
+      ];
+  return new Set(identifiers.filter(Boolean).map(value => String(value).trim())).size;
 };
+const getFirstTrackedIdentifier = item => isMobileStockCategory(item?.category)
+  ? item?.imeis?.[0] || item?.imei1 || item?.units?.find(unit => unit.imei1 || unit.imei2)?.imei1 || item?.units?.find(unit => unit.imei2)?.imei2
+  : item?.serialNumbers?.[0] || item?.imeis?.[0] || item?.units?.find(unit => unit.serialNumber || unit.imei1 || unit.imei2)?.serialNumber || item?.units?.find(unit => unit.imei1 || unit.imei2)?.imei1;
 
 // Older inventory records can have IMEIs on the product (`imeis` / `imei1` /
 // `imei2`) while newer records keep them on `units`. Prefer unit data when it
@@ -533,7 +549,9 @@ export default function InventoryManager({
       imei1: imei1Values.filter(Boolean).join('\n') || item.imei1 || '',
       imei2: imei2Values.filter(Boolean).join('\n') || item.imei2 || '',
       serialNumbers: !isMobileStockCategory(normalizedCategory)
-        ? (Array.isArray(item.serialNumbers) ? item.serialNumbers : storedImeis.legacyImeis).filter(Boolean).join('\n')
+        ? (item.serialNumbers?.length
+          ? item.serialNumbers
+          : [...storedImeis.legacyImeis, ...(item.units || []).flatMap(unit => [unit.serialNumber, unit.imei1, unit.imei2]).filter(Boolean)]).filter(Boolean).join('\n')
         : '',
       warranty: item.warranty || '',
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
@@ -660,10 +678,18 @@ export default function InventoryManager({
     const stockUnchanged = Boolean(editingItem) && calculatedStock === Math.max(0, Number.parseInt(editingItem.stock, 10) || 0);
     const categoryUnchanged = Boolean(editingItem) && normalizeProductCategory(formData.category) === normalizeProductCategory(editingItem.category);
     const shouldValidateImeis = !editingItem || !identifiersUnchanged || !stockUnchanged || !categoryUnchanged;
-    if (shouldValidateImeis && mobileCategory && calculatedStock > 0 &&
-        (imei1Values.length !== calculatedStock || imei2Values.length !== calculatedStock)) {
-      alert(`Enter one IMEI 1 and one IMEI 2 for each of the ${calculatedStock} mobile unit(s). Put one IMEI on each line.`);
-      return;
+    if (shouldValidateImeis && mobileCategory && calculatedStock > 0) {
+      if (requiresPairedImeis(formData.category) &&
+          (imei1Values.length !== calculatedStock || imei2Values.length !== calculatedStock)) {
+        alert(`Enter one IMEI 1 and one IMEI 2 for each of the ${calculatedStock} mobile unit(s). Put one IMEI on each line.`);
+        return;
+      }
+      if (!requiresPairedImeis(formData.category) &&
+          ((imei1Values.length > 0 && imei1Values.length !== calculatedStock) ||
+            (imei2Values.length > 0 && imei2Values.length !== calculatedStock))) {
+        alert(`For tablets, enter one value per device for each IMEI field you use, or leave that field empty.`);
+        return;
+      }
     }
     if (shouldValidateImeis && mobileCategory && enteredImeis.some(imei => !/^\d{15}$/.test(imei))) {
       alert('Each mobile IMEI must contain exactly 15 digits.');
@@ -715,7 +741,7 @@ export default function InventoryManager({
       ? (imeisUnchanged && editingItem
         ? (originalImeis.length ? originalImeis : originalUnits.flatMap(unit => [unit.imei1, unit.imei2]).filter(Boolean))
         : [...new Set(enteredImeis)])
-      : serialNumbersArray;
+      : [];
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
@@ -1260,6 +1286,7 @@ export default function InventoryManager({
           {filteredProducts.map(item => {
             const stock = Number(item.stock) || 0;
             const threshold = Number(item.lowStockThreshold) || 2;
+            const identifierCount = getTrackedIdentifierCount(item);
             const isLow = stock > 0 && stock <= threshold;
             const isOut = stock <= 0;
             const sellingPrice = Number(item.sellPrice) || 0;
@@ -1268,7 +1295,7 @@ export default function InventoryManager({
             const savings = hasValidMrp ? mrp - sellingPrice : 0;
             const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
             const isCopied = copiedId === item.id;
-            const codeToCopy = item.imeis && item.imeis.length > 0 ? item.imeis[0] : (item.barcode || item.id);
+            const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
 
             return (
               <div 
@@ -1397,7 +1424,7 @@ export default function InventoryManager({
                     </span>
                   )}
 
-                  {((item.imeis && item.imeis.length > 0) || (item.units && item.units.length > 0)) && (
+                  {identifierCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setActiveImeiViewerItem(item)}
@@ -1417,7 +1444,7 @@ export default function InventoryManager({
               title="Inspect this product's unit identifiers"
                     >
                       <Smartphone size={10} />
-                      <span>{item.units?.length || item.serialNumbers?.length || item.imeis?.length} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}</span>
+                      <span>{identifierCount} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}</span>
                     </button>
                   )}
                 </div>
@@ -1646,10 +1673,11 @@ export default function InventoryManager({
               {filteredProducts.map(item => {
                 const stock = Number(item.stock) || 0;
                 const threshold = Number(item.lowStockThreshold) || 2;
+                const identifierCount = getTrackedIdentifierCount(item);
                 const isLow = stock > 0 && stock <= threshold;
                 const isOut = stock <= 0;
                 const isCopied = copiedId === item.id;
-                const codeToCopy = item.imeis && item.imeis.length > 0 ? item.imeis[0] : (item.barcode || item.id);
+                const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
 
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -1671,7 +1699,7 @@ export default function InventoryManager({
                             {[item.ram, item.storage].filter(Boolean).join('/')}
                           </span>
                         )}
-                        {((item.imeis && item.imeis.length > 0) || (item.units && item.units.length > 0)) && (
+                        {identifierCount > 0 && (
                           <button
                             type="button"
                             onClick={() => setActiveImeiViewerItem(item)}
@@ -1686,7 +1714,7 @@ export default function InventoryManager({
                               cursor: 'pointer'
                             }}
                           >
-                            {isMobileStockCategory(item.category) ? '📱' : '🔢'} {item.units?.length || item.serialNumbers?.length || item.imeis?.length} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}
+                            {isMobileStockCategory(item.category) ? '📱' : '🔢'} {identifierCount} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}
                           </button>
                         )}
                       </div>
@@ -1915,8 +1943,8 @@ export default function InventoryManager({
                         category: val,
                         subCategory: '',
                         capacity: '',
-                        ram: ['New Mobiles', 'Used Mobiles'].includes(val) ? prev.ram : '',
-                        storage: ['New Mobiles', 'Used Mobiles'].includes(val) ? prev.storage : '',
+                        ram: isMobileStockCategory(val) ? prev.ram : '',
+                        storage: isMobileStockCategory(val) ? prev.storage : '',
                         brand: brandStillValid ? prev.brand : (validBrands.includes('Universal') ? 'Universal' : validBrands[0])
                       }));
                     }
@@ -2017,8 +2045,8 @@ export default function InventoryManager({
                 })()}
               </div>
 
-              {/* Product Specifications: only phones use RAM and storage */}
-              {['New Mobiles', 'Used Mobiles'].includes(formData.category) && <><div>
+              {/* Phones and tablets use RAM and storage specifications. */}
+              {isMobileStockCategory(formData.category) && <><div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM</label>
                 <select
                   value={
@@ -2807,7 +2835,7 @@ export default function InventoryManager({
               {isMobileStockCategory(formData.category) ? <>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){Number(formData.stock) > 0 ? ' *' : ''}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){requiresPairedImeis(formData.category) && Number(formData.stock) > 0 ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -2832,7 +2860,7 @@ export default function InventoryManager({
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){Number(formData.stock) > 0 ? ' *' : ''}</label>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){requiresPairedImeis(formData.category) && Number(formData.stock) > 0 ? ' *' : ''}</label>
                   <button
                     type="button"
                     onClick={() => {

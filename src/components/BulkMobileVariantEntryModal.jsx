@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { MOBILE_BRANDS } from './InventoryManager';
-import { getAvailableBrandsForCategory, saveCustomBrand, getAvailableCategories, getAvailableSubcategories, saveCustomCategory, saveCustomSubcategory } from '../utils/customTaxonomy';
+import { getAvailableBrandsForCategory, saveCustomBrand, getAvailableCategories, getAvailableSubcategories, saveCustomCategory, saveCustomSubcategory, isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getProductSuggestions } from '../utils/productSuggestions';
 import { renderCodeSvg, downloadStickerImage } from '../utils/barcode';
 import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
@@ -35,6 +35,10 @@ import {
   STANDARD_PRODUCT_TERMS_PRESETS, 
   normalizeProductTerms 
 } from '../utils/productTerms';
+
+const isImeiCategory = isImeiTrackedCategory;
+const requiresDualImei = category => ['New Mobiles', 'Used Mobiles'].includes(category);
+const isPhoneSpecificationCategory = category => ['New Mobiles', 'Used Mobiles'].includes(category) || /tablet/i.test(category || '');
 
 export { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS };
 export { POPULAR_COLORS, getProductColorHex };
@@ -117,7 +121,7 @@ export default function BulkMobileVariantEntryModal({
   const [customColorHex, setCustomColorHex] = useState('#EC4899');
   const [previewImage, setPreviewImage] = useState(null); // { url, title }
 
-  // Physical Units matrix: [{ id, variantId, color, unitNo, imei1, imei2, barcode }]
+  // Physical units track IMEI pairs for phones/tablets or one serial number for other stock.
   const [units, setUnits] = useState([]);
   const [codeFormat, setCodeFormat] = useState('barcode'); // 'barcode' | 'qr'
   const [previewUnit, setPreviewUnit] = useState(null);
@@ -171,6 +175,7 @@ export default function BulkMobileVariantEntryModal({
             codeFormat: unitFormat,
             imei1: existing?.imei1 || '',
             imei2: existing?.imei2 || '',
+            serialNumber: existing?.serialNumber || '',
             barcode: (existing && existing.barcode !== undefined) ? existing.barcode : defaultBarcode
           });
           globalIndex++;
@@ -354,9 +359,11 @@ export default function BulkMobileVariantEntryModal({
   const handleUnitKeyDown = (e, index, field) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      // Jump to next field or next unit's IMEI 1
-      const nextInput = document.querySelector(`input[data-unit-idx="${index}"][data-field="${field === 'imei1' ? 'imei2' : 'imei1'}"]`) ||
-                         document.querySelector(`input[data-unit-idx="${index + 1}"][data-field="imei1"]`);
+      const fields = isImeiCategory(modelDetails.category) ? ['imei1', 'imei2'] : ['serialNumber'];
+      const fieldIndex = fields.indexOf(field);
+      const nextInput = (fieldIndex >= 0 && fields[fieldIndex + 1]
+        ? document.querySelector(`input[data-unit-idx="${index}"][data-field="${fields[fieldIndex + 1]}"]`)
+        : null) || document.querySelector(`input[data-unit-idx="${index + 1}"][data-field="${fields[0]}"]`);
       if (nextInput) nextInput.focus();
     }
   };
@@ -453,10 +460,17 @@ export default function BulkMobileVariantEntryModal({
       alert('Please add at least 1 unit quantity.');
       return;
     }
-    if (['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)) {
+    if (requiresDualImei(modelDetails.category)) {
       const missingImei = units.find(unit => !unit.imei1?.trim() || !unit.imei2?.trim());
       if (missingImei) {
         alert(`Enter both IMEI 1 (SIM 1) and IMEI 2 (SIM 2 / eSIM) for every mobile unit. Check unit ${missingImei.unitNo}.`);
+        return;
+      }
+    }
+    if (!isImeiCategory(modelDetails.category)) {
+      const serialValues = units.map(unit => String(unit.serialNumber || '').trim()).filter(Boolean);
+      if (serialValues.length > 0 && serialValues.length !== totalStockCount) {
+        alert(`Enter a serial number for every unit (${totalStockCount}) or clear the serial numbers to leave them untracked.`);
         return;
       }
     }
@@ -482,12 +496,14 @@ export default function BulkMobileVariantEntryModal({
 
       // Extract all IMEIs for fast POS lookup (both IMEI 1 and IMEI 2)
       const variantImeis = [];
+      const variantSerialNumbers = [];
       variantUnits.forEach(u => {
         if (u.imei1) variantImeis.push(u.imei1.trim());
         if (u.imei2) variantImeis.push(u.imei2.trim());
+        if (u.serialNumber?.trim()) variantSerialNumbers.push(u.serialNumber.trim());
       });
 
-      const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(modelDetails.category);
+      const isPhoneCategory = isPhoneSpecificationCategory(modelDetails.category);
       const specs = isPhoneCategory ? `${effectiveRam}/${effectiveStorage}` : [modelDetails.subCategory, modelDetails.capacity].filter(Boolean).join(' · ');
       const variantName = `${brandName} ${modelName}${specs ? ` (${specs})` : ''}${variant.color ? ` - ${variant.color}` : ''}`;
       const primaryBarcode = variantUnits.find(u => u.barcode && u.barcode.trim())?.barcode?.trim() || '';
@@ -544,11 +560,13 @@ export default function BulkMobileVariantEntryModal({
         barcode: primaryBarcode,
         barcodes: allBarcodes,
         codeFormat: variantCodeFormat,
-        imeis: variantImeis,
+        imeis: isImeiCategory(modelDetails.category) ? variantImeis : [],
+        serialNumbers: isImeiCategory(modelDetails.category) ? [] : variantSerialNumbers,
         units: variantUnits.map(u => ({
           unitId: u.id,
-          imei1: u.imei1.trim(),
-          imei2: u.imei2.trim(),
+          ...(isImeiCategory(modelDetails.category)
+            ? { imei1: u.imei1.trim(), imei2: u.imei2.trim() }
+            : { serialNumber: (u.serialNumber || '').trim() }),
           barcode: (u.barcode || '').trim(),
           codeFormat: u.codeFormat || 'barcode',
           color: variant.color,
@@ -691,7 +709,7 @@ export default function BulkMobileVariantEntryModal({
         const parsedRows = json.map((row, idx) => {
           const isMasterRow = isAlzinoMaster && Boolean(row['Barcode / SKU']);
           const category = String(row.Category || row.category || modelDetails.category || 'New Mobiles').trim();
-          const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(category);
+          const isPhoneCategory = isPhoneSpecificationCategory(category);
           const subCategory = String(row.Subcategory || row.SubCategory || row.subCategory || row.subcategory || '').trim();
           const rawBrand = row.Brand || row.brand || 'Universal';
           const brand = isMasterRow && /unspecified|verify|check box/i.test(String(rawBrand)) ? '' : rawBrand;
@@ -724,6 +742,7 @@ export default function BulkMobileVariantEntryModal({
             quantity,
             imei1: String(row.IMEI1 || row.imei1 || row.IMEI || row.imei || '').trim(),
             imei2: String(row.IMEI2 || row.imei2 || '').trim(),
+            serialNumbers: String(row.SerialNumbers || row.serialNumbers || row['Serial Numbers'] || row.SerialNo || row.SerialNumber || row['Serial No'] || row['Serial Number'] || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean),
             barcode: isMasterRow ? nextAlzinoBarcode() : String(sourceBarcode || nextAlzinoBarcode()).trim(),
             codeFormat: String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'both' ? 'both' : (String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'qr' ? 'qr' : 'barcode'),
             hsn: String(row.HSN || row.hsn || '').trim(),
@@ -758,11 +777,16 @@ export default function BulkMobileVariantEntryModal({
       return;
     }
     const incompletePhoneRow = excelRows.find(row =>
-      ['New Mobiles', 'Used Mobiles'].includes(row.category) &&
-      (!row.imei1 || !row.imei2 || row.quantity !== 1)
+      isImeiCategory(row.category) &&
+      (!row.imei1 || (requiresDualImei(row.category) && !row.imei2) || row.quantity !== 1)
     );
     if (incompletePhoneRow) {
-      alert(`Mobile import row ${incompletePhoneRow.rowNo} must include both IMEI numbers and have quantity 1. Add one row per physical phone.`);
+      alert(`Mobile/tablet import row ${incompletePhoneRow.rowNo} must include its IMEI number${requiresDualImei(incompletePhoneRow.category) ? 's' : ''} and have quantity 1. Add one row per IMEI-tracked device.`);
+      return;
+    }
+    const incompleteSerialRow = excelRows.find(row => !isImeiCategory(row.category) && row.serialNumbers.length > 0 && row.serialNumbers.length !== row.quantity);
+    if (incompleteSerialRow) {
+      alert(`Inventory import row ${incompleteSerialRow.rowNo} must include one serial number per unit, or leave the serial field blank.`);
       return;
     }
     if (excelErrors.length > 0) {
@@ -811,6 +835,7 @@ export default function BulkMobileVariantEntryModal({
           unitId: `UNIT-EX-${Date.now()}-${Math.random()}`,
           imei1: i === 0 ? row.imei1 : '',
           imei2: i === 0 ? row.imei2 : '',
+          serialNumber: row.serialNumbers[i] || '',
           barcode: uBarcode,
           color: row.colour,
           rack: row.rack,
@@ -821,15 +846,18 @@ export default function BulkMobileVariantEntryModal({
     });
 
     const newInventoryItems = Object.values(grouped).map((group, gIdx) => {
-      const isPhoneCategory = ['New Mobiles', 'Used Mobiles'].includes(group.category);
+      const isPhoneCategory = isPhoneSpecificationCategory(group.category);
+      const tracksImei = isImeiCategory(group.category);
       const specs = isPhoneCategory ? `${group.ram}/${group.storage}` : [group.subCategory, group.capacity].filter(Boolean).join(' · ');
       const variantName = group.isMasterRow || !isPhoneCategory
         ? group.model
         : `${group.brand} ${group.model}${specs ? ` (${specs})` : ''}${group.colour ? ` - ${group.colour}` : ''}`;
       const variantImeis = [];
+      const variantSerialNumbers = [];
       group.units.forEach(u => {
         if (u.imei1) variantImeis.push(u.imei1);
         if (u.imei2) variantImeis.push(u.imei2);
+        if (u.serialNumber) variantSerialNumbers.push(u.serialNumber);
       });
 
       return {
@@ -858,7 +886,8 @@ export default function BulkMobileVariantEntryModal({
         barcode: group.units[0]?.barcode || group.barcode || `ALZ-EX-${Date.now().toString().slice(-6)}`,
         codeFormat: group.codeFormat || 'barcode',
         barcodes: group.units.map(u => u.barcode).filter(Boolean),
-        imeis: variantImeis,
+        imeis: tracksImei ? variantImeis : [],
+        serialNumbers: tracksImei ? [] : variantSerialNumbers,
         units: group.units,
         warranty: group.warranty,
           receivedDate: group.receivedDate || '',
@@ -1028,7 +1057,7 @@ export default function BulkMobileVariantEntryModal({
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Type *</label>
                     <select className="input-field" value={isCustomCategory ? 'Other' : modelDetails.category} onChange={(e) => {
                       if (e.target.value === 'Other') { setIsCustomCategory(true); setIsCustomSubcategory(false); setModelDetails(prev => ({ ...prev, category: '', subCategory: '', capacity: '', ram: '', storage: '', brand: '' })); setIsCustomBrand(false); }
-                      else { setIsCustomCategory(false); setIsCustomSubcategory(false); const brands = getAvailableBrandsForCategory(e.target.value, inventory); setModelDetails(prev => ({ ...prev, category: e.target.value, subCategory: '', capacity: '', ram: ['New Mobiles', 'Used Mobiles'].includes(e.target.value) ? '8GB' : '', storage: ['New Mobiles', 'Used Mobiles'].includes(e.target.value) ? '128GB' : '', brand: brands[0] || 'Universal' })); setIsCustomBrand(false); }
+                      else { setIsCustomCategory(false); setIsCustomSubcategory(false); const brands = getAvailableBrandsForCategory(e.target.value, inventory); const hasPhoneSpecs = isPhoneSpecificationCategory(e.target.value); setModelDetails(prev => ({ ...prev, category: e.target.value, subCategory: '', capacity: '', ram: hasPhoneSpecs ? '8GB' : '', storage: hasPhoneSpecs ? '128GB' : '', brand: brands[0] || 'Universal' })); setIsCustomBrand(false); }
                     }}>
                       {availableCategories.map(category => <option key={category} value={category}>{category}</option>)}
                       <option value="Other">Other (Add Custom)</option>
@@ -1200,7 +1229,7 @@ export default function BulkMobileVariantEntryModal({
                   </div>
 
                   {/* Phones use RAM and storage; other types use their subcategory and appliance size. */}
-                  {['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <><div>
+                  {isPhoneSpecificationCategory(modelDetails.category) && <><div>
                     <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM *</label>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>
                       <select
@@ -1907,7 +1936,7 @@ export default function BulkMobileVariantEntryModal({
                 </div>
               </div>
 
-              {/* STEP 3: PHYSICAL MOBILE UNITS & IMEI 1 / IMEI 2 ENTRY MATRIX */}
+              {/* STEP 3: PHYSICAL UNITS & IDENTIFIER ENTRY */}
               <div style={{
                 background: 'var(--surface-primary, #FFFFFF)',
                 borderRadius: '12px',
@@ -1933,10 +1962,10 @@ export default function BulkMobileVariantEntryModal({
                     </span>
                     <div>
                       <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Unit-by-Unit IMEI 1 & IMEI 2 Matrix ({units.length} Physical Units)
+                        Unit-by-Unit {isImeiCategory(modelDetails.category) ? 'IMEI' : 'Serial Number'} Entry ({units.length} Physical Units)
                       </h4>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        Type or laser scan IMEIs • Alzino auto-generates 100% scannable Barcodes or QR Codes
+                        {isImeiCategory(modelDetails.category) ? 'Enter or scan mobile IMEIs' : 'Enter or scan optional product serial numbers'} • Alzino auto-generates scannable Barcodes or QR Codes
                       </span>
                     </div>
                   </div>
@@ -2047,7 +2076,7 @@ export default function BulkMobileVariantEntryModal({
                         key={unit.unitKey || idx}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: '1.2fr 2fr 2fr 1.6fr',
+                          gridTemplateColumns: isImeiCategory(modelDetails.category) ? '1.2fr 2fr 2fr 1.6fr' : '1.2fr 2fr 1.6fr',
                           gap: '0.65rem',
                           alignItems: 'center',
                           padding: '0.55rem 0.75rem',
@@ -2090,11 +2119,12 @@ export default function BulkMobileVariantEntryModal({
                           </div>
                         </div>
 
+                        {isImeiCategory(modelDetails.category) ? <>
                         {/* IMEI 1 (SIM 1) */}
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
                             <label style={{ fontSize: '0.66rem', fontWeight: 700, color: '#10B981' }}>
-                              IMEI 1 (SIM 1){['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
+                              IMEI 1 (SIM 1){requiresDualImei(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
                             </label>
                             <button
                               type="button"
@@ -2113,7 +2143,7 @@ export default function BulkMobileVariantEntryModal({
                             value={unit.imei1}
                             onChange={(e) => handleUnitChange(idx, 'imei1', e.target.value)}
                             onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei1')}
-                            required={['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)}
+                            required={requiresDualImei(modelDetails.category)}
                             className="input-field"
                             style={{ 
                               padding: '0.28rem 0.5rem', 
@@ -2128,7 +2158,7 @@ export default function BulkMobileVariantEntryModal({
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
                             <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                              IMEI 2 (SIM 2 / eSIM){['New Mobiles', 'Used Mobiles'].includes(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
+                              IMEI 2 (SIM 2 / eSIM){requiresDualImei(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
                             </label>
                             <button
                               type="button"
@@ -2147,11 +2177,18 @@ export default function BulkMobileVariantEntryModal({
                             value={unit.imei2}
                             onChange={(e) => handleUnitChange(idx, 'imei2', e.target.value)}
                             onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei2')}
-                            required={['New Mobiles', 'Used Mobiles'].includes(modelDetails.category)}
+                            required={requiresDualImei(modelDetails.category)}
                             className="input-field"
                             style={{ padding: '0.28rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)' }}
                           />
                         </div>
+                        </> : <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: '#10B981' }}>Serial No. (optional)</label>
+                            <button type="button" onClick={() => handleStartCameraScan(idx, 'serialNumber')} style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }} title="Scan serial number"><Camera size={11} /></button>
+                          </div>
+                          <input type="text" placeholder="Enter or scan serial number" data-unit-idx={idx} data-field="serialNumber" value={unit.serialNumber || ''} onChange={event => handleUnitChange(idx, 'serialNumber', event.target.value)} onKeyDown={event => handleUnitKeyDown(event, idx, 'serialNumber')} className="input-field" style={{ padding: '0.28rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', border: unit.serialNumber ? '1px solid #10B981' : '1px solid var(--border-color, #D1D5DB)' }} />
+                        </div>}
 
                         {/* Unique Unit Barcode & QR Code Option */}
                         <div>
@@ -2427,7 +2464,7 @@ export default function BulkMobileVariantEntryModal({
                     {excelFileName ? `Selected: ${excelFileName}` : 'Click or Drag & Drop Excel (.xlsx, .xls) or .csv File'}
                   </div>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Supports Category, Subcategory, Brand, Product Name, Quantity, Pricing, Colour, and optional IMEIs
+                    Supports phones/tablets with IMEIs and other products with optional serial numbers
                   </div>
                 </div>
 
@@ -2473,7 +2510,7 @@ export default function BulkMobileVariantEntryModal({
                             <th style={{ padding: '0.5rem' }}>Variant / specifications</th>
                             <th style={{ padding: '0.5rem' }}>Colour</th>
                             <th style={{ padding: '0.5rem', textAlign: 'center' }}>Qty</th>
-                            <th style={{ padding: '0.5rem' }}>IMEI 1</th>
+                            <th style={{ padding: '0.5rem' }}>IMEI 1 / Serial No.</th>
                             <th style={{ padding: '0.5rem' }}>Selling ₹</th>
                             <th style={{ padding: '0.5rem' }}>Cost ₹</th>
                             <th style={{ padding: '0.5rem' }}>Shelf</th>
@@ -2487,7 +2524,7 @@ export default function BulkMobileVariantEntryModal({
                               <td style={{ padding: '0.45rem' }}>{row.ram} / {row.storage}</td>
                               <td style={{ padding: '0.45rem', fontWeight: 600 }}>{row.colour}</td>
                               <td style={{ padding: '0.45rem', textAlign: 'center', fontWeight: 800 }}>{row.quantity}</td>
-                              <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{row.imei1 || '—'}</td>
+                              <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{isImeiCategory(row.category) ? (row.imei1 || '—') : (row.serialNumbers.join(', ') || '—')}</td>
                               <td style={{ padding: '0.45rem', fontWeight: 800, color: '#10B981' }}>₹{row.sellPrice.toLocaleString()}</td>
                               <td style={{ padding: '0.45rem' }}>₹{row.purchasePrice.toLocaleString()}</td>
                               <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{row.rack}/{row.bin}</td>
@@ -2534,7 +2571,7 @@ export default function BulkMobileVariantEntryModal({
             setActiveScanUnitIndex(null);
           }}
           onScan={handleCameraScanSuccess}
-          title={activeScanField === 'imei2' ? `Scan IMEI 2 (SIM 2) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : `Scan IMEI 1 (SIM 1) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}`}
+          title={activeScanField === 'serialNumber' ? `Scan Serial Number for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : activeScanField === 'imei2' ? `Scan IMEI 2 (SIM 2) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : `Scan IMEI 1 (SIM 1) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}`}
           description="Point camera at the barcode or QR code on the phone box"
         />
       )}
@@ -2590,9 +2627,9 @@ export default function BulkMobileVariantEntryModal({
                   </span>
                 )}
               </div>
-              {previewUnit.imei1 && (
+              {(previewUnit.imei1 || previewUnit.serialNumber) && (
                 <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: '#475569', marginTop: '4px' }}>
-                  IMEI: {previewUnit.imei1}
+                  {isImeiCategory(modelDetails.category) ? 'IMEI' : 'Serial No.'}: {previewUnit.imei1 || previewUnit.serialNumber}
                 </div>
               )}
             </div>

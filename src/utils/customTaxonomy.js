@@ -5,6 +5,7 @@
 export const BASE_CATEGORIES = [
   'New Mobiles',
   'Used Mobiles',
+  'Tablets',
   'Mobile Accessories',
   'Home Appliances',
   'Spare Parts',
@@ -16,6 +17,14 @@ export function normalizeProductCategory(category) {
   const value = String(category || '').trim();
   if (/^(used mobiles?|refurbished mobiles?|pre[- ]owned mobiles?)$/i.test(value)) return 'Used Mobiles';
   return value;
+}
+
+// Phones and tablets carry IMEIs. Product groups such as appliances and
+// accessories use serial numbers instead, even if older imports called them IMEIs.
+export function isImeiTrackedCategory(category) {
+  const value = normalizeProductCategory(category).trim().toLowerCase();
+  if (/accessor/.test(value)) return false;
+  return /tablet|smartphone|handset|feature phone/.test(value) || /\b(new\s+|used\s+)?mobiles?\b/.test(value) || /^phones?$/.test(value);
 }
 
 export function productCategoriesMatch(left, right) {
