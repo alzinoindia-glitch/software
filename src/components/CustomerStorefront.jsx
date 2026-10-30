@@ -881,7 +881,7 @@ export default function CustomerStorefront({
           <div className="storefront-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
             {/* Locate Us (Google Maps) */}
             <a 
-              href={shopConfig.mapsUrl || "https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185"}
+              href={shopConfig.mapsUrl || "https://share.google/qAioj2tx1S9nvzmwX"}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -2147,7 +2147,7 @@ export default function CustomerStorefront({
         </section>
       </div>}
       {isMobileMoreOpen && <div className="storefront-mobile-more-menu" role="menu">
-        <a role="menuitem" href={shopConfig.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
+        <a role="menuitem" href={shopConfig.mapsUrl || 'https://share.google/qAioj2tx1S9nvzmwX'} target="_blank" rel="noopener noreferrer"><Navigation size={17} /> Locate store</a>
         <a role="menuitem" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer"><Star size={17} /> Rate us</a>
         <a role="menuitem" href={'tel:' + (shopConfig.phone || '9121212292').replace(/[^0-9]/g, '')}><Phone size={17} /> Call desk</a>
       </div>}
@@ -2189,7 +2189,7 @@ export default function CustomerStorefront({
             <a href={shopConfig.instagramUrl || 'https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr'} target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram">
               <InstagramIcon size={19} color="#BE185D" />
             </a>
-            <a href={shopConfig.mapsUrl || 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
+            <a href={shopConfig.mapsUrl || 'https://share.google/qAioj2tx1S9nvzmwX'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
               <MapPin size={19} color="#B45309" />
             </a>
             <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review ALZINO" title="Review ALZINO">

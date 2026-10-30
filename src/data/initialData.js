@@ -46,7 +46,7 @@ export const defaultShopConfig = {
   instagramUrl: "https://instagram.com/alzino.shop?rpxt=MXJscnloZGEyMmhiNw%3D%3D&utm_source=qr",
   whatsappNumber: "+91 91212 12292",
   whatsappUrl: "https://wa.me/919121212292",
-  mapsUrl: "https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185",
+  mapsUrl: "https://share.google/qAioj2tx1S9nvzmwX",
   reviewUrl: "https://g.page/r/CWxRHXGDCdZ7EBM/review",
   storeTimings: "Monday – Sunday: 9:30 AM to 10:00 PM",
   landmark: "Opposite State Bank of India, 200m from Railway Station",

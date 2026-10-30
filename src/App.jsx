@@ -174,8 +174,8 @@ export default function App() {
       updated.whatsappNumber = '+91 91212 12292';
       updated.whatsappUrl = 'https://wa.me/919121212292';
     }
-    // Update Google Maps location link to official short link
-    updated.mapsUrl = 'https://www.google.com/maps/search/?api=1&query=Old+Bus+Stand%2C+Bodhan%2C+Nizamabad%2C+Telangana+503185';
+    // Keep the storefront's Locate Us links pointed at the official Google Maps listing.
+    updated.mapsUrl = 'https://share.google/qAioj2tx1S9nvzmwX';
     return updated;
   });
 
