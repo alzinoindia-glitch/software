@@ -374,3 +374,3389 @@ export default function InventoryManager({
     const is15DigitImei = digitsOnly.length === 15 && /^\d+$/.test(digitsOnly);
 
     // Look up in catalog / inventory for auto-filling details
+    const matched = lookupProductByBarcodeOrImei(raw, inventory);
+
+    setFormData(prev => {
+      const next = { ...prev };
+
+      // 1. Assign to barcode or IMEI fields
+      if (is15DigitImei || targetField === 'imei1' || targetField === 'imei2') {
+        const appendImei = current => [...new Set([...parseImeiLines(current), raw])].join('\n');
+        if (!isMobileStockCategory(next.category)) next.serialNumbers = appendImei(next.serialNumbers);
+        else if (targetField === 'imei2') next.imei2 = appendImei(next.imei2);
+        else if (targetField === 'imei1') next.imei1 = appendImei(next.imei1);
+        else if (parseImeiLines(next.imei1).length <= parseImeiLines(next.imei2).length) next.imei1 = appendImei(next.imei1);
+        else next.imei2 = appendImei(next.imei2);
+      } else {
+        next.barcode = raw;
+      }
+
+      // 2. If matched catalog template (e.g. Karbonn K9 from barcode 8903888001263 or TAC)
+      if (matched) {
+        if (!next.name || next.name.trim() === '') next.name = matched.name || '';
+        if (matched.brand) next.brand = matched.brand;
+        if (matched.model && (!next.model || next.model.trim() === '')) next.model = matched.model;
+        if (matched.category) next.category = matched.category;
+        if (matched.color && (!next.color || next.color === 'Onyx Black')) next.color = matched.color;
+        if (matched.ram) next.ram = matched.ram;
+        if (matched.storage) next.storage = matched.storage;
+        if (matched.description && !next.description) next.description = matched.description;
+        if (matched.hsn) next.hsn = matched.hsn;
+        if (matched.gstRate) next.gstRate = matched.gstRate;
+        if (matched.suggestedBuy && !next.buyPrice) next.buyPrice = String(matched.suggestedBuy);
+        if (matched.suggestedSell && !next.sellPrice) next.sellPrice = String(matched.suggestedSell);
+        if (matched.mrp && !next.mrp) next.mrp = String(matched.mrp);
+        if (matched.barcode && !next.barcode) next.barcode = matched.barcode;
+        if (matched.warranty && !next.warranty) next.warranty = matched.warranty;
+      }
+
+      return next;
+    });
+
+    setBarcodeMode('scan');
+  };
+
+  const handleCopy = (text, id) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const openSupplierBillDocument = async attachment => {
+    try {
+      const file = await getSupplierBillDocument(attachment?.id);
+      if (!file) return alert('This supplier bill file is not available in this browser.');
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      alert(`Could not open supplier bill: ${error.message || 'unknown error'}`);
+    }
+  };
+
+  const handleSendToPos = (item) => {
+    if (item.stock <= 0) return;
+    if (onQuickBill) {
+      onQuickBill(item);
+    }
+  };
+
+  const handleAddSupplierFromProduct = event => {
+    event.preventDefault();
+    if (role !== 'admin') return alert('Only an admin can add supplier records.');
+    if (!setSuppliers) return alert('Supplier records cannot be saved from this screen.');
+    const details = newSupplierDetails;
+    const phoneDigits = String(details.phone || '').replace(/\D/g, '').slice(-10);
+    if (!details.name.trim() || phoneDigits.length !== 10) {
+      alert('Enter the supplier name and a valid 10-digit phone number.');
+      return;
+    }
+    const existing = suppliers.find(supplier => String(supplier.phone || '').replace(/\D/g, '').slice(-10) === phoneDigits);
+    if (existing) {
+      setFormData(previous => ({ ...previous, supplierId: existing.id }));
+      setShowAddSupplierModal(false);
+      setNewSupplierDetails({ name: '', contactPerson: '', phone: '', city: '', gstin: '' });
+      alert(`${existing.name} already exists and has been selected for this product.`);
+      return;
+    }
+    const supplier = {
+      id: `SUPP-${Date.now()}`,
+      name: details.name.trim(),
+      contactPerson: details.contactPerson.trim(),
+      phone: details.phone.trim(),
+      city: details.city.trim(),
+      gstin: details.gstin.trim(),
+      balancePayable: 0,
+      purchaseBills: []
+    };
+    setSuppliers(previous => [supplier, ...previous]);
+    setFormData(previous => ({ ...previous, supplierId: supplier.id }));
+    setShowAddSupplierModal(false);
+    setNewSupplierDetails({ name: '', contactPerson: '', phone: '', city: '', gstin: '' });
+  };
+
+  // Live Counts
+  const totalProducts = inventory.length;
+  const inStockProducts = inventory.filter(i => Number(i.stock) > (Number(i.lowStockThreshold) || 2)).length;
+  const lowStockProducts = inventory.filter(i => Number(i.stock) > 0 && Number(i.stock) <= (Number(i.lowStockThreshold) || 2)).length;
+  const outOfStockProducts = inventory.filter(i => Number(i.stock) <= 0).length;
+
+  const availableBrands = useMemo(() => {
+    const brandsSet = new Set();
+    inventory.forEach(item => {
+      if (item.brand) brandsSet.add(item.brand);
+    });
+    if (categoryFilter !== 'All') {
+      const catBrands = getAvailableBrandsForCategory(categoryFilter, inventory);
+      catBrands.forEach(b => brandsSet.add(b));
+    }
+    return Array.from(brandsSet);
+  }, [inventory, categoryFilter, taxonomyVer]);
+
+  // Fast Filter
+  const filteredProducts = useMemo(() => {
+    const normalizedFilter = normalizeProductCategory(categoryFilter);
+    const words = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return inventory.filter(item => {
+      const isUsedItem = isUsedMobileProduct(item);
+      const matchesCategory = categoryFilter === 'All' ||
+        (normalizedFilter === 'Used Mobiles' && isUsedItem) ||
+        (productCategoriesMatch(item.category, categoryFilter) &&
+          !(normalizedFilter === 'New Mobiles' && isUsedItem));
+      const matchesSubcategory = subcategoryFilter === 'All' || String(item.subCategory || '').trim() === subcategoryFilter;
+      const matchesBrand = brandFilter === 'All' || item.brand === brandFilter;
+
+      const stock = Number(item.stock) || 0;
+      const threshold = Number(item.lowStockThreshold) || 2;
+      const isLow = stock > 0 && stock <= threshold;
+      const isOut = stock <= 0;
+      const isInStock = stock > threshold;
+
+      const matchesStock = 
+        stockFilter === 'all' ||
+        (stockFilter === 'in-stock' && isInStock) ||
+        (stockFilter === 'low' && isLow) ||
+        (stockFilter === 'out' && isOut);
+
+      if (!words.length) return matchesCategory && matchesSubcategory && matchesBrand && matchesStock;
+
+      const unitCodes = (item.units || []).flatMap(u => [u.barcode, u.imei1, u.imei2, u.color]).filter(Boolean);
+      const allBarcodes = (item.barcodes || []).filter(Boolean);
+      const haystack = [
+        item.name || '',
+        item.brand || '',
+        item.category || '',
+        item.subCategory || '',
+        item.capacity || '',
+        item.model || '',
+        item.color || '',
+        item.ram || '',
+        item.storage || '',
+        item.description || '',
+        item.barcode || '',
+        item.rack || '',
+        item.bin || '',
+        ...(item.imeis || []),
+        ...unitCodes,
+        ...allBarcodes
+      ].join(' ').toLowerCase();
+
+      return matchesCategory && matchesSubcategory && matchesBrand && matchesStock && words.every(word => haystack.includes(word));
+    }).sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'stock-asc') return a.stock - b.stock;
+      if (sortBy === 'stock-desc') return b.stock - a.stock;
+      if (sortBy === 'price-asc') return a.sellPrice - b.sellPrice;
+      if (sortBy === 'price-desc') return b.sellPrice - a.sellPrice;
+      if (sortBy === 'margin') return (b.sellPrice - b.buyPrice) - (a.sellPrice - a.buyPrice);
+      return 0;
+    });
+  }, [inventory, categoryFilter, subcategoryFilter, brandFilter, stockFilter, searchTerm, sortBy]);
+
+  const displayedProducts = useMemo(() => filteredProducts.slice(0, inventoryDisplayLimit), [filteredProducts, inventoryDisplayLimit]);
+
+  useEffect(() => {
+    setInventoryDisplayLimit(60);
+  }, [categoryFilter, subcategoryFilter, brandFilter, stockFilter, searchTerm, sortBy, viewMode]);
+
+  const openAddModal = () => {
+    setEditingItem(null);
+    setIsCustomCategory(false);
+    setIsCustomBrand(false);
+    setIsCustomStorage(false);
+    setIsCustomRam(false);
+    setBarcodeMode('generate');
+    const categoriesForEntry = availableCategories.filter(category => category !== 'Used Mobiles');
+    const defaultCat = categoriesForEntry.includes('New Mobiles') ? 'New Mobiles' : (categoriesForEntry[0] || 'New Mobiles');
+    const validBrands = getAvailableBrandsForCategory(defaultCat, inventory);
+    const defaultBrand = validBrands.includes('Samsung') ? 'Samsung' : (validBrands[0] || 'Universal');
+    setFormData({
+      category: defaultCat,
+      subCategory: '',
+      capacity: '',
+      brand: defaultBrand,
+      name: '',
+      model: '',
+      ram: '',
+      storage: '',
+      color: '',
+      description: '',
+      isGst: true,
+      hsn: '851712',
+      gstRate: 18,
+      buyPrice: '',
+      buyPriceIncludesGst: true,
+      sellPrice: '',
+      mrp: '',
+      stock: 1,
+      lowStockThreshold: 2,
+      rack: 'R-01',
+      bin: 'B-01',
+      codeFormat: 'barcode',
+      barcode: `ALZ-${Date.now().toString().slice(-6)}`,
+      imei1: '',
+      imei2: '',
+      serialNumbers: '',
+      warranty: '',
+      termsAndConditions: [],
+      receivedDate: new Date().toISOString().split('T')[0],
+      isPublished: true,
+      supplierId: '',
+    });
+    setCustomTermInput('');
+    setFormImages({ front: null, back: null });
+    setShowModal(true);
+  };
+
+  const openEditModal = (item) => {
+    setEditingItem(item);
+    const normalizedCategory = normalizeProductCategory(item.category);
+    const isCatCustom = Boolean(normalizedCategory && !availableCategories.includes(normalizedCategory));
+    setIsCustomCategory(isCatCustom);
+    const validBrands = getAvailableBrandsForCategory(normalizedCategory, inventory);
+    const isBrCustom = Boolean(item.brand && !validBrands.includes(item.brand));
+    setIsCustomBrand(isBrCustom);
+    setIsCustomStorage(Boolean(item.storage && !COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(item.storage)));
+    setIsCustomRam(Boolean(item.ram && !COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(item.ram)));
+    const isGenerated = Boolean(item.barcode && (item.barcode.startsWith('ALZ-') || item.barcode.startsWith('ALZ-QR-')));
+    setBarcodeMode(isGenerated ? 'generate' : 'scan');
+    const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
+    const itemCodeFormat = item.codeFormat || (item.barcode?.includes('QR-') ? 'qr' : 'barcode');
+    const storedImeis = readStoredImeiFields(item);
+    const imei1Values = storedImeis.imei1;
+    const imei2Values = storedImeis.imei2;
+    setFormData({
+      category: normalizedCategory || 'New Mobiles',
+      subCategory: item.subCategory || item.applianceType || item.accessoryType || item.partType || '',
+      capacity: item.capacity || '',
+      brand: item.brand || 'Universal',
+      name: item.name,
+      model: item.model || '',
+      ram: item.ram || '',
+      storage: item.storage || '',
+      color: item.color || '',
+      description: item.description || '',
+      isGst: isItemGst,
+      hsn: item.hsn || '851712',
+      gstRate: item.gstRate !== undefined ? item.gstRate : 18,
+      buyPrice: item.buyCostEntered !== undefined ? String(item.buyCostEntered) : item.buyPrice,
+      buyPriceIncludesGst: item.buyPriceIncludesGst !== false,
+      sellPrice: item.sellPrice,
+      mrp: item.mrp ? String(item.mrp) : '',
+      stock: item.stock,
+      lowStockThreshold: item.lowStockThreshold || 2,
+      rack: item.rack || (item.locations?.[0]?.rack) || 'R-01',
+      bin: item.bin || (item.locations?.[0]?.bin) || 'B-01',
+      codeFormat: itemCodeFormat,
+      barcode: item.barcode || '',
+      imei1: imei1Values.filter(Boolean).join('\n') || item.imei1 || '',
+      imei2: imei2Values.filter(Boolean).join('\n') || item.imei2 || '',
+      serialNumbers: !isMobileStockCategory(normalizedCategory)
+        ? (item.serialNumbers?.length
+          ? item.serialNumbers
+          : [...storedImeis.legacyImeis, ...(item.units || []).flatMap(unit => [unit.serialNumber, unit.imei1, unit.imei2]).filter(Boolean)]).filter(Boolean).join('\n')
+        : '',
+      warranty: item.warranty || '',
+      termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
+      receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+      isPublished: item.isPublished !== false,
+      supplierId: item.supplierId || '',
+    });
+    setCustomTermInput('');
+    setFormImages({ front: item.frontImage || item.image || null, back: item.backImage || null });
+    if (item.images?.front || item.images?.back) {
+      Promise.all([getProductImage(item.id, 'front'), getProductImage(item.id, 'back')])
+        .then(([front, back]) => setFormImages(prev => ({ front: front || prev.front, back: back || prev.back })));
+    }
+    setShowModal(true);
+  };
+
+  const handleDelete = (item) => {
+    setDeleteConfirmItem(item);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteConfirmItem) {
+      setInventory(prev => prev.filter(i => i.id !== deleteConfirmItem.id));
+      deleteProductImages(deleteConfirmItem.id).catch(() => {});
+      setDeleteConfirmItem(null);
+    }
+  };
+
+  const handleOpenTransfer = (item) => {
+    setTransferItem(item);
+    setTransferFromLocationIndex(0);
+    setTransferToRack('R-02');
+    setTransferToBin('B-01');
+    setTransferQty(1);
+    setShowTransferModal(true);
+  };
+
+  const handleExecuteTransfer = () => {
+    if (!transferItem) return;
+    const currentLocs = transferItem.locations && transferItem.locations.length > 0 
+      ? JSON.parse(JSON.stringify(transferItem.locations)) 
+      : [{ rack: transferItem.rack || 'R-01', bin: transferItem.bin || 'B-01', qty: transferItem.stock }];
+
+    const fromLoc = currentLocs[transferFromLocationIndex];
+    if (!fromLoc || fromLoc.qty < transferQty) {
+      alert(`Invalid quantity.`);
+      return;
+    }
+
+    if (!transferToRack.trim() || !transferToBin.trim()) {
+      alert("Specify Rack and Bin");
+      return;
+    }
+
+    fromLoc.qty -= transferQty;
+    const targetIdx = currentLocs.findIndex(
+      l => l.rack?.toUpperCase() === transferToRack.trim().toUpperCase() && l.bin?.toUpperCase() === transferToBin.trim().toUpperCase()
+    );
+
+    if (targetIdx >= 0) {
+      currentLocs[targetIdx].qty += transferQty;
+    } else {
+      currentLocs.push({
+        rack: transferToRack.trim().toUpperCase(),
+        bin: transferToBin.trim().toUpperCase(),
+        qty: transferQty
+      });
+    }
+
+    const finalLocs = currentLocs.filter(l => l.qty > 0);
+
+    setInventory(prev => prev.map(p => {
+      if (p.id === transferItem.id) {
+        return {
+          ...p,
+          rack: finalLocs[0]?.rack || transferToRack.trim().toUpperCase(),
+          bin: finalLocs[0]?.bin || transferToBin.trim().toUpperCase(),
+          locations: finalLocs
+        };
+      }
+      return p;
+    }));
+
+    setShowTransferModal(false);
+  };
+
+  const handleSaveBatchMobiles = (newBatchItems) => {
+    newBatchItems.forEach(item => {
+      if (item.category) saveCustomCategory(item.category);
+      if (item.brand) saveCustomBrand(item.brand, item.category);
+    });
+    setInventory(prev => [...newBatchItems, ...prev]);
+    setTaxonomyVer(v => v + 1);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!formData.name || !formData.sellPrice) return;
+    if (!editingItem && formData.category === 'Used Mobiles') {
+      alert('Used phones need seller KYC, ID proof and purchase details. You will be taken to Used Mobiles & Refurbished Lifecycle to complete the intake and add the handset to Stock Hub and the storefront.');
+      onOpenUsedMobileIntake?.();
+      return;
+    }
+    const parsedStock = Number.parseInt(formData.stock, 10);
+    const calculatedStock = Number.isFinite(parsedStock) ? Math.max(0, parsedStock) : 0;
+    const mobileCategory = isMobileStockCategory(formData.category);
+    const imei1Values = mobileCategory ? parseImeiLines(formData.imei1) : [];
+    const imei2Values = mobileCategory ? parseImeiLines(formData.imei2) : [];
+    const serialNumberValues = mobileCategory ? [] : parseImeiLines(formData.serialNumbers);
+    const enteredImeis = [...imei1Values, ...imei2Values];
+    const originalUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
+    const storedImeis = readStoredImeiFields(editingItem);
+    const originalImeis = storedImeis.legacyImeis;
+    const originalImei1 = storedImeis.imei1.filter(Boolean);
+    const originalImei2 = storedImeis.imei2.filter(Boolean);
+    const imeisUnchanged = Boolean(editingItem) && mobileCategory &&
+      imei1Values.join('\n') === originalImei1.join('\n') &&
+      imei2Values.join('\n') === originalImei2.join('\n');
+    const originalSerialNumbers = Array.isArray(editingItem?.serialNumbers)
+      ? editingItem.serialNumbers
+      : (!isMobileStockCategory(editingItem?.category) ? originalImeis : []);
+    const serialNumbersUnchanged = Boolean(editingItem) && !mobileCategory &&
+      serialNumberValues.join('\n') === originalSerialNumbers.join('\n');
+    const identifiersUnchanged = mobileCategory ? imeisUnchanged : serialNumbersUnchanged;
+    const stockUnchanged = Boolean(editingItem) && calculatedStock === Math.max(0, Number.parseInt(editingItem.stock, 10) || 0);
+    const categoryUnchanged = Boolean(editingItem) && normalizeProductCategory(formData.category) === normalizeProductCategory(editingItem.category);
+    const shouldValidateImeis = !editingItem || !identifiersUnchanged || !stockUnchanged || !categoryUnchanged;
+    if (shouldValidateImeis && mobileCategory && calculatedStock > 0) {
+      if (requiresPairedImeis(formData.category) &&
+          (imei1Values.length !== calculatedStock || imei2Values.length !== calculatedStock)) {
+        alert(`Enter one IMEI 1 and one IMEI 2 for each of the ${calculatedStock} mobile unit(s). Put one IMEI on each line.`);
+        return;
+      }
+      if (!requiresPairedImeis(formData.category) &&
+          ((imei1Values.length > 0 && imei1Values.length !== calculatedStock) ||
+            (imei2Values.length > 0 && imei2Values.length !== calculatedStock))) {
+        alert(`For tablets, enter one value per device for each IMEI field you use, or leave that field empty.`);
+        return;
+      }
+    }
+    if (shouldValidateImeis && mobileCategory && enteredImeis.some(imei => !/^\d{15}$/.test(imei))) {
+      alert('Each mobile IMEI must contain exactly 15 digits.');
+      return;
+    }
+    if (shouldValidateImeis && !mobileCategory && serialNumberValues.length > 0 && serialNumberValues.length !== calculatedStock) {
+      alert(`Enter one serial number for each of the ${calculatedStock} stock unit(s), or clear the serial number field to leave this product untracked by serial.`);
+      return;
+    }
+    const enteredIdentifiers = mobileCategory ? enteredImeis : serialNumberValues;
+    const normalizedImeis = enteredIdentifiers.map(imei => imei.trim());
+    const inventoryImeis = new Set(inventory
+      .filter(item => item.id !== editingItem?.id)
+      .flatMap(item => [
+        ...(item.imeis || []),
+        ...(item.serialNumbers || []),
+        item.imei1,
+        item.imei2,
+        ...(item.units || []).flatMap(unit => [unit.imei1, unit.imei2, unit.serialNumber])
+      ])
+      .filter(Boolean)
+      .map(imei => String(imei).trim()));
+    if (shouldValidateImeis && (new Set(normalizedImeis).size !== normalizedImeis.length || normalizedImeis.some(imei => inventoryImeis.has(imei)))) {
+      alert(`One or more ${mobileCategory ? 'IMEIs' : 'serial numbers'} are duplicated in this entry or already assigned to another stock item.`);
+      return;
+    }
+
+    // Persist front/back photos to the on-device image store (not localStorage)
+    const productId = editingItem ? editingItem.id : `PROD-${Date.now()}`;
+    let imagesMeta = null;
+    try {
+      await Promise.all([
+        saveProductImage(productId, 'front', formImages.front),
+        saveProductImage(productId, 'back', formImages.back)
+      ]);
+      imagesMeta = (formImages.front || formImages.back)
+        ? { front: Boolean(formImages.front), back: Boolean(formImages.back), v: Date.now() }
+        : null;
+    } catch (err) {
+      console.error('Product image save failed:', err);
+      alert('Product saved, but photos could not be stored on this device.');
+      imagesMeta = editingItem?.images || null;
+    }
+
+    const serialNumbersArray = mobileCategory ? [] : (serialNumbersUnchanged && editingItem
+      ? originalSerialNumbers
+      : [...new Set(serialNumberValues)]);
+    const imeisArray = mobileCategory
+      ? (imeisUnchanged && editingItem
+        ? (originalImeis.length ? originalImeis : originalUnits.flatMap(unit => [unit.imei1, unit.imei2]).filter(Boolean))
+        : [...new Set(enteredImeis)])
+      : [];
+    const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
+    const enteredBuyPrice = Math.max(0, parseFloat(formData.buyPrice) || 0);
+    const buyPriceIncludesGst = Boolean(formData.buyPriceIncludesGst);
+    const buyCostBase = finalGstRate > 0 && buyPriceIncludesGst
+      ? enteredBuyPrice / (1 + finalGstRate / 100)
+      : enteredBuyPrice;
+    const buyCostGst = finalGstRate > 0
+      ? (buyPriceIncludesGst ? enteredBuyPrice - buyCostBase : enteredBuyPrice * finalGstRate / 100)
+      : 0;
+    const finalBuyPrice = enteredBuyPrice + (finalGstRate > 0 && !buyPriceIncludesGst ? buyCostGst : 0);
+    const assignedSupplier = suppliers.find(supplier => supplier.id === formData.supplierId);
+    const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
+    const binVal = formData.bin.trim().toUpperCase() || 'B-01';
+
+    const existingUnits = Array.isArray(editingItem?.units) ? editingItem.units : [];
+    const imeiPairCount = Math.max(imei1Values.length, imei2Values.length);
+    const unitRecords = imeisUnchanged && editingItem && existingUnits.length
+      ? existingUnits
+      : imeiPairCount > 0
+      ? Array.from({ length: imeiPairCount }, (_, index) => {
+        const imei1 = imei1Values[index] || '';
+        const imei2 = imei2Values[index] || '';
+        const existingUnit = existingUnits.find(unit => unit.imei1 === imei1 && unit.imei2 === imei2) || existingUnits[index];
+        const pairUnchanged = existingUnit?.imei1 === imei1 && existingUnit?.imei2 === imei2;
+        return {
+          ...(existingUnit || {}),
+          unitId: pairUnchanged && existingUnit?.unitId ? existingUnit.unitId : `UNIT-${Date.now()}-${index}`,
+          imei1,
+          imei2,
+          barcode: existingUnit?.barcode || (index === 0 ? formData.barcode : ''),
+          color: formData.color || existingUnit?.color || '',
+          rack: existingUnit?.rack || rackVal,
+          bin: existingUnit?.bin || binVal,
+          status: 'In Stock'
+        };
+      })
+      : !mobileCategory && serialNumbersUnchanged && editingItem && existingUnits.length
+      ? existingUnits
+      : !mobileCategory && serialNumbersArray.length > 0
+      ? serialNumbersArray.map((serialNumber, index) => {
+        const existingUnit = existingUnits.find(unit => unit.serialNumber === serialNumber) || existingUnits[index];
+        return {
+          ...(existingUnit || {}),
+          unitId: existingUnit?.unitId || `UNIT-${Date.now()}-${index}`,
+          serialNumber,
+          imei1: '',
+          imei2: '',
+          barcode: existingUnit?.barcode || (index === 0 ? formData.barcode : ''),
+          rack: existingUnit?.rack || rackVal,
+          bin: existingUnit?.bin || binVal,
+          status: 'In Stock'
+        };
+      })
+      : existingUnits;
+
+    if (editingItem) {
+      setInventory(prev => prev.map(item => {
+        if (item.id === editingItem.id) {
+          const existingLocs = item.locations || [];
+          const updatedLocs = existingLocs.length > 0 
+            ? existingLocs.map((loc, idx) => idx === 0 ? { ...loc, rack: rackVal, bin: binVal, qty: calculatedStock } : loc)
+            : [{ rack: rackVal, bin: binVal, qty: calculatedStock }];
+
+          return {
+            ...item,
+            category: formData.category,
+            subCategory: formData.subCategory.trim(),
+            capacity: formData.capacity,
+            brand: formData.brand,
+            supplierId: assignedSupplier?.id || '',
+            supplierName: assignedSupplier?.name || '',
+            name: formData.name,
+            model: formData.model || item.model,
+            ram: formData.ram,
+            storage: formData.storage,
+            color: formData.color,
+            description: formData.description.trim(),
+            isGst: formData.isGst,
+            hsn: formData.hsn,
+            gstRate: finalGstRate,
+            buyPrice: finalBuyPrice,
+            buyCostEntered: enteredBuyPrice,
+            buyCostBase,
+            buyCostGst,
+            buyPriceIncludesGst,
+            sellPrice: parseFloat(formData.sellPrice) || 0,
+            mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
+            stock: calculatedStock,
+            ...(calculatedStock > 0 && item.status === 'Sold' ? { status: 'Active' } : {}),
+            lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
+            rack: rackVal,
+            bin: binVal,
+            locations: updatedLocs,
+            barcode: (formData.barcode || '').trim(),
+            codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
+            imeis: imeisArray,
+            serialNumbers: serialNumbersArray,
+            imei1: imeisUnchanged ? (item.imei1 || originalImei1[0] || '') : (imei1Values[0] || ''),
+            imei2: imeisUnchanged ? (item.imei2 || originalImei2[0] || '') : (imei2Values[0] || ''),
+            units: unitRecords,
+            warranty: formData.warranty,
+            termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
+            receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
+            isPublished: Boolean(formData.isPublished),
+            offer: editingItem.offer,
+            createdAt: editingItem.createdAt || new Date().toISOString(),
+            images: imagesMeta,
+          };
+        }
+        return item;
+      }));
+    } else {
+      const newItem = {
+        id: productId,
+        category: formData.category,
+        subCategory: formData.subCategory.trim(),
+        capacity: formData.capacity,
+        brand: formData.brand,
+        supplierId: assignedSupplier?.id || '',
+        supplierName: assignedSupplier?.name || '',
+        name: formData.name,
+        model: formData.model,
+        ram: formData.ram,
+        storage: formData.storage,
+        color: formData.color,
+        description: formData.description.trim(),
+        isGst: formData.isGst,
+        hsn: formData.hsn,
+        gstRate: finalGstRate,
+        buyPrice: finalBuyPrice,
+        buyCostEntered: enteredBuyPrice,
+        buyCostBase,
+        buyCostGst,
+        buyPriceIncludesGst,
+        sellPrice: parseFloat(formData.sellPrice) || 0,
+        mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
+        stock: calculatedStock,
+        lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
+        rack: rackVal,
+        bin: binVal,
+        locations: [{ rack: rackVal, bin: binVal, qty: calculatedStock }],
+        barcode: (formData.barcode || '').trim(),
+        codeFormat: formData.codeFormat || (formData.barcode?.includes('QR-') ? 'qr' : 'barcode'),
+        imeis: imeisArray,
+        serialNumbers: serialNumbersArray,
+        imei1: imei1Values[0] || '',
+        imei2: imei2Values[0] || '',
+        units: unitRecords,
+        warranty: formData.warranty,
+        termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
+        receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
+        isPublished: Boolean(formData.isPublished),
+        createdAt: new Date().toISOString(),
+        images: imagesMeta,
+        status: 'Active',
+      };
+      setInventory(prev => [newItem, ...prev]);
+    }
+
+    // Persist custom category & custom brand so they permanently appear in options next time
+    if (formData.category && formData.category.trim()) {
+      saveCustomCategory(formData.category.trim());
+    }
+    if (formData.brand && formData.brand.trim()) {
+      saveCustomBrand(formData.brand.trim(), formData.category ? formData.category.trim() : 'General');
+    }
+    if (formData.category && formData.subCategory.trim()) {
+      saveCustomSubcategory(formData.subCategory.trim(), formData.category.trim());
+    }
+    setTaxonomyVer(v => v + 1);
+
+    setShowModal(false);
+  };
+
+  return (
+    <div style={{ padding: '0.85rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%', boxSizing: 'border-box' }}>
+      
+      {/* HUD COMMAND BAR: Hyper-Minimalist, Zero Text Sentences */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.75rem',
+        flexWrap: 'wrap',
+        background: 'var(--surface-primary)',
+        padding: '0.55rem 0.85rem',
+        borderRadius: '12px',
+        border: '1px solid var(--border-color)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.04)'
+      }}>
+        {/* Left: Brand / HUD Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #0C5B43 0%, #152620 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#A9BC5C',
+            boxShadow: '0 0 10px rgba(169, 188, 92, 0.25)'
+          }}>
+            <Zap size={16} className="hud-pulse" />
+          </div>
+          <span style={{
+            fontFamily: 'var(--font-heading)',
+            fontWeight: 900,
+            fontSize: '0.92rem',
+            letterSpacing: '0.04em',
+            color: 'var(--text-primary)'
+          }}>
+            STOCK HUB
+          </span>
+          <span style={{
+            fontSize: '0.62rem',
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 800,
+            padding: '0.12rem 0.4rem',
+            borderRadius: '4px',
+            background: role === 'cashier' ? '#FEF08A' : 'var(--status-green-bg)',
+            color: role === 'cashier' ? '#854D0E' : 'var(--status-green)'
+          }}>
+            {role === 'cashier' ? 'POS' : 'ADMIN'}
+          </span>
+        </div>
+
+        {/* Center: Command Search Input */}
+        <div style={{ flex: 1, maxWidth: '480px', minWidth: '220px', position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Search / Scan barcode, model, IMEI or serial number..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="input-field"
+            style={{
+              paddingLeft: '2.1rem',
+              paddingRight: searchTerm ? '5.6rem' : '4.4rem',
+              height: '34px',
+              fontSize: '0.82rem',
+              borderRadius: '8px',
+              border: '1.5px solid var(--border-color)',
+              width: '100%',
+              background: 'var(--bg-main)'
+            }}
+          />
+          <div style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm('');
+                  if (onClearInitialSearchTerm) onClearInitialSearchTerm();
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px'
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setCameraScanTarget('search');
+                setShowCameraScanner(true);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #10B981, #059669)',
+                border: 'none',
+                borderRadius: '5px',
+                color: '#FFFFFF',
+                padding: '3px 7px',
+                cursor: 'pointer',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                boxShadow: '0 1px 4px rgba(16, 185, 129, 0.3)'
+              }}
+              title="Scan Barcode or QR Code with Camera"
+            >
+              <Camera size={12} />
+              <span>Scan</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: View Toggle + Quick Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+          <div style={{
+            display: 'inline-flex',
+            background: 'var(--bg-main)',
+            borderRadius: '6px',
+            padding: '2px',
+            border: '1px solid var(--border-color)'
+          }}>
+            <button
+              onClick={() => setViewMode('cards')}
+              style={{
+                padding: '0.28rem 0.5rem',
+                borderRadius: '4px',
+                background: viewMode === 'cards' ? 'var(--surface-primary)' : 'transparent',
+                color: viewMode === 'cards' ? 'var(--accent-primary)' : 'var(--text-muted)',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              title="Cards"
+            >
+              <Grid size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              style={{
+                padding: '0.28rem 0.5rem',
+                borderRadius: '4px',
+                background: viewMode === 'table' ? 'var(--surface-primary)' : 'transparent',
+                color: viewMode === 'table' ? 'var(--accent-primary)' : 'var(--text-muted)',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              title="Table View"
+            >
+              <List size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('models')}
+              style={{
+                padding: '0.28rem 0.5rem',
+                borderRadius: '4px',
+                background: viewMode === 'models' ? 'var(--surface-primary)' : 'transparent',
+                color: viewMode === 'models' ? '#10B981' : 'var(--text-muted)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.2rem'
+              }}
+              title="Model, colour and unit identifier directory"
+            >
+              <Smartphone size={14} />
+            </button>
+          </div>
+
+          {role === 'admin' && (
+            <>
+              <button 
+                onClick={() => {
+                  if (inventory.length > 0) handleOpenTransfer(inventory[0]);
+                }}
+                className="btn-secondary"
+                style={{ padding: '0.35rem 0.65rem', fontSize: '0.76rem', height: '32px' }}
+                title="Transfer Shelf"
+              >
+                <ArrowRightLeft size={13} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(true)}
+                className="btn-primary"
+                style={{
+                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.76rem',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                }}
+                title="Bulk Add products with variants and optional serial tracking"
+              >
+                <Smartphone size={14} />
+                <span>Bulk Add</span>
+              </button>
+
+              <button 
+                onClick={openAddModal}
+                className="btn-primary"
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.76rem', height: '32px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              >
+                <Plus size={14} />
+                <span>Add</span>
+              </button>
+
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* HUD TELEMETRY STRIP: Clickable Status Badges & Quick Categories */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '0.65rem',
+        flexWrap: 'wrap',
+        padding: '0.2rem 0'
+      }}>
+        {/* Telemetry Pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflowX: 'auto', paddingBottom: '2px' }}>
+          <button 
+            onClick={() => setStockFilter('all')}
+            className={`hud-pill ${stockFilter === 'all' ? 'active' : ''}`}
+          >
+            <span>📦</span>
+            <span>ALL: {totalProducts}</span>
+          </button>
+
+          <button 
+            onClick={() => setStockFilter(stockFilter === 'in-stock' ? 'all' : 'in-stock')}
+            className={`hud-pill ${stockFilter === 'in-stock' ? 'active' : ''}`}
+          >
+            <span style={{ color: 'var(--status-green)' }}>●</span>
+            <span>IN: {inStockProducts}</span>
+          </button>
+
+          <button 
+            onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
+            className={`hud-pill ${stockFilter === 'low' ? 'active' : ''}`}
+          >
+            <span style={{ color: 'var(--status-amber)' }}>●</span>
+            <span>LOW: {lowStockProducts}</span>
+          </button>
+
+          <button 
+            onClick={() => setStockFilter(stockFilter === 'out' ? 'all' : 'out')}
+            className={`hud-pill ${stockFilter === 'out' ? 'active' : ''}`}
+          >
+            <span style={{ color: 'var(--status-red)' }}>●</span>
+            <span>OUT: {outOfStockProducts}</span>
+          </button>
+        </div>
+
+        {/* Product categories and populated subcategories */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', paddingBottom: '2px' }}>
+          <select aria-label="Filter by category" value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setSubcategoryFilter('All'); setBrandFilter('All'); }} className="hud-pill" style={{ height: 30, minWidth: 170, padding: '0 0.55rem', fontSize: '0.75rem' }}>
+          {categories.map(category => <option key={category} value={category}>{category === 'All' ? `All Categories (${categoryCounts.get('All') || 0})` : `${category.replace('Mobile Accessories', 'Accessories').replace('Home Appliances', 'Appliances')} (${categoryCounts.get(category) || 0})`}</option>)}
+          </select>
+          {activeSubcategories.length > 0 && <select aria-label="Filter by subcategory" value={subcategoryFilter} onChange={event => setSubcategoryFilter(event.target.value)} className="hud-pill" style={{ height: 30, minWidth: 160, padding: '0 0.55rem', fontSize: '0.75rem' }}>
+            <option value="All">All {categoryFilter} subcategories</option>
+            {activeSubcategories.map(subcategory => <option key={subcategory} value={subcategory}>{subcategory} ({activeSubcategoryCounts.get(subcategory) || 0})</option>)}
+          </select>}
+
+          {availableBrands.length > 0 && (
+            <select
+              value={brandFilter}
+              onChange={(e) => setBrandFilter(e.target.value)}
+              className="hud-pill"
+              style={{ height: '28px', padding: '0 0.45rem', fontSize: '0.72rem' }}
+            >
+              <option value="All">All Brands</option>
+              {availableBrands.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          )}
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="hud-pill"
+            style={{ height: '28px', padding: '0 0.45rem', fontSize: '0.72rem' }}
+          >
+            <option value="default">Default</option>
+            <option value="price-asc">₹ Low → High</option>
+            <option value="price-desc">₹ High → Low</option>
+            <option value="stock-desc">Stock High</option>
+            <option value="stock-asc">Stock Low</option>
+            <option value="name">A → Z</option>
+          </select>
+        </div>
+      </div>
+
+      {viewMode !== 'models' && <div role="status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+        <span>Showing {Math.min(displayedProducts.length, filteredProducts.length)} of {filteredProducts.length} matching products. Search checks all stock.</span>
+      </div>}
+
+      {/* MAIN VIEWPORT */}
+      {viewMode === 'models' ? (
+        <Suspense fallback={<div role="status" className="hud-card" style={{ padding: '1.5rem', textAlign: 'center' }}>Loading model directory…</div>}>
+        <ModelVariantImeiDirectory
+          inventory={inventory}
+          onSelectBarcode={onSelectBarcode}
+          onPrintBarcodeSheet={onPrintBarcodeSheet}
+          onQuickBill={handleSendToPos}
+        />
+        </Suspense>
+      ) : filteredProducts.length === 0 ? (
+        /* Empty / Zero Match State */
+        <div className="hud-card" style={{
+          padding: '3rem 1.5rem',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.75rem',
+          minHeight: '260px'
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            background: 'rgba(169, 188, 92, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent-primary)'
+          }}>
+            <Package size={24} />
+          </div>
+          <div style={{
+            fontFamily: 'var(--font-heading)',
+            fontWeight: 800,
+            fontSize: '1rem',
+            letterSpacing: '0.04em',
+            color: 'var(--text-primary)'
+          }}>
+            {searchTerm ? '0 MATCHES' : 'CATALOG EMPTY'}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')} 
+                className="btn-secondary"
+                style={{ fontSize: '0.78rem', padding: '0.35rem 0.8rem' }}
+              >
+                Reset
+              </button>
+            )}
+            {role === 'admin' && (
+              <button 
+                onClick={openAddModal} 
+                className="btn-primary"
+                style={{ fontSize: '0.78rem', padding: '0.35rem 0.9rem' }}
+              >
+                <Plus size={13} />
+                <span>Add Product</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : viewMode === 'cards' ? (
+        /* INSANE UI & UX: FAST-FINDER CARDS (ZERO BULK TEXT) */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: '0.85rem'
+        }}>
+          {displayedProducts.map(item => {
+            const stock = Number(item.stock) || 0;
+            const threshold = Number(item.lowStockThreshold) || 2;
+            const identifierCount = getTrackedIdentifierCount(item);
+            const isLow = stock > 0 && stock <= threshold;
+            const isOut = stock <= 0;
+            const sellingPrice = Number(item.sellPrice) || 0;
+            const mrp = Number(item.mrp) || 0;
+            const hasValidMrp = mrp > 0 && mrp > sellingPrice;
+            const savings = hasValidMrp ? mrp - sellingPrice : 0;
+            const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
+            const isCopied = copiedId === item.id;
+            const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
+
+            return (
+              <div 
+                key={item.id}
+                className="hud-card"
+                style={{
+                  padding: '0.95rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem'
+                }}
+              >
+                {/* Top Row: Brand Chip + Stock Badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 800,
+                    fontSize: '0.68rem',
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: 'var(--accent-primary)',
+                    background: 'rgba(169, 188, 92, 0.12)',
+                    padding: '0.12rem 0.45rem',
+                    borderRadius: '4px'
+                  }}>
+                    {item.brand || 'BRAND TO VERIFY'}
+                  </span>
+
+                  {/* Stock Pill: Just ● count */}
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 800,
+                    fontSize: '0.74rem',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '999px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    background: isOut 
+                      ? 'var(--status-red-bg)' 
+                      : isLow 
+                        ? 'var(--status-amber-bg)' 
+                        : 'var(--status-green-bg)',
+                    color: isOut 
+                      ? 'var(--status-red)' 
+                      : isLow 
+                        ? 'var(--status-amber)' 
+                        : 'var(--status-green)'
+                  }}>
+                    <span>●</span>
+                    <span>{isOut ? 'OUT' : item.stock}</span>
+                  </span>
+                </div>
+
+                {item.offer && (
+                  <div className="gold-discount-badge" style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 850,
+                    fontSize: '0.68rem',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}>
+                    {item.offer.label || `Deal (${item.offer.pct}% Off)`}
+                  </div>
+                )}
+
+                {/* Product Photo (Front / Back toggle) */}
+                {(item.images?.front || item.images?.back) && (
+                  <ProductImageViewer product={item} height={150} />
+                )}
+
+                {/* Product Name (Bold, 1-2 lines, clean) */}
+                <div style={{
+                  fontFamily: 'var(--font-heading)',
+                  fontWeight: 800,
+                  fontSize: '1rem',
+                  lineHeight: 1.25,
+                  color: 'var(--text-primary)',
+                  minHeight: '2.5rem',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden'
+                }}>
+                  {item.name}
+                </div>
+                {item.isPublished === false && (
+                  <span style={{ alignSelf: 'flex-start', fontSize: '0.66rem', fontWeight: 800, color: 'var(--status-amber)', background: 'var(--status-amber-bg)', padding: '0.12rem 0.45rem', borderRadius: '999px' }}>
+                    Not on storefront · verify details
+                  </span>
+                )}
+
+                {/* Variant Specs: Colour / RAM / Storage / IMEIs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  {(item.subCategory || item.capacity) && <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'rgba(12, 91, 67, 0.08)', color: 'var(--accent-primary)', padding: '0.12rem 0.45rem', borderRadius: '12px' }}>{[item.subCategory, item.capacity].filter(Boolean).join(' · ')}</span>}
+                  {item.color && (
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(0,0,0,0.06)',
+                      padding: '0.12rem 0.45rem',
+                      borderRadius: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      color: 'var(--text-primary)'
+                    }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.colorHex || getProductColorHex(item.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
+                      <span>{item.color}</span>
+                    </span>
+                  )}
+
+                  {(item.ram || item.storage) && (
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      background: 'rgba(79, 70, 229, 0.08)',
+                      color: 'var(--accent-primary)',
+                      padding: '0.12rem 0.45rem',
+                      borderRadius: '12px'
+                    }}>
+                      {[item.ram, item.storage].filter(Boolean).join(' / ')}
+                    </span>
+                  )}
+
+                  {identifierCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveImeiViewerItem(item)}
+                      style={{
+                        fontSize: '0.66rem',
+                        fontWeight: 800,
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        color: '#10B981',
+                        border: 'none',
+                        padding: '0.12rem 0.45rem',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+              title="Inspect this product's unit identifiers"
+                    >
+                      <Smartphone size={10} />
+                      <span>{identifierCount} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {(item.supplierId || item.supplierPurchases?.length > 0) && (
+                  <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}>
+                    <Truck size={12} /> {item.supplierPurchases?.length ? `Supplier history (${item.supplierPurchases.length})` : 'Supplier details'}
+                  </button>
+                )}
+
+                {/* Location Badge + ID Pill */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
+                  {/* Rack / Bin Badge */}
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    color: '#207096',
+                    background: 'rgba(32, 112, 150, 0.1)',
+                    padding: '0.15rem 0.45rem',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <MapPin size={11} />
+                    <span>{item.rack || 'R-01'} : {item.bin || 'B-01'}</span>
+                  </span>
+
+                  {/* ID / Barcode / IMEI with 1-Click Copy */}
+                  <button
+                    onClick={() => handleCopy(codeToCopy, item.id)}
+                    style={{
+                      background: isCopied ? 'var(--status-green-bg)' : 'var(--bg-main)',
+                      color: isCopied ? 'var(--status-green)' : 'var(--text-muted)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      padding: '0.15rem 0.45rem',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Copy Code"
+                  >
+                    <span>{codeToCopy ? (codeToCopy.length > 10 ? codeToCopy.slice(0, 8) + '…' : codeToCopy) : 'ID'}</span>
+                    {isCopied ? <Check size={11} /> : <Copy size={11} />}
+                  </button>
+                </div>
+
+                {/* HERO PRICE: Visual Star of Card */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  padding: '0.45rem 0.65rem',
+                  borderRadius: '8px',
+                  background: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem' }}>
+                    <span style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontWeight: 900,
+                      fontSize: '1.45rem',
+                      letterSpacing: '-0.02em',
+                      color: 'var(--accent-primary)'
+                    }}>
+                      ₹{sellingPrice.toLocaleString()}
+                    </span>
+                    {hasValidMrp && (
+                      <span style={{
+                        fontSize: '0.78rem',
+                        color: 'var(--text-muted)',
+                        textDecoration: 'line-through'
+                      }} aria-label={`MRP ₹${mrp.toLocaleString()}`} title="MRP">
+                        ₹{mrp.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+
+                  {savingsPct > 0 && (
+                    <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 800,
+                      fontSize: '0.68rem',
+                      padding: '0.1rem 0.35rem',
+                      borderRadius: '4px',
+                      background: 'var(--status-green-bg)',
+                      color: 'var(--status-green)'
+                    }}>
+                      -{savingsPct}%
+                    </span>
+                  )}
+                </div>
+
+                {/* ACTION DOCK: Instant Tactile Interaction */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
+                  {/* Primary: BILL BUTTON */}
+                  <button
+                    onClick={() => handleSendToPos(item)}
+                    disabled={isOut}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.75rem',
+                      borderRadius: '6px',
+                      background: isOut ? 'var(--bg-main)' : 'var(--accent-primary)',
+                      color: isOut ? 'var(--text-muted)' : 'var(--accent-contrast, #FFFFFF)',
+                      border: 'none',
+                      fontSize: '0.82rem',
+                      fontFamily: 'var(--font-heading)',
+                      fontWeight: 900,
+                      letterSpacing: '0.04em',
+                      cursor: isOut ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: isOut ? 'none' : '0 2px 8px rgba(12, 91, 67, 0.25)'
+                    }}
+                    title={isOut ? 'Out of Stock' : 'Add to POS Counter Cart'}
+                  >
+                    <ShoppingCart size={14} />
+                    <span>BILL</span>
+                  </button>
+
+                  {/* Secondary Icon Dock */}
+                  <button
+                    onClick={() => setCompareProduct(item)}
+                    style={{
+                      padding: '0.45rem',
+                      borderRadius: '6px',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--accent-primary)',
+                      cursor: 'pointer'
+                    }}
+                    title="Live Online Market Price (Amazon & Flipkart)"
+                  >
+                    <Globe size={14} />
+                  </button>
+
+                  {/* QR Specs & Details Scan View */}
+                  <button
+                    onClick={() => setActiveScanPreviewItem(item)}
+                    style={{
+                      padding: '0.45rem',
+                      borderRadius: '6px',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: '#059669',
+                      cursor: 'pointer'
+                    }}
+                    title="View QR Specs, Colour Variants & Terms (Customer & Staff Scan View)"
+                  >
+                    <QrCode size={14} />
+                  </button>
+
+                  <button
+                    onClick={() => setQuickBarcodeItem(item)}
+                    style={{
+                      padding: '0.45rem',
+                      borderRadius: '6px',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer'
+                    }}
+                    title="Print Barcode Tag"
+                  >
+                    <Barcode size={14} />
+                  </button>
+
+                  {role === 'admin' && (
+                    <>
+                      <button
+                        onClick={() => openEditModal(item)}
+                        style={{
+                          padding: '0.45rem',
+                          borderRadius: '6px',
+                          background: 'var(--bg-main)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                        title={isOut ? 'Restock / Edit Product' : 'Edit'}
+                        aria-label={isOut ? `Restock or edit ${item.name}` : `Edit ${item.name}`}
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item)}
+                        style={{
+                          padding: '0.45rem',
+                          borderRadius: '6px',
+                          background: 'var(--bg-main)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--status-red)',
+                          cursor: 'pointer'
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* STREAMLINED HUD LIST MODE */
+        <div className="hud-card" style={{ padding: '0.25rem', overflowX: 'auto' }}>
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-main)', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
+                <th style={{ padding: '0.65rem 0.85rem' }}>PRODUCT</th>
+                <th style={{ padding: '0.65rem 0.85rem' }}>STOCK</th>
+                <th style={{ padding: '0.65rem 0.85rem' }}>SHELF</th>
+                <th style={{ padding: '0.65rem 0.85rem' }}>PRICE</th>
+                <th style={{ padding: '0.65rem 0.85rem' }}>ID</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayedProducts.map(item => {
+                const stock = Number(item.stock) || 0;
+                const threshold = Number(item.lowStockThreshold) || 2;
+                const identifierCount = getTrackedIdentifierCount(item);
+                const isLow = stock > 0 && stock <= threshold;
+                const isOut = stock <= 0;
+                const isCopied = copiedId === item.id;
+                const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
+
+                return (
+                  <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.65rem 0.85rem' }}>
+                      <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{item.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                        {item.isPublished === false && <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'var(--status-amber)', background: 'var(--status-amber-bg)', padding: '0.1rem 0.35rem', borderRadius: '999px' }}>Not on storefront</span>}
+                        <span style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
+                          {item.brand || 'BRAND TO VERIFY'}
+                        </span>
+                        {item.color && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(0,0,0,0.05)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: item.colorHex || getProductColorHex(item.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
+                            <span>{item.color}</span>
+                          </span>
+                        )}
+                        {(item.ram || item.storage) && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(79,70,229,0.08)', color: 'var(--accent-primary)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
+                            {[item.ram, item.storage].filter(Boolean).join('/')}
+                          </span>
+                        )}
+                        {identifierCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveImeiViewerItem(item)}
+                            style={{
+                              fontSize: '0.62rem',
+                              fontWeight: 800,
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              color: '#10B981',
+                              border: 'none',
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {isMobileStockCategory(item.category) ? '📱' : '🔢'} {identifierCount} {isMobileStockCategory(item.category) ? 'IMEIs' : 'Serial Nos.'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '0.65rem 0.85rem' }}>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        color: isOut ? 'var(--status-red)' : isLow ? 'var(--status-amber)' : 'var(--status-green)'
+                      }}>
+                        ● {isOut ? '0' : item.stock}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '0.65rem 0.85rem' }}>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.74rem',
+                        color: '#207096',
+                        background: 'rgba(32, 112, 150, 0.1)',
+                        padding: '0.12rem 0.4rem',
+                        borderRadius: '4px'
+                      }}>
+                        {item.rack || 'R-01'}:{item.bin || 'B-01'}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '0.65rem 0.85rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                        <span style={{
+                          fontFamily: 'var(--font-heading)',
+                          fontWeight: 900,
+                          fontSize: '0.92rem',
+                          color: 'var(--accent-primary)'
+                        }}>
+                          ₹{item.sellPrice.toLocaleString()}
+                        </span>
+                        {item.offer && (
+                          <span className="gold-discount-badge" style={{
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.62rem',
+                            fontWeight: 850,
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '3px'
+                          }}>
+                            {item.offer.label || `${item.offer.pct}% Off`}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td style={{ padding: '0.65rem 0.85rem' }}>
+                      <button
+                        onClick={() => handleCopy(codeToCopy, item.id)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.72rem',
+                          color: isCopied ? 'var(--status-green)' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span>{codeToCopy ? (codeToCopy.length > 8 ? codeToCopy.slice(0, 8) + '…' : codeToCopy) : '—'}</span>
+                        {isCopied ? <Check size={11} /> : <Copy size={11} />}
+                      </button>
+                    </td>
+
+                    <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                        {(item.supplierId || item.supplierPurchases?.length > 0) && <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" title="Supplier details and history" style={{ padding: '0.28rem 0.45rem' }}><Truck size={13} /></button>}
+                        <button
+                          onClick={() => handleSendToPos(item)}
+                          disabled={isOut}
+                          className="btn-primary"
+                          style={{ padding: '0.28rem 0.65rem', fontSize: '0.74rem', fontWeight: 800, color: 'var(--accent-contrast, #FFFFFF)' }}
+                        >
+                          BILL
+                        </button>
+                        <button
+                          onClick={() => setCompareProduct(item)}
+                          className="btn-secondary"
+                          style={{ padding: '0.28rem 0.45rem' }}
+                          title="Live Online Market Price (Amazon & Flipkart)"
+                        >
+                          <Globe size={13} />
+                        </button>
+                        {/* QR Specs Preview */}
+                        <button
+                          onClick={() => setActiveScanPreviewItem(item)}
+                          className="btn-secondary"
+                          style={{ padding: '0.28rem 0.45rem', color: '#059669' }}
+                          title="View QR Specs, Colour Variants & Terms"
+                        >
+                          <QrCode size={13} />
+                        </button>
+                        <button
+                          onClick={() => setQuickBarcodeItem(item)}
+                          className="btn-secondary"
+                          style={{ padding: '0.28rem 0.45rem' }}
+                          title="Print Barcode Tag"
+                        >
+                          <Barcode size={13} />
+                        </button>
+                        {role === 'admin' && (
+                          <>
+                            <button
+                              onClick={() => openEditModal(item)}
+                              className="btn-secondary"
+                              style={{ padding: '0.28rem 0.45rem' }}
+                              title={isOut ? 'Restock / Edit Product' : 'Edit Product'}
+                              aria-label={isOut ? `Restock or edit ${item.name}` : `Edit ${item.name}`}
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              className="btn-secondary"
+                              style={{ padding: '0.28rem 0.45rem', color: 'var(--status-red)' }}
+                              title="Delete Product"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {viewMode !== 'models' && displayedProducts.length < filteredProducts.length && <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0' }}><button type="button" className="btn-outline" onClick={() => setInventoryDisplayLimit(limit => limit + 60)} style={{ padding: '0.55rem 1.2rem' }}>Load next 60 products</button></div>}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmItem && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1200 }}>
+          <div className="illoca-card animate-fade-in" style={{ maxWidth: '420px', width: '100%', padding: '1.5rem', background: 'var(--surface-primary)', border: '1px solid var(--status-red)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--status-red-bg)', color: 'var(--status-red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Delete Product</h3>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>ID: {deleteConfirmItem.id}</div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-primary)', margin: '0 0 1.25rem' }}>
+              Are you sure you want to remove <strong>{deleteConfirmItem.name}</strong> from stock? This will remove all associated barcode and rack allocations.
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmItem(null)}
+                className="btn-secondary"
+                style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                style={{
+                  padding: '0.45rem 1rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  backgroundColor: 'var(--status-red)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT MODAL */}
+      {showModal && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1100 }}>
+          <form onSubmit={handleSave} className="illoca-card animate-fade-in" style={{ maxWidth: '580px', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.6rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Package size={18} color="var(--accent-primary)" />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
+                  {editingItem ? 'Edit Item' : 'New Product'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ gridColumn: '1 / -1', paddingBottom: '0.35rem', borderBottom: '1px solid var(--border-color)' }}>
+                <strong style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-primary)' }}>Product Information</strong>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Add clear product details for customers viewing the product scan page.</span>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Category</label>
+                <select
+                  value={isCustomCategory ? 'Other' : formData.category}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setIsCustomCategory(true);
+                      setIsCustomSubcategory(false);
+                      setIsCustomBrand(false);
+                      setFormData(prev => ({ ...prev, category: '', subCategory: '', capacity: '', ram: '', storage: '' }));
+                    } else {
+                      setIsCustomCategory(false);
+                      setIsCustomSubcategory(false);
+                      setIsCustomBrand(false);
+                      const validBrands = getAvailableBrandsForCategory(val, inventory);
+                      const brandStillValid = validBrands.includes(formData.brand);
+                      setFormData(prev => ({
+                        ...prev,
+                        category: val,
+                        subCategory: '',
+                        capacity: '',
+                        ram: isMobileStockCategory(val) ? prev.ram : '',
+                        storage: isMobileStockCategory(val) ? prev.storage : '',
+                        brand: brandStillValid ? prev.brand : (validBrands.includes('Universal') ? 'Universal' : validBrands[0])
+                      }));
+                    }
+                  }}
+                  className="input-field"
+                >
+                  {productEntryCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="Other">Other (Add Custom)</option>
+                </select>
+
+                {isCustomCategory && (
+                  <input
+                    type="text"
+                    placeholder="Enter custom category..."
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onBlur={(e) => {
+                      if (e.target.value.trim()) {
+                        saveCustomCategory(e.target.value.trim());
+                        setTaxonomyVer(v => v + 1);
+                      }
+                    }}
+                    required
+                    className="input-field animate-fade-in"
+                    style={{ marginTop: '0.3rem' }}
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Subcategory</label>
+                <select className="input-field" value={isCustomSubcategory ? 'Other' : formData.subCategory} onChange={(e) => {
+                  if (e.target.value === 'Other') { setIsCustomSubcategory(true); setFormData(prev => ({ ...prev, subCategory: '', capacity: '' })); }
+                  else { setIsCustomSubcategory(false); setFormData(prev => ({ ...prev, subCategory: e.target.value, capacity: '' })); }
+                }}>
+                  <option value="">Select subcategory</option>
+                  {getAvailableSubcategories(formData.category, inventory).map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                  <option value="Other">Other (Add Custom)</option>
+                </select>
+                {isCustomSubcategory && <input type="text" placeholder="Enter custom subcategory..." aria-label="Custom subcategory name" value={formData.subCategory} onChange={(e) => setFormData(prev => ({ ...prev, subCategory: e.target.value }))} onBlur={(e) => { if (e.target.value.trim()) { saveCustomSubcategory(e.target.value, formData.category); setTaxonomyVer(v => v + 1); } }} required className="input-field animate-fade-in" style={{ marginTop: '0.3rem' }} />}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand</label>
+                {(() => {
+                  const currentBrands = getAvailableBrandsForCategory(formData.category, inventory);
+                  const isBrandInList = currentBrands.includes(formData.brand);
+                  const selectValue = isCustomBrand ? 'Other' : (isBrandInList ? formData.brand : (formData.brand ? formData.brand : 'Other'));
+
+                  return (
+                    <>
+                      <select
+                        value={selectValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'Other') {
+                            setIsCustomBrand(true);
+                            setFormData(prev => ({ ...prev, brand: '' }));
+                          } else {
+                            setIsCustomBrand(false);
+                            setFormData(prev => ({ ...prev, brand: val }));
+                          }
+                        }}
+                        className="input-field"
+                      >
+                        {currentBrands.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                        {formData.brand && !currentBrands.includes(formData.brand) && !isCustomBrand && (
+                          <option key={formData.brand} value={formData.brand}>{formData.brand}</option>
+                        )}
+                        <option value="Other">Other (Add Custom)</option>
+                      </select>
+
+                      {isCustomBrand && (
+                        <input
+                          type="text"
+                          placeholder="Enter custom brand..."
+                          value={formData.brand}
+                          onChange={(e) => setFormData(prev => ({ ...prev, brand: e.target.value }))}
+                          onBlur={(e) => {
+                            if (e.target.value.trim()) {
+                              saveCustomBrand(e.target.value.trim(), formData.category);
+                              setTaxonomyVer(v => v + 1);
+                            }
+                          }}
+                          required
+                          className="input-field animate-fade-in"
+                          style={{ marginTop: '0.3rem' }}
+                          autoFocus={isCustomBrand}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Supplier</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <select value={formData.supplierId || ''} onChange={event => setFormData(previous => ({ ...previous, supplierId: event.target.value }))} className="input-field" style={{ flex: 1 }}>
+                    <option value="">No supplier selected</option>
+                    {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.city ? ` · ${supplier.city}` : ''}</option>)}
+                  </select>
+                  {role === 'admin' && <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(true)} style={{ whiteSpace: 'nowrap', padding: '0.5rem 0.65rem', fontSize: '0.76rem' }}><Plus size={14} /> Add Supplier</button>}
+                </div>
+              </div>
+
+              {/* Phones and tablets use RAM and storage specifications. */}
+              {isMobileStockCategory(formData.category) && <><div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM</label>
+                <select
+                  value={
+                    COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(formData.ram)
+                      ? formData.ram
+                      : (formData.ram ? 'Other' : (isCustomRam ? 'Other' : ''))
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setIsCustomRam(true);
+                      setFormData(prev => ({ ...prev, ram: '' }));
+                    } else {
+                      setIsCustomRam(false);
+                      setFormData(prev => ({ ...prev, ram: val }));
+                    }
+                  }}
+                  className="input-field"
+                >
+                  <option value="">Select RAM</option>
+                  {COMMON_RAM_OPTIONS.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                {(isCustomRam || (!COMMON_RAM_OPTIONS.filter(r => r !== 'Other').includes(formData.ram) && formData.ram)) && (
+                  <input
+                    type="text"
+                    placeholder="Type custom RAM (e.g. 32MB, 24GB)..."
+                    value={formData.ram}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ram: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Storage</label>
+                <select
+                  value={
+                    COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(formData.storage)
+                      ? formData.storage
+                      : (formData.storage ? 'Other' : (isCustomStorage ? 'Other' : ''))
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setIsCustomStorage(true);
+                      setFormData(prev => ({ ...prev, storage: '' }));
+                    } else {
+                      setIsCustomStorage(false);
+                      setFormData(prev => ({ ...prev, storage: val }));
+                    }
+                  }}
+                  className="input-field"
+                >
+                  <option value="">Select Storage</option>
+                  {COMMON_STORAGE_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                {(isCustomStorage || (!COMMON_STORAGE_OPTIONS.filter(s => s !== 'Other').includes(formData.storage) && formData.storage)) && (
+                  <input
+                    type="text"
+                    placeholder="Type custom storage (e.g. 32MB, 2TB)..."
+                    value={formData.storage}
+                    onChange={(e) => setFormData(prev => ({ ...prev, storage: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              </>}
+
+              {formData.category === 'Home Appliances' && <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Capacity / Size</label>
+                <input className="input-field" type="text" placeholder="e.g. 240L, 1.5 Ton, 7kg, 55 inch" value={formData.capacity} onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))} />
+              </div>}
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Colour</label>
+                <select
+                  value={POPULAR_COLORS.some(c => c.name === formData.color) ? formData.color : (formData.color ? 'Other' : '')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setFormData(prev => ({ ...prev, color: '' }));
+                    } else {
+                      setFormData(prev => ({ ...prev, color: val }));
+                    }
+                  }}
+                  className="input-field"
+                >
+                  <option value="">Select Colour</option>
+                  {POPULAR_COLORS.map(c => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="Other">Other (Custom)</option>
+                </select>
+                {(!POPULAR_COLORS.some(c => c.name === formData.color) || formData.color === '') && (
+                  <input
+                    type="text"
+                    placeholder="Type custom colour..."
+                    value={formData.color}
+                    onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+                    className="input-field"
+                    style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                  />
+                )}
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Name / Model</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Galaxy S24 5G, iPhone 18 Pro"
+                  value={formData.model || ''}
+                  onChange={(e) => {
+                    setFormData(prev => ({ ...prev, model: e.target.value }));
+                    setShowModelSuggestions(true);
+                  }}
+                  onFocus={() => setShowModelSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowModelSuggestions(false), 250)}
+                  onKeyDown={(e) => {
+                    if (!showModelSuggestions || modelSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setModelSuggestionIndex(prev => (prev + 1) % modelSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setModelSuggestionIndex(prev => (prev <= 0 ? modelSuggestions.length - 1 : prev - 1));
+                    } else if (e.key === 'Enter' && modelSuggestionIndex >= 0) {
+                      e.preventDefault();
+                      handleSelectSuggestion(modelSuggestions[modelSuggestionIndex]);
+                    } else if (e.key === 'Escape') {
+                      setShowModelSuggestions(false);
+                    }
+                  }}
+                  className="input-field"
+                  autoComplete="off"
+                />
+
+                {showModelSuggestions && modelSuggestions.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 1250,
+                      background: 'var(--surface-primary)',
+                      border: '1.5px solid var(--accent-primary)',
+                      borderRadius: '8px',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                      marginTop: '4px',
+                      maxHeight: '240px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{
+                      padding: '0.3rem 0.55rem',
+                      fontSize: '0.62rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--accent-primary)',
+                      background: 'var(--surface-secondary)',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>Quick Model Auto-Fill</span>
+                      <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>Enter ↵ to pick</span>
+                    </div>
+                    {modelSuggestions.map((sug, idx) => (
+                      <div
+                        key={idx}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSelectSuggestion(sug);
+                        }}
+                        onMouseEnter={() => setModelSuggestionIndex(idx)}
+                        style={{
+                          padding: '0.45rem 0.6rem',
+                          cursor: 'pointer',
+                          background: idx === modelSuggestionIndex ? 'var(--surface-hover)' : 'transparent',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.4rem'
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {sug.model || sug.name}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {sug.brand} • {sug.category}
+                          </div>
+                        </div>
+                        {sug.suggestedSell > 0 && (
+                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
+                            ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ gridColumn: 'span 2', position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                    Product Name *
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setNameSuggestionIndex(-1);
+                      setShowNameSuggestions(current => !current && productNameSuggestions.length > 0);
+                    }}
+                    disabled={productNameSuggestions.length === 0}
+                    title={productNameSuggestions.length ? 'Show matching product name suggestions' : 'Type at least 2 characters to see name suggestions'}
+                    style={{ padding: '0.18rem 0.45rem', fontSize: '0.64rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
+                  >
+                    <Sparkles size={11} /> Name Suggestions
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. apple 18 pro, Galaxy S24, Nord CE4"
+                  value={formData.name}
+                  onChange={(e) => {
+                    setFormData({ ...formData, name: e.target.value });
+                  }}
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 250)}
+                  onKeyDown={(e) => {
+                    if (!showNameSuggestions || productNameSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setNameSuggestionIndex(prev => (prev + 1) % productNameSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setNameSuggestionIndex(prev => (prev <= 0 ? productNameSuggestions.length - 1 : prev - 1));
+                    } else if (e.key === 'Enter' && nameSuggestionIndex >= 0) {
+                      e.preventDefault();
+                      handleSelectSuggestion(productNameSuggestions[nameSuggestionIndex]);
+                    } else if (e.key === 'Escape') {
+                      setShowNameSuggestions(false);
+                    }
+                  }}
+                  required
+                  className="input-field"
+                  autoComplete="off"
+                />
+
+                {/* Auto Suggestions Floating Dropdown */}
+                {showNameSuggestions && productNameSuggestions.length > 0 && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 1300,
+                      background: 'var(--surface-primary)',
+                      border: '1.5px solid var(--accent-primary)',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                      marginTop: '4px',
+                      maxHeight: '270px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{
+                      padding: '0.35rem 0.65rem',
+                      fontSize: '0.64rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      color: 'var(--accent-primary)',
+                      background: 'var(--surface-secondary)',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>⚡ Fast Suggestions (Click or Enter to Auto-Fill)</span>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>↑↓ Arrows to navigate</span>
+                    </div>
+                    {productNameSuggestions.map((sug, idx) => {
+                      const isSelected = idx === nameSuggestionIndex;
+                      return (
+                        <div
+                          key={idx}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectSuggestion(sug);
+                          }}
+                          onMouseEnter={() => setNameSuggestionIndex(idx)}
+                          style={{
+                            padding: '0.55rem 0.75rem',
+                            cursor: 'pointer',
+                            background: isSelected ? 'var(--surface-hover)' : 'transparent',
+                            borderBottom: '1px solid var(--border-color)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.6rem',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontWeight: 700,
+                              fontSize: '0.84rem',
+                              color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}>
+                              {sug.name}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem', alignItems: 'center' }}>
+                              <span style={{
+                                fontSize: '0.64rem',
+                                fontWeight: 800,
+                                padding: '0.08rem 0.38rem',
+                                borderRadius: '4px',
+                                background: 'rgba(169, 188, 92, 0.18)',
+                                color: 'var(--accent-primary)'
+                              }}>
+                                {sug.brand}
+                              </span>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                {sug.category} {sug.ram && sug.storage ? `• ${sug.ram}/${sug.storage}` : ''} {sug.color ? `• ${sug.color}` : ''}
+                              </span>
+                            </div>
+                          </div>
+                          {sug.suggestedSell > 0 && (
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                              </div>
+                              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                                {sug.source === 'inventory' ? 'Stock ₹' : 'Est. ₹'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Description / Information</label>
+                <textarea
+                  rows={3}
+                  placeholder="Add product features, compatibility, included accessories, or other useful details..."
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  className="input-field"
+                  style={{ resize: 'vertical', minHeight: '74px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ *</label>
+                <input
+                  type="number"
+                  placeholder="Sell ₹"
+                  value={formData.sellPrice}
+                  onChange={(e) => setFormData({ ...formData, sellPrice: e.target.value })}
+                  required
+                  className="input-field"
+                  style={{ fontWeight: 800, color: 'var(--accent-primary)' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>MRP ₹</label>
+                <input
+                  type="number"
+                  placeholder="Box MRP"
+                  value={formData.mrp}
+                  onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Buy Cost ₹ *</label>
+                <input
+                  type="number"
+                  placeholder="Cost ₹"
+                  value={formData.buyPrice}
+                  onChange={(e) => setFormData({ ...formData, buyPrice: e.target.value })}
+                  required
+                  className="input-field"
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', fontSize: '0.72rem', fontWeight: 650, cursor: formData.isGst ? 'pointer' : 'not-allowed', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.buyPriceIncludesGst)}
+                    disabled={!formData.isGst}
+                    onChange={event => setFormData({ ...formData, buyPriceIncludesGst: event.target.checked })}
+                  />
+                  Buy cost already includes GST
+                </label>
+                <div style={{ marginTop: '0.15rem', fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                  {formData.isGst
+                    ? (formData.buyPriceIncludesGst ? 'GST is included in the entered cost.' : `GST at ${Number(formData.gstRate) || 18}% will be added to the entered cost.`)
+                    : 'Non-GST item: no GST is added to the buy cost.'}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Stock Units</label>
+                <input
+                  type="number"
+                  value={formData.stock}
+                  onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: '0.55rem', padding: '0.7rem 0.8rem', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.isPublished)}
+                  onChange={e => setFormData({ ...formData, isPublished: e.target.checked })}
+                  style={{ marginTop: '0.15rem' }}
+                />
+                <span>
+                  <strong style={{ display: 'block', fontSize: '0.76rem' }}>Show on storefront</strong>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Publish after confirming the product, selling price, stock and photo.</span>
+                </span>
+              </label>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Rack</label>
+                <input
+                  type="text"
+                  placeholder="e.g. R-01"
+                  value={formData.rack}
+                  onChange={(e) => setFormData({ ...formData, rack: e.target.value })}
+                  className="input-field"
+                  style={{ textTransform: 'uppercase' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Bin</label>
+                <input
+                  type="text"
+                  placeholder="e.g. B-01"
+                  value={formData.bin}
+                  onChange={(e) => setFormData({ ...formData, bin: e.target.value })}
+                  className="input-field"
+                  style={{ textTransform: 'uppercase' }}
+                  required
+                />
+              </div>
+
+              {/* Product Barcode & QR Code (Matches Bulk Design) */}
+              <div style={{ gridColumn: 'span 2', background: 'var(--surface-secondary, rgba(255,255,255,0.03))', padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                {/* Header row with Title and [Barcode | QR] Switcher */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', margin: 0 }}>
+                    {formData.codeFormat === 'qr' ? <QrCode size={16} color="#4F46E5" /> : <Barcode size={16} color="#10B981" />}
+                    <span>Barcode & QR Code</span>
+                  </label>
+
+                  {/* Compact Pill Switcher: Barcode vs QR vs Both */}
+                  <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.12)', padding: '2px', borderRadius: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (nextCode && nextCode.includes('ALZ-QR-')) {
+                          nextCode = nextCode.replace('ALZ-QR-', 'ALZ-');
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'barcode', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        background: (formData.codeFormat || 'barcode') === 'barcode' ? '#10B981' : 'transparent',
+                        color: (formData.codeFormat || 'barcode') === 'barcode' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Set 1D Barcode (Code-128)"
+                    >
+                      <Barcode size={12} />
+                      <span>Barcode</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (nextCode && nextCode.startsWith('ALZ-') && !nextCode.includes('ALZ-QR-')) {
+                          nextCode = nextCode.replace('ALZ-', 'ALZ-QR-');
+                        } else if (!nextCode) {
+                          nextCode = `ALZ-QR-${Date.now().toString().slice(-6)}`;
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'qr', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        background: formData.codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                        color: formData.codeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Set 2D QR Code"
+                    >
+                      <QrCode size={12} />
+                      <span>QR</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let nextCode = formData.barcode;
+                        if (!nextCode) {
+                          nextCode = `ALZ-${Date.now().toString().slice(-6)}`;
+                        }
+                        setFormData(prev => ({ ...prev, codeFormat: 'both', barcode: nextCode }));
+                      }}
+                      style={{
+                        padding: '0.2rem 0.55rem',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        background: formData.codeFormat === 'both' ? '#2563EB' : 'transparent',
+                        color: formData.codeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Include both 1D Barcode & 2D QR Code on the same sticker"
+                    >
+                      <Layers size={12} />
+                      <span>Both</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Input row: allows typing own barcode / QR code or scanning / generating */}
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder={formData.codeFormat === 'qr' ? "e.g. ALZ-QR-429177 or custom QR text / link" : "e.g. 8901234567890 or ALZ-429177"}
+                    value={formData.barcode}
+                    onChange={(e) => setFormData(prev => ({ ...prev, barcode: e.target.value }))}
+                    className="input-field"
+                    style={{ 
+                      fontFamily: 'var(--font-mono)', 
+                      fontSize: '0.85rem', 
+                      fontWeight: 700,
+                      flex: 1,
+                      color: formData.barcode ? (formData.codeFormat === 'qr' ? '#4F46E5' : 'var(--text-primary)') : 'var(--text-muted)'
+                    }}
+                  />
+
+                  {/* Camera Scanner Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraScanTarget('barcode');
+                      setShowCameraScanner(true);
+                    }}
+                    className="btn-secondary"
+                    style={{
+                      padding: '0.42rem 0.65rem',
+                      fontSize: '0.74rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Scan box barcode or QR with phone camera"
+                  >
+                    <Camera size={13} />
+                    <span>Scan</span>
+                  </button>
+
+                  {/* Reset / New Auto Code */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                      setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
+                    }}
+                    className="btn-secondary"
+                    style={{
+                      padding: '0.42rem 0.65rem',
+                      fontSize: '0.74rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Generate new unique ALZ code"
+                  >
+                    <RefreshCw size={12} />
+                    <span>New</span>
+                  </button>
+
+                  {/* Download Sticker button */}
+                  {formData.barcode && (
+                    <button
+                      type="button"
+                      onClick={() => downloadStickerImage({
+                        title: formData.name || 'Product',
+                        barcode: formData.barcode,
+                        codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
+                        qrValue: buildProductScanUrl({ id: editingItem?.id || formData.barcode, barcode: formData.barcode }, '', { addToCart: true }),
+                        price: formData.sellPrice || 0,
+                        mrp: Number(formData.mrp) || 0,
+                        shopName: shopConfig?.name || 'ALZINO MOBILES'
+                      })}
+                      className="btn-secondary"
+                      style={{
+                        padding: '0.42rem 0.65rem',
+                        fontSize: '0.74rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        color: '#2563EB',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Download 50x25mm label sticker as PNG image"
+                    >
+                      <Download size={12} />
+                      <span>Download</span>
+                    </button>
+                  )}
+
+                  {/* Print Sticker button */}
+                  {formData.barcode && onPrintBarcodeSheet && (
+                    <button
+                      type="button"
+                      onClick={() => onPrintBarcodeSheet({
+                        title: formData.name || 'Product',
+                        barcode: formData.barcode,
+                        codeFormat: formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'),
+                        price: formData.sellPrice || 0,
+                        mrp: Number(formData.mrp) || 0,
+                        copies: 1,
+                        format: 'single'
+                      })}
+                      className="btn-secondary"
+                      style={{
+                        padding: '0.42rem 0.65rem',
+                        fontSize: '0.74rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        color: formData.codeFormat === 'qr' ? '#4F46E5' : '#10B981',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Print 50x25mm single sticker"
+                    >
+                      <Printer size={12} />
+                      <span>Print</span>
+                    </button>
+                  )}
+
+                  {/* Delete / Clear Button */}
+                  {formData.barcode ? (
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, barcode: '' }))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        padding: '0.35rem 0.5rem',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title="Delete code (stores as empty in database)"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prefix = formData.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                        setFormData(prev => ({ ...prev, barcode: `${prefix}-${Date.now().toString().slice(-6)}` }));
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#10B981',
+                        cursor: 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        padding: '0.35rem 0.45rem',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title="Add code"
+                    >
+                      + Add
+                    </button>
+                  )}
+                </div>
+
+                {/* Status & Live Preview */}
+                <div style={{ marginTop: '0.45rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.68rem', color: formData.barcode ? 'var(--text-muted)' : '#EF4444', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    {formData.barcode ? (
+                      `Format: ${formData.codeFormat === 'both' ? 'Both (1D Barcode + 2D QR)' : formData.codeFormat === 'qr' ? '2D QR Code' : '1D Barcode (Code-128)'} • Type custom code or scan`
+                    ) : (
+                      '⚠️ No barcode or QR code assigned (will be stored as empty in database)'
+                    )}
+                  </span>
+                </div>
+
+                {/* Vector SVG Live Preview */}
+                {formData.barcode && (
+                  <div style={{ 
+                    marginTop: '0.45rem', 
+                    background: '#FFFFFF', 
+                    padding: '0.45rem', 
+                    borderRadius: '6px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    border: '1px solid #E2E8F0' 
+                  }}>
+                    <div 
+                      dangerouslySetInnerHTML={{ 
+                        __html: renderCodeSvg(formData.barcode, formData.codeFormat || (formData.barcode.includes('QR-') ? 'qr' : 'barcode'), 190, 50, true, buildProductScanUrl({ id: editingItem?.id || formData.barcode, barcode: formData.barcode }, '', { addToCart: true }))
+                      }} 
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Tax %</label>
+                <select
+                  value={formData.isGst ? formData.gstRate : 0}
+                  onChange={(e) => {
+                    const r = parseFloat(e.target.value);
+                    setFormData({ ...formData, isGst: r > 0, gstRate: r });
+                  }}
+                  className="input-field"
+                >
+                  <option value={18}>18% GST</option>
+                  <option value={12}>12% GST</option>
+                  <option value={28}>28% GST</option>
+                  <option value={5}>5% GST</option>
+                  <option value={0}>0% Non-GST</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Inward Date (Aging)</label>
+                <input
+                  type="date"
+                  value={formData.receivedDate}
+                  onChange={(e) => setFormData({ ...formData, receivedDate: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              {/* Handsets use their two IMEIs; other stock uses one serial number per unit. */}
+              {isMobileStockCategory(formData.category) ? <>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 1 (SIM 1){requiresPairedImeis(formData.category) && Number(formData.stock) > 0 ? ' *' : ''}</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraScanTarget('imei1');
+                      setShowCameraScanner(true);
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+                    title="Camera Scan IMEI 1"
+                  >
+                    <Camera size={13} />
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  placeholder={formData.stock > 1 ? 'One 15-digit IMEI 1 per line' : '15-digit IMEI 1'}
+                  value={formData.imei1 || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, imei1: e.target.value }))}
+                  className="input-field"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>IMEI 2 (SIM 2 / eSIM){requiresPairedImeis(formData.category) && Number(formData.stock) > 0 ? ' *' : ''}</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraScanTarget('imei2');
+                      setShowCameraScanner(true);
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+                    title="Camera Scan IMEI 2"
+                  >
+                    <Camera size={13} />
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  placeholder={formData.stock > 1 ? 'One 15-digit IMEI 2 per line' : '15-digit IMEI 2'}
+                  value={formData.imei2 || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, imei2: e.target.value }))}
+                  className="input-field"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}
+                />
+              </div>
+              </> : <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Serial No. (one per unit, optional)</label>
+                  <button type="button" onClick={() => { setCameraScanTarget('imei1'); setShowCameraScanner(true); }} style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }} title="Scan serial number"><Camera size={13} /></button>
+                </div>
+                <textarea rows={Math.min(5, Math.max(2, Number(formData.stock) || 1))} placeholder={Number(formData.stock) > 1 ? `Enter up to ${formData.stock} serial numbers, one per line` : 'Enter or scan serial number'} value={formData.serialNumbers || ''} onChange={event => setFormData(prev => ({ ...prev, serialNumbers: event.target.value }))} className="input-field" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }} />
+              </div>}
+
+              {/* TERMS & CONDITIONS (SHOWN UPON SCANNING QR OR BARCODE) */}
+              <div style={{
+                gridColumn: 'span 2',
+                backgroundColor: 'var(--bg-main)',
+                padding: '0.85rem',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.65rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>📜 Product Terms & Conditions</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      (Displayed upon scanning QR or Barcode)
+                    </span>
+                  </label>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', fontWeight: 700 }}>
+                    {(formData.termsAndConditions || []).length} active policies
+                  </span>
+                </div>
+
+                {/* Quick Pre-set Pills */}
+                <div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                    Quick-Add Pre-set Policies (Tap to add/remove):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {STANDARD_PRODUCT_TERMS_PRESETS.map((preset) => {
+                      const isSelected = (formData.termsAndConditions || []).some(t => t.includes(preset.text) || preset.text.includes(t));
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => {
+                              const current = prev.termsAndConditions || [];
+                              if (isSelected) {
+                                return { ...prev, termsAndConditions: current.filter(t => !t.includes(preset.text) && !preset.text.includes(t)) };
+                              } else {
+                                return { ...prev, termsAndConditions: [...current, preset.text] };
+                              }
+                            });
+                          }}
+                          style={{
+                            padding: '0.25rem 0.55rem',
+                            borderRadius: '6px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                            backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-primary)',
+                            color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          {isSelected && <Check size={11} strokeWidth={3} />}
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Active Terms List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '160px', overflowY: 'auto' }}>
+                  {(formData.termsAndConditions || []).map((term, tIdx) => (
+                    <div 
+                      key={tIdx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        padding: '0.35rem 0.6rem',
+                        backgroundColor: 'var(--surface-primary)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.72rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: '0.4rem', flex: 1 }}>
+                        <span style={{ color: 'var(--accent-primary)', fontWeight: 800 }}>{tIdx + 1}.</span>
+                        <span style={{ color: 'var(--text-primary)', lineHeight: 1.35 }}>{term}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            termsAndConditions: (prev.termsAndConditions || []).filter((_, idx) => idx !== tIdx)
+                          }));
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                        title="Delete condition"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Custom Condition Input */}
+                <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Type custom condition (e.g. Free tempered glass & cover, Festive store offer)..."
+                    value={customTermInput}
+                    onChange={(e) => setCustomTermInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (customTermInput.trim()) {
+                          setFormData(prev => ({
+                            ...prev,
+                            termsAndConditions: [...(prev.termsAndConditions || []), customTermInput.trim()]
+                          }));
+                          setCustomTermInput('');
+                        }
+                      }
+                    }}
+                    className="input-field"
+                    style={{ fontSize: '0.74rem', flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customTermInput.trim()) {
+                        setFormData(prev => ({
+                          ...prev,
+                          termsAndConditions: [...(prev.termsAndConditions || []), customTermInput.trim()]
+                        }));
+                        setCustomTermInput('');
+                      }
+                    }}
+                    className="btn-secondary"
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.74rem', fontWeight: 700 }}
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ gridColumn: 'span 2' }}>
+                <ProductImagePicker value={formImages} onChange={setFormImages} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
+              <button type="submit" className="btn-primary" style={{ padding: '0.55rem 1.25rem' }}>Save</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showAddSupplierModal && showModal && role === 'admin' && (
+        <div className="drawer-overlay" onClick={() => setShowAddSupplierModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1300 }}>
+          <form onSubmit={handleAddSupplierFromProduct} onClick={event => event.stopPropagation()} className="illoca-card animate-fade-in" style={{ maxWidth: '460px', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+              <div><h3 style={{ margin: 0, fontSize: '1rem' }}>Add Supplier</h3><span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>This supplier will be selected for the product.</span></div>
+              <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)} aria-label="Close"><X size={15} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+              <label style={{ gridColumn: '1 / -1', fontSize: '0.72rem', fontWeight: 700 }}>Business name *<input required className="input-field" value={newSupplierDetails.name} onChange={event => setNewSupplierDetails(previous => ({ ...previous, name: event.target.value }))} placeholder="Supplier business name" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Contact person<input className="input-field" value={newSupplierDetails.contactPerson} onChange={event => setNewSupplierDetails(previous => ({ ...previous, contactPerson: event.target.value }))} placeholder="Optional" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Phone number *<input required inputMode="tel" className="input-field" value={newSupplierDetails.phone} onChange={event => setNewSupplierDetails(previous => ({ ...previous, phone: event.target.value }))} placeholder="10 digits" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>City<input className="input-field" value={newSupplierDetails.city} onChange={event => setNewSupplierDetails(previous => ({ ...previous, city: event.target.value }))} placeholder="City / hub" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>GSTIN<input className="input-field" value={newSupplierDetails.gstin} onChange={event => setNewSupplierDetails(previous => ({ ...previous, gstin: event.target.value }))} placeholder="Optional" /></label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+              <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)}>Cancel</button>
+              <button type="submit" className="btn-primary"><Plus size={14} /> Add & Select Supplier</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* STOCK TRANSFER MODAL */}
+      {showTransferModal && transferItem && (
+        <div className="modal-backdrop no-print" style={{ zIndex: 1100 }}>
+          <div className="modal-dialog" style={{ maxWidth: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <ArrowRightLeft size={16} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Shelf Move</h3>
+              </div>
+              <button onClick={() => setShowTransferModal(false)} className="btn-secondary" style={{ padding: '0.2rem 0.4rem' }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--bg-main)', padding: '0.65rem', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '0.75rem' }}>
+              <div style={{ fontWeight: 800, fontSize: '0.88rem' }}>{transferItem.name}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Stock: {transferItem.stock} pcs</div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <div>
+                  <label className="input-label" style={{ fontSize: '0.7rem' }}>To Rack:</label>
+                  <input
+                    type="text"
+                    value={transferToRack}
+                    onChange={(e) => setTransferToRack(e.target.value)}
+                    className="input-field"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                </div>
+                <div>
+                  <label className="input-label" style={{ fontSize: '0.7rem' }}>To Bin:</label>
+                  <input
+                    type="text"
+                    value={transferToBin}
+                    onChange={(e) => setTransferToBin(e.target.value)}
+                    className="input-field"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="input-label" style={{ fontSize: '0.7rem' }}>Quantity:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={transferItem.stock}
+                  value={transferQty}
+                  onChange={(e) => setTransferQty(Math.max(1, Number(e.target.value)))}
+                  className="input-field"
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+              <button onClick={() => setShowTransferModal(false)} className="btn-secondary">Cancel</button>
+              <button onClick={handleExecuteTransfer} className="btn-primary">Move</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ONLINE PRICE COMPARE MODAL */}
+      <Suspense fallback={null}>
+      <MarketPriceCompareModal
+        isOpen={Boolean(compareProduct)}
+        onClose={() => setCompareProduct(null)}
+        product={compareProduct}
+        onUpdateProductPrices={(productId, updatedComparison) => {
+          setInventory(prev => prev.map(p => p.id === productId ? { ...p, marketComparison: updatedComparison } : p));
+        }}
+        shopConfig={shopConfig}
+      />
+      </Suspense>
+
+      {/* QUICK BARCODE STICKER MODAL */}
+      {quickBarcodeItem && (
+        <div 
+          className="modal-backdrop no-print" 
+          onClick={() => { setQuickBarcodeItem(null); setQuickLabelFormat(null); setQuickLabelQty(1); }}
+          style={{ zIndex: 1200 }}
+        >
+          <div 
+            className="modal-dialog animate-fade-in" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '440px', width: '92%', padding: '1.25rem' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <QrCode size={18} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Product Barcode / QR Label</h3>
+              </div>
+              <button onClick={() => { setQuickBarcodeItem(null); setQuickLabelFormat(null); setQuickLabelQty(1); }} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            {(() => {
+              const activeFormat = quickLabelFormat || quickBarcodeItem.codeFormat || (quickBarcodeItem.barcode?.includes('QR-') ? 'qr' : 'barcode');
+              const effectiveBarcode = quickBarcodeItem.barcode || `ALZ-${quickBarcodeItem.id}`;
+              const productScanUrl = buildProductScanUrl(quickBarcodeItem, '', { addToCart: true });
+              return (
+                <>
+                  {/* Selector: Barcode vs QR vs Both */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Label Format:
+                    </div>
+                    <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.08)', padding: '2px', borderRadius: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('barcode')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'barcode' ? '#10B981' : 'transparent',
+                          color: activeFormat === 'barcode' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Barcode size={12} />
+                        <span>Barcode</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('qr')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                          color: activeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <QrCode size={12} />
+                        <span>QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelFormat('both')}
+                        style={{
+                          padding: '0.22rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: activeFormat === 'both' ? '#2563EB' : 'transparent',
+                          color: activeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Include both 1D Barcode & 2D QR Code on the same sticker"
+                      >
+                        <Layers size={12} />
+                        <span>Both</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sticker Preview Box (50x25mm styled sticker) */}
+                  <div style={{
+                    background: '#FFFFFF',
+                    color: '#000000',
+                    padding: '0.85rem 1rem',
+                    borderRadius: '8px',
+                    border: '2px dashed #CBD5E1',
+                    textAlign: 'center',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
+                    marginBottom: '0.75rem'
+                  }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0F251E', marginBottom: '2px' }}>
+                      {shopConfig?.name || 'ALZINO MOBILES'}
+                    </div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#1E293B', marginBottom: '6px', lineHeight: 1.2 }}>
+                      {quickBarcodeItem.name}
+                    </div>
+
+                    {/* Barcode / QR SVG Rendering */}
+                    <div 
+                      dangerouslySetInnerHTML={{ 
+                        __html: renderCodeSvg(
+                          effectiveBarcode, 
+                          activeFormat, 
+                          240, 
+                          activeFormat === 'both' ? 55 : (activeFormat === 'qr' ? 80 : 60), 
+                          true,
+                          productScanUrl
+                        ) 
+                      }} 
+                      style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}
+                    />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '6px', padding: '0 0.5rem' }}>
+                      {Number(quickBarcodeItem.mrp) > 0 && (
+                        <span style={{ fontSize: '0.72rem', color: '#64748B', textDecoration: quickBarcodeItem.mrp > quickBarcodeItem.sellPrice ? 'line-through' : 'none' }}>
+                          MRP: ₹{Number(quickBarcodeItem.mrp).toLocaleString()}
+                        </span>
+                      )}
+                      <span style={{ fontSize: '1.1rem', fontWeight: 900, color: '#0C5B43' }}>
+                        ₹{quickBarcodeItem.sellPrice.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quantity Row */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', padding: '0.45rem 0.65rem', background: 'var(--surface-secondary, rgba(0,0,0,0.03))', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Copies / Qty:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelQty(Math.max(1, quickLabelQty - 1))}
+                        className="btn-secondary"
+                        style={{ padding: '0.15rem 0.45rem', fontSize: '0.8rem', fontWeight: 800 }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={quickLabelQty}
+                        onChange={(e) => setQuickLabelQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        style={{ width: '48px', textAlign: 'center', padding: '0.2rem', fontSize: '0.82rem', fontWeight: 800, borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQuickLabelQty(quickLabelQty + 1)}
+                        className="btn-secondary"
+                        style={{ padding: '0.15rem 0.45rem', fontSize: '0.8rem', fontWeight: 800 }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => {
+                        if (onSelectBarcode) {
+                          onSelectBarcode({ ...quickBarcodeItem, codeFormat: activeFormat });
+                        }
+                        setQuickBarcodeItem(null);
+                        setQuickLabelFormat(null);
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1, padding: '0.55rem', fontSize: '0.78rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                      title="Open Studio to print full 24 or 40 barcode label sheets"
+                    >
+                      <span>Full Sheet Studio ➔</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        downloadStickerImage({
+                          title: quickBarcodeItem.name,
+                          barcode: effectiveBarcode,
+                          codeFormat: activeFormat,
+                          qrValue: productScanUrl,
+                          price: quickBarcodeItem.sellPrice,
+                          mrp: Number(quickBarcodeItem.mrp) || 0,
+                          shopName: shopConfig?.name || 'ALZINO MOBILES'
+                        });
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1, padding: '0.55rem', fontSize: '0.78rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#2563EB', whiteSpace: 'nowrap' }}
+                      title="Download sticker as high-resolution PNG image"
+                    >
+                      <Download size={14} />
+                      <span>Download</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (onPrintBarcodeSheet) {
+                          onPrintBarcodeSheet({
+                            title: quickBarcodeItem.name,
+                            barcode: effectiveBarcode,
+                            id: quickBarcodeItem.id,
+                            codeFormat: activeFormat,
+                            price: quickBarcodeItem.sellPrice,
+                            mrp: Number(quickBarcodeItem.mrp) || 0,
+                            copies: quickLabelQty,
+                            format: 'single',
+                          });
+                          setQuickBarcodeItem(null);
+                          setQuickLabelFormat(null);
+                        } else {
+                          window.print();
+                        }
+                      }}
+                      className="btn-primary"
+                      style={{ flex: 1.1, padding: '0.55rem', fontSize: '0.8rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-contrast, #FFFFFF)', whiteSpace: 'nowrap' }}
+                    >
+                      <Printer size={14} />
+                      <span>Print Sticker</span>
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Mobile / Webcam Barcode Scanner Modal */}
+      {showCameraScanner && (
+        <Suspense fallback={null}>
+        <CameraBarcodeScannerModal
+          isOpen={showCameraScanner}
+          onClose={() => setShowCameraScanner(false)}
+          onScan={(scannedCode) => {
+            handleBarcodeOrImeiScanned(scannedCode, cameraScanTarget);
+          }}
+          title={cameraScanTarget === 'imei1' ? (isMobileStockCategory(formData.category) ? 'Scan IMEI 1 Barcode' : 'Scan Serial Number') : cameraScanTarget === 'imei2' ? 'Scan IMEI 2 Barcode' : 'Scan Product Box Barcode'}
+          description="Point your phone camera or webcam at the barcode on the box"
+        />
+        </Suspense>
+      )}
+
+      {/* Bulk Add products, variants, and optional serial tracking */}
+      {showBulkModal && (
+        <Suspense fallback={null}>
+        <BulkMobileVariantEntryModal
+          isOpen={showBulkModal}
+          onClose={() => setShowBulkModal(false)}
+          onSaveBatch={handleSaveBatchMobiles}
+          onPrintBarcodeSheet={onPrintBarcodeSheet}
+          inventory={inventory}
+        />
+        </Suspense>
+      )}
+
+      {/* Product QR Specs & Terms Details Modal */}
+      {activeScanPreviewItem && (
+        <Suspense fallback={null}>
+        <ProductScanDetailsModal
+          product={activeScanPreviewItem}
+          inventory={inventory}
+          isOpen={!!activeScanPreviewItem}
+          onClose={() => setActiveScanPreviewItem(null)}
+          onQuickBill={onQuickBill}
+          shopConfig={shopConfig}
+          role={role}
+        />
+        </Suspense>
+      )}
+
+      {/* Quick IMEI Inspector Modal */}
+      {supplierHistoryItem && (
+        <div className="drawer-overlay" onClick={() => setSupplierHistoryItem(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 10000 }}>
+          <div className="illoca-card animate-fade-in" onClick={event => event.stopPropagation()} style={{ width: 'min(680px, 100%)', maxHeight: '80vh', overflow: 'auto', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.7rem', marginBottom: '0.8rem' }}>
+              <div><h3 style={{ margin: 0, fontSize: '1rem' }}>Supplier history</h3><div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{supplierHistoryItem.name}</div></div>
+              <button type="button" className="btn-outline" onClick={() => setSupplierHistoryItem(null)} aria-label="Close supplier history"><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gap: '0.6rem' }}>
+              {supplierHistoryItem.supplierId && (() => {
+                const assignedSupplier = suppliers.find(entry => entry.id === supplierHistoryItem.supplierId);
+                return <div className="illoca-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.8rem', fontSize: '0.78rem' }}>
+                  <strong>{assignedSupplier?.name || supplierHistoryItem.supplierName || 'Assigned supplier'}</strong>
+                  <span>{assignedSupplier?.phone || '—'}{assignedSupplier?.city ? ` · ${assignedSupplier.city}` : ''}</span>
+                  {assignedSupplier?.contactPerson && <span>Contact: {assignedSupplier.contactPerson}</span>}
+                  {assignedSupplier?.gstin && <span>GSTIN: {assignedSupplier.gstin}</span>}
+                  <span style={{ gridColumn: '1 / -1', color: 'var(--text-secondary)' }}>Supplier assigned to this product</span>
+                </div>;
+              })()}
+              {(supplierHistoryItem.supplierPurchases || []).map((purchase, index) => {
+                const supplier = suppliers.find(entry => entry.id === purchase.supplierId);
+                const bill = supplier?.purchaseBills?.find(entry => entry.id === purchase.billId);
+                const billLine = bill?.lines?.find(line => line.productId === supplierHistoryItem.id);
+                return <div key={`${purchase.billId}-${index}`} className="illoca-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.8rem', fontSize: '0.78rem' }}>
+                  <strong>{supplier?.name || purchase.supplierName || 'Supplier'}</strong><span>{supplier?.phone || '—'}{supplier?.city ? ` · ${supplier.city}` : ''}</span>
+                  <span>Bill: {purchase.invoiceNumber || bill?.invoiceNumber || '—'}</span><span>Date: {purchase.date || bill?.date || '—'}</span>
+                  <span>Received: {billLine?.quantity || purchase.quantity || '—'} pcs</span><span>Unit cost: ₹{Number(billLine?.unitCost || purchase.unitCost || 0).toLocaleString()}</span>
+                  {bill?.attachment && <button type="button" className="btn-outline" onClick={() => openSupplierBillDocument(bill.attachment)} style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '0.3rem 0.55rem' }}><FileCheck size={13} /> Open bill file</button>}
+                </div>;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeImeiViewerItem && (
+        <div className="modal-backdrop no-print" style={{ zIndex: 1250, padding: '1rem' }}>
+          <div className="modal-dialog" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Smartphone size={18} color="#10B981" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>{isMobileStockCategory(activeImeiViewerItem.category) ? 'Registered IMEIs & Units' : 'Registered Serial Numbers & Units'}</h3>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    {activeImeiViewerItem.name} ({activeImeiViewerItem.stock} in stock)
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setActiveImeiViewerItem(null)} className="btn-secondary" style={{ padding: '0.2rem 0.45rem' }}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '450px' }}>
+              {activeImeiViewerItem.units && activeImeiViewerItem.units.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {activeImeiViewerItem.units.map((u, idx) => (
+                    <div 
+                      key={u.unitId || idx}
+                      style={{
+                        padding: '0.6rem 0.8rem',
+                        background: 'var(--bg-main)',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>#{idx + 1}</span>
+                          <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{u.color || activeImeiViewerItem.color || 'Standard'}</span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Shelf: {u.rack || activeImeiViewerItem.rack}/{u.bin || activeImeiViewerItem.bin}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.85rem', marginTop: '0.25rem', fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>
+                          {(u.imei1 || u.serialNumber) && (
+                            <span style={{ color: '#10B981', fontWeight: 700 }}>{isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEI 1' : 'Serial No.'}: {u.imei1 || u.serialNumber}</span>
+                          )}
+                          {u.imei2 && (
+                            <span style={{ color: 'var(--text-muted)' }}>IMEI 2: {u.imei2}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        {onPrintBarcodeSheet && u.barcode && (
+                          <button
+                            type="button"
+                            onClick={() => onPrintBarcodeSheet({
+                              title: activeImeiViewerItem.name,
+                              barcode: u.barcode,
+                              price: activeImeiViewerItem.sellPrice,
+                              mrp: Number(activeImeiViewerItem.mrp) || 0,
+                              copies: 1,
+                              format: 'single'
+                            })}
+                            className="btn-secondary"
+                            style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                          >
+                            <Printer size={11} />
+                            <span>Sticker</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(u.imei1 || u.imei2 || u.serialNumber || u.barcode, `view-${idx}`)}
+                          className="btn-secondary"
+                          style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
+                        >
+                          {copiedId === `view-${idx}` ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : activeImeiViewerItem.imeis && activeImeiViewerItem.imeis.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  {activeImeiViewerItem.imeis.map((im, idx) => (
+                    <div 
+                      key={idx}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        background: 'var(--bg-main)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.78rem'
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: '#10B981' }}>#{idx + 1} {isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEI' : 'Serial No.'}: {im}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(im, `raw-${idx}`)}
+                        className="btn-secondary"
+                        style={{ padding: '0.2rem 0.45rem', fontSize: '0.68rem' }}
+                      >
+                        {copiedId === `raw-${idx}` ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  No {isMobileStockCategory(activeImeiViewerItem.category) ? 'IMEIs' : 'serial numbers'} assigned to this item.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: '0.85rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setActiveImeiViewerItem(null)} className="btn-secondary">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

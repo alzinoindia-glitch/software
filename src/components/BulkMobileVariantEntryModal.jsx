@@ -1,4 +1,425 @@
-delCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { 
+  Smartphone, 
+  Plus, 
+  Trash2, 
+  Barcode, 
+  Upload, 
+  Download, 
+  CheckCircle, 
+  AlertCircle, 
+  RefreshCw, 
+  Sparkles, 
+  FileSpreadsheet, 
+  Camera, 
+  X, 
+  Copy, 
+  Check, 
+  ArrowRight,
+  Layers,
+  Printer,
+  Hash,
+  QrCode,
+  Eye
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { MOBILE_BRANDS } from './InventoryManager';
+import { getAvailableBrandsForCategory, saveCustomBrand, getAvailableCategories, getAvailableSubcategories, saveCustomCategory, saveCustomSubcategory, isImeiTrackedCategory } from '../utils/customTaxonomy';
+import { getProductSuggestions } from '../utils/productSuggestions';
+import { renderCodeSvg, downloadStickerImage } from '../utils/barcode';
+import CameraBarcodeScannerModal from './CameraBarcodeScannerModal';
+import { POPULAR_COLORS, getProductColorHex } from '../utils/colorUtils';
+import { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS } from '../utils/productEntryOptions';
+import { compressImageFile, saveProductImage } from '../utils/productImageStore';
+import { 
+  STANDARD_PRODUCT_TERMS_PRESETS, 
+  normalizeProductTerms 
+} from '../utils/productTerms';
+
+const isImeiCategory = isImeiTrackedCategory;
+const requiresDualImei = category => ['New Mobiles', 'Used Mobiles'].includes(category);
+const isPhoneSpecificationCategory = category => ['New Mobiles', 'Used Mobiles'].includes(category) || /tablet/i.test(category || '');
+
+export { COMMON_RAM_OPTIONS, COMMON_STORAGE_OPTIONS };
+export { POPULAR_COLORS, getProductColorHex };
+
+export default function BulkMobileVariantEntryModal({ 
+  isOpen, 
+  onClose, 
+  onSaveBatch, 
+  onPrintBarcodeSheet,
+  inventory = []
+}) {
+  const [activeTab, setActiveTab] = useState('manual'); // 'manual' | 'excel'
+
+  // Common Model Details
+  const [modelDetails, setModelDetails] = useState({
+    brand: 'Samsung',
+    model: '',
+    ram: '8GB',
+    customRam: '',
+    storage: '256GB',
+    customStorage: '',
+    category: 'New Mobiles',
+    subCategory: '',
+    capacity: '',
+    buyPrice: '',
+    sellPrice: '',
+    mrp: '',
+    hsn: '851712',
+    gstRate: 18,
+    rack: 'R-01',
+    bin: 'B-01',
+    warranty: '',
+    receivedDate: new Date().toISOString().split('T')[0],
+  });
+
+  // Product Terms & Conditions for the batch (shown on QR scan)
+  const [termsAndConditions, setTermsAndConditions] = useState([]);
+  const [customTermInput, setCustomTermInput] = useState('');
+
+  const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [isCustomSubcategory, setIsCustomSubcategory] = useState(false);
+  const availableBrands = useMemo(() => getAvailableBrandsForCategory(modelDetails.category, inventory), [modelDetails.category, inventory]);
+  const availableCategories = useMemo(
+    () => getAvailableCategories(inventory).filter(category => category !== 'Used Mobiles'),
+    [inventory]
+  );
+  const availableSubcategories = useMemo(() => getAvailableSubcategories(modelDetails.category, inventory), [modelDetails.category, inventory]);
+
+  // Fast Model Auto-Suggestions
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [modelSuggestionIndex, setModelSuggestionIndex] = useState(-1);
+
+  const modelSuggestions = useMemo(() => {
+    if (!modelDetails.model || modelDetails.model.trim().length < 2) return [];
+    return getProductSuggestions(modelDetails.model, [], 6);
+  }, [modelDetails.model]);
+
+  const handleSelectModelSuggestion = (sug) => {
+    setModelDetails(prev => ({
+      ...prev,
+      brand: sug.brand || prev.brand,
+      model: sug.model || sug.name,
+      ram: sug.ram || prev.ram,
+      storage: sug.storage || prev.storage,
+      buyPrice: prev.buyPrice ? prev.buyPrice : (sug.suggestedBuy ? String(sug.suggestedBuy) : ''),
+      sellPrice: prev.sellPrice ? prev.sellPrice : (sug.suggestedSell ? String(sug.suggestedSell) : ''),
+      mrp: prev.mrp ? prev.mrp : (sug.suggestedSell ? String(sug.suggestedSell) : '')
+    }));
+    setShowModelSuggestions(false);
+    setModelSuggestionIndex(-1);
+  };
+
+  // Colour Variants list: [{ id, color, hex, qty, frontImage, backImage, image }]
+  const [colourVariants, setColourVariants] = useState([
+    { id: 'cv-1', color: 'Onyx Black', hex: '#1C1C1E', qty: 2, frontImage: null, backImage: null, image: null },
+    { id: 'cv-2', color: 'Marble Gray', hex: '#686B6F', qty: 2, frontImage: null, backImage: null, image: null }
+  ]);
+  const [newColorInput, setNewColorInput] = useState('');
+  const [customColorHex, setCustomColorHex] = useState('#EC4899');
+  const [previewImage, setPreviewImage] = useState(null); // { url, title }
+
+  // Physical units track IMEI pairs for phones/tablets or one serial number for other stock.
+  const [units, setUnits] = useState([]);
+  const [codeFormat, setCodeFormat] = useState('barcode'); // 'barcode' | 'qr'
+  const [previewUnit, setPreviewUnit] = useState(null);
+
+  // Camera scanner state
+  const [activeScanUnitIndex, setActiveScanUnitIndex] = useState(null);
+  const [activeScanField, setActiveScanField] = useState('imei1'); // 'imei1' | 'imei2' | 'barcode'
+  const scanTargetRef = useRef({ unitIndex: null, field: 'imei1' });
+
+  // Excel Import state
+  const [excelRows, setExcelRows] = useState([]);
+  const [excelFileName, setExcelFileName] = useState('');
+  const [excelErrors, setExcelErrors] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Auto-generate units whenever colourVariants change in count or quantity
+  useEffect(() => {
+    setUnits(prevUnits => {
+      const newUnits = [];
+      const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+      const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+      const prefix = codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+      let globalIndex = 1;
+
+      colourVariants.forEach(variant => {
+        const colorName = variant.color || 'Standard';
+        const colorSlug = colorName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+        const qty = Math.max(0, parseInt(variant.qty, 10) || 0);
+
+        for (let i = 1; i <= qty; i++) {
+          const unitKey = `${variant.id}-${i}`;
+          // Preserve already typed IMEI/barcode if user previously entered it
+          const existing = prevUnits.find(u => u.unitKey === unitKey) || prevUnits[globalIndex - 1];
+
+          const unitFormat = existing?.codeFormat || codeFormat;
+          const unitPrefix = unitFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+          const defaultBarcode = `${unitPrefix}-${brandCode}-${modelCode}-${colorSlug}-${String(i).padStart(2, '0')}`;
+
+          newUnits.push({
+            id: `UNIT-${Date.now()}-${globalIndex}`,
+            unitKey,
+            variantId: variant.id,
+            color: colorName,
+            colorHex: variant.hex || getProductColorHex(colorName),
+            image: variant.frontImage || variant.image || null,
+            frontImage: variant.frontImage || variant.image || null,
+            backImage: variant.backImage || null,
+            unitNo: i,
+            globalIndex,
+            codeFormat: unitFormat,
+            imei1: existing?.imei1 || '',
+            imei2: existing?.imei2 || '',
+            serialNumber: existing?.serialNumber || '',
+            barcode: (existing && existing.barcode !== undefined) ? existing.barcode : defaultBarcode
+          });
+          globalIndex++;
+        }
+      });
+
+      return newUnits;
+    });
+  }, [colourVariants, modelDetails.brand, modelDetails.model, codeFormat]);
+
+  // Total quantity of units
+  const totalStockCount = useMemo(() => {
+    return colourVariants.reduce((sum, v) => sum + (Math.max(0, parseInt(v.qty, 10) || 0)), 0);
+  }, [colourVariants]);
+
+  // Effective RAM & Storage
+  const effectiveRam = modelDetails.ram === 'Other' ? (modelDetails.customRam || '') : modelDetails.ram;
+  const effectiveStorage = modelDetails.storage === 'Other' ? (modelDetails.customStorage || '') : modelDetails.storage;
+
+  // Add a new colour to the variants list
+  const handleAddColor = (colorName, hex = null, frontImage = null, backImage = null) => {
+    if (!colorName.trim()) return;
+    const exists = colourVariants.some(c => c.color.toLowerCase() === colorName.trim().toLowerCase());
+    if (exists) {
+      alert(`Colour "${colorName}" is already in this model.`);
+      return;
+    }
+    const resolvedHex = hex || getProductColorHex(colorName, customColorHex || '#EC4899');
+    setColourVariants(prev => [
+      ...prev,
+      { 
+        id: `cv-${Date.now()}`, 
+        color: colorName.trim(), 
+        hex: resolvedHex, 
+        qty: 1, 
+        frontImage: frontImage || null,
+        backImage: backImage || null,
+        image: frontImage || null 
+      }
+    ]);
+    setNewColorInput('');
+    setCustomColorHex('#EC4899');
+  };
+
+  const handleUpdateColorHex = (id, newHex) => {
+    setColourVariants(prev => prev.map(c => c.id === id ? { ...c, hex: newHex } : c));
+  };
+
+  const handleUpdateColorImage = async (id, side, file) => {
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file, 720, 0.8);
+      setColourVariants(prev => prev.map(c => {
+        if (c.id !== id) return c;
+        if (side === 'back') {
+          return { ...c, backImage: compressed };
+        } else {
+          return { ...c, frontImage: compressed, image: compressed };
+        }
+      }));
+    } catch (err) {
+      alert(err.message || 'Could not load photo');
+    }
+  };
+
+  const handleRemoveColorImage = (id, side) => {
+    setColourVariants(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      if (side === 'back') {
+        return { ...c, backImage: null };
+      } else {
+        return { ...c, frontImage: null, image: null };
+      }
+    }));
+  };
+
+  const handleRemoveColor = (id) => {
+    if (colourVariants.length <= 1) {
+      alert('At least one colour variant is required.');
+      return;
+    }
+    setColourVariants(prev => prev.filter(c => c.id !== id));
+  };
+
+  const handleUpdateColorQty = (id, newQty) => {
+    const parsed = Math.max(0, parseInt(newQty, 10) || 0);
+    setColourVariants(prev => prev.map(c => c.id === id ? { ...c, qty: parsed } : c));
+  };
+
+  // Update a specific unit's field (IMEI 1, IMEI 2, Barcode)
+  const handleUnitChange = (index, field, value) => {
+    setUnits(prev => {
+      const copy = [...prev];
+      if (copy[index]) {
+        copy[index] = { ...copy[index], [field]: value };
+      }
+      return copy;
+    });
+  };
+
+  // Parse scanned barcode/QR payload into clean 15-digit IMEIs
+  const parseScannedImei = (rawText) => {
+    if (!rawText) return { imei1: '', imei2: '' };
+    const str = String(rawText).trim();
+
+    // 1. Check for multiple 14-16 digit numbers (e.g. from a box QR code with both IMEI 1 & IMEI 2)
+    const matches = str.match(/\b\d{14,16}\b/g) || str.match(/\d{15}/g);
+    if (matches && matches.length >= 2) {
+      return {
+        imei1: matches[0],
+        imei2: matches[1]
+      };
+    }
+    if (matches && matches.length === 1) {
+      return {
+        imei1: matches[0],
+        imei2: ''
+      };
+    }
+
+    // 2. Strip non-alphanumeric/punctuation (e.g. "IMEI: 86345605..." -> extract digits)
+    const digitsOnly = str.replace(/\D/g, '');
+    if (digitsOnly.length >= 14 && digitsOnly.length <= 16) {
+      return {
+        imei1: digitsOnly,
+        imei2: ''
+      };
+    }
+
+    // 3. Fallback to cleaned trimmed string
+    return {
+      imei1: str.replace(/[\r\n\t]/g, ' ').trim(),
+      imei2: ''
+    };
+  };
+
+  const handleStartCameraScan = (unitIdx, field) => {
+    scanTargetRef.current = { unitIndex: unitIdx, field };
+    setActiveScanUnitIndex(unitIdx);
+    setActiveScanField(field);
+  };
+
+  const handleCameraScanSuccess = (scannedCode) => {
+    const targetIdx = scanTargetRef.current.unitIndex !== null ? scanTargetRef.current.unitIndex : activeScanUnitIndex;
+    const targetField = scanTargetRef.current.field || activeScanField || 'imei1';
+
+    if (targetIdx === null || targetIdx === undefined) return;
+
+    const parsed = parseScannedImei(scannedCode);
+    const primaryVal = parsed.imei1 || (scannedCode || '').trim();
+
+    setUnits(prev => {
+      const copy = [...prev];
+      if (copy[targetIdx]) {
+        if (targetField === 'imei1') {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            imei1: primaryVal,
+            ...(parsed.imei2 ? { imei2: parsed.imei2 } : {})
+          };
+        } else if (targetField === 'imei2') {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            imei2: primaryVal 
+          };
+        } else {
+          copy[targetIdx] = { 
+            ...copy[targetIdx], 
+            [targetField]: primaryVal 
+          };
+        }
+      }
+      return copy;
+    });
+
+    scanTargetRef.current = { unitIndex: null, field: 'imei1' };
+    setActiveScanUnitIndex(null);
+  };
+
+  // Auto-advance input on barcode scanner enter press
+  const handleUnitKeyDown = (e, index, field) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const fields = isImeiCategory(modelDetails.category) ? ['imei1', 'imei2'] : ['serialNumber'];
+      const fieldIndex = fields.indexOf(field);
+      const nextInput = (fieldIndex >= 0 && fields[fieldIndex + 1]
+        ? document.querySelector(`input[data-unit-idx="${index}"][data-field="${fields[fieldIndex + 1]}"]`)
+        : null) || document.querySelector(`input[data-unit-idx="${index + 1}"][data-field="${fields[0]}"]`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  // Toggle Admin Choice: Barcode (Code-128) vs QR Code (2D) for all units
+  const handleToggleCodeFormat = (newFormat) => {
+    setCodeFormat(newFormat);
+    const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+    const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    const prefix = newFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+    setUnits(prev => prev.map(unit => {
+      const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+      return {
+        ...unit,
+        codeFormat: newFormat,
+        barcode: unit.barcode === '' ? '' : `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
+      };
+    }));
+  };
+
+  // Toggle Barcode vs QR Code uniquely for a specific physical unit
+  const handleToggleUnitCodeFormat = (idx, newFormat) => {
+    setUnits(prev => {
+      const copy = [...prev];
+      if (copy[idx]) {
+        const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+        const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+        const colorSlug = copy[idx].color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+        const prefix = newFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+        const newCode = `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(copy[idx].unitNo).padStart(2, '0')}`;
+        copy[idx] = {
+          ...copy[idx],
+          codeFormat: newFormat,
+          barcode: copy[idx].barcode ? newCode : ''
+        };
+      }
+      return copy;
+    });
+  };
+
+  // Delete / Clear barcode for a specific unit (will store empty in DB)
+  const handleDeleteUnitBarcode = (idx) => {
+    handleUnitChange(idx, 'barcode', '');
+  };
+
+  // Regenerate clean barcodes/QR codes for all physical units
+  const handleRegenerateBarcodes = () => {
+    const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+    const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+    const prefix = codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+    setUnits(prev => prev.map(unit => {
+      const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+      return {
+        ...unit,
+        barcode: `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
       };
     }));
   };
@@ -366,4 +787,2127 @@ delCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`
         const extractedText = pageLines.join('\n').trim();
         if (!extractedText) {
           setExcelRows([]);
-          setExcelErrors(['No selectable tex
+          setExcelErrors(['No selectable text was found. This PDF may be scanned or image-only. Enter the details in the manual entry tab, or use a text-based PDF.']);
+        } else {
+          const parsedRows = parsePdfToDraftRows(pageLines, file.name);
+          setExcelRows(parsedRows);
+          setExcelErrors([`Extracted text from ${document.numPages} PDF page(s). Review every draft row below; scanned/image-only PDFs need manual entry. Missing values are left blank.`]);
+        }
+      } catch (error) {
+        console.error('Failed to extract PDF text:', error);
+        setExcelRows([]);
+        setExcelErrors([`Could not read this PDF (${error.message || 'unsupported PDF'}). You can still add the products manually.`]);
+      } finally {
+        setIsExtractingPdf(false);
+        e.target.value = '';
+      }
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        // The ALZINO master workbook has its real column headers on Excel row 4.
+        const isAlzinoMaster = sheetName === 'ALZINO_IMPORT';
+        const json = XLSX.utils.sheet_to_json(worksheet, { defval: '', ...(isAlzinoMaster ? { range: 3 } : {}) });
+
+        if (!json || json.length === 0) {
+          setExcelErrors(['Uploaded file contains no data rows.']);
+          return;
+        }
+
+        const errors = [];
+        if (isAlzinoMaster) {
+          errors.push('Workbook stock quantities are imported as listed, but the sheet marks them NOT PHYSICALLY COUNTED. Verify the physical count before billing.');
+          errors.push('Suggested selling prices are imported as listed. Box MRP is blank in this workbook; GST, warranty and actual inward date stay blank until verified.');
+        }
+        const usedCodes = new Set(inventory.flatMap(item => [item.barcode, ...(item.barcodes || []), ...((item.units || []).map(unit => unit.barcode))]).filter(Boolean).map(code => String(code).toUpperCase()));
+        let codeSequence = (Date.now() % 900000) + 100000;
+        const nextAlzinoBarcode = () => {
+          for (let attempt = 0; attempt < 900000; attempt += 1) {
+            const code = `ALZ-${String(codeSequence).padStart(6, '0')}`;
+            codeSequence = codeSequence >= 999999 ? 100000 : codeSequence + 1;
+            if (!usedCodes.has(code)) {
+              usedCodes.add(code);
+              return code;
+            }
+          }
+          return `ALZ-${Math.random().toString().slice(2, 8)}`;
+        };
+        const parsedRows = json.map((row, idx) => {
+          const isMasterRow = isAlzinoMaster && Boolean(row['Barcode / SKU']);
+          const category = String(row.Category || row.category || modelDetails.category || 'New Mobiles').trim();
+          const isPhoneCategory = isPhoneSpecificationCategory(category);
+          const subCategory = String(row.Subcategory || row.SubCategory || row.subCategory || row.subcategory || '').trim();
+          const rawBrand = row.Brand || row.brand || 'Universal';
+          const brand = isMasterRow && /unspecified|verify|check box/i.test(String(rawBrand)) ? '' : rawBrand;
+          const model = row.Model || row.model || row['Product Name / Model'] || row['Invoice Product Name'] || '';
+          const suggestedPrice = Number.parseFloat(row.SellingPrice ?? row.SellPrice ?? row.price ?? row['Suggested Selling ₹']) || 0;
+          const sellPrice = suggestedPrice;
+
+          if (!model) errors.push(`Row ${idx + 2}: Missing Model name`);
+          if (!isMasterRow && (!sellPrice || sellPrice <= 0)) errors.push(`Row ${idx + 2}: Selling Price is blank and will remain 0 until edited`);
+
+          const rawQuantity = row.Quantity ?? row.quantity ?? row.Qty ?? row.qty ?? row['Stock Units'];
+          const parsedQuantity = Number.parseInt(rawQuantity, 10);
+          const quantity = Number.isFinite(parsedQuantity) ? Math.max(0, parsedQuantity) : 0;
+          const sourceBarcode = row.Barcode || row.barcode || row['Barcode / SKU'];
+
+          return {
+            rowNo: idx + 2,
+            category,
+            subCategory,
+            capacity: String(row.Capacity || row.capacity || '').trim(),
+            brand: String(brand).trim(),
+            model: String(model).trim(),
+            isMasterRow,
+            ram: String(row.RAM || row.ram || (isPhoneCategory ? '8GB' : '')).trim(),
+            storage: String(row.Storage || row.storage || (isPhoneCategory ? '128GB' : '')).trim(),
+            colour: String(row.Colour || row.Color || row.colour || row.color || (isPhoneCategory ? 'Standard' : '')).trim(),
+            quantity,
+            imei1: String(row.IMEI1 || row.imei1 || row.IMEI || row.imei || '').trim(),
+            imei2: String(row.IMEI2 || row.imei2 || '').trim(),
+            serialNumbers: String(row.SerialNumbers || row.serialNumbers || row['Serial Numbers'] || row.SerialNo || row.SerialNumber || row['Serial No'] || row['Serial Number'] || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean),
+            barcode: isMasterRow ? nextAlzinoBarcode() : String(sourceBarcode || nextAlzinoBarcode()).trim(),
+            codeFormat: String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'both' ? 'both' : (String(row.CodeFormat || row.codeFormat || row['Barcode & QR'] || 'barcode').toLowerCase() === 'qr' ? 'qr' : 'barcode'),
+            hsn: String(row.HSN || row.hsn || '').trim(),
+            gstRate: isMasterRow ? 0 : (Number.parseFloat(row.GSTRate ?? row.GstRate ?? row.gstRate ?? row['System Tax % (verify)']) || 0),
+            purchasePrice: Number.parseFloat(row.PurchasePrice ?? row.BuyPrice ?? row.buyPrice ?? row['Buy Cost ₹']) || 0,
+            sellPrice,
+            mrp: Number.parseFloat(row.MRP ?? row.mrp ?? row['Box MRP ₹'] ?? 0) || 0,
+            rack: String(isMasterRow ? '' : (row.Rack || row.rack || 'R-01')).trim().toUpperCase(),
+            bin: String(isMasterRow ? '' : (row.Bin || row.bin || 'B-01')).trim().toUpperCase(),
+            warranty: String(row.Warranty || row.warranty || '').trim(),
+            receivedDate: isMasterRow ? '' : String(row.ReceivedDate || row.receivedDate || '').trim(),
+          };
+        });
+
+        setExcelRows(parsedRows);
+        setExcelErrors(errors);
+      } catch (err) {
+        console.error('Failed to parse Excel file:', err);
+        setExcelErrors(['Invalid file format. Please upload a valid .xlsx or .csv file.']);
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleImportExcelRows = () => {
+    if (excelRows.length === 0) {
+      alert('No rows found to import.');
+      return;
+    }
+    if (excelRows.some(row => row.category === 'Used Mobiles')) {
+      alert('Used phones must be entered through the Used Phones section. Remove Used Mobiles rows from this import.');
+      return;
+    }
+    const incompletePdfRow = excelRows.find(row => row.source === 'pdf' && (!String(row.category || '').trim() || !String(row.model || '').trim() || Number(row.quantity) < 1));
+    if (incompletePdfRow) {
+      alert(`Complete the product name, category and quantity for PDF draft row ${incompletePdfRow.rowNo} before importing.`);
+      return;
+    }
+    const incompletePhoneRow = excelRows.find(row =>
+      isImeiCategory(row.category) &&
+      (!row.imei1 || (requiresDualImei(row.category) && !row.imei2) || row.quantity !== 1)
+    );
+    if (incompletePhoneRow) {
+      alert(`Mobile/tablet import row ${incompletePhoneRow.rowNo} must include its IMEI number${requiresDualImei(incompletePhoneRow.category) ? 's' : ''} and have quantity 1. Add one row per IMEI-tracked device.`);
+      return;
+    }
+    const incompleteSerialRow = excelRows.find(row => !isImeiCategory(row.category) && row.serialNumbers.length > 0 && row.serialNumbers.length !== row.quantity);
+    if (incompleteSerialRow) {
+      alert(`Inventory import row ${incompleteSerialRow.rowNo} must include one serial number per unit, or leave the serial field blank.`);
+      return;
+    }
+    if (excelErrors.length > 0) {
+      if (!confirm(`There are ${excelErrors.length} validation warnings. Do you still want to import valid rows?`)) {
+        return;
+      }
+    }
+
+    excelRows.forEach(row => {
+      if (row.category) saveCustomCategory(row.category);
+      if (row.brand) saveCustomBrand(String(row.brand).trim(), row.category);
+      if (row.subCategory) saveCustomSubcategory(row.subCategory, row.category);
+    });
+
+    setIsImporting(true);
+
+    // Group rows by Brand + Model + RAM + Storage + Colour
+    const grouped = {};
+    excelRows.forEach(row => {
+      const key = `${row.category}|${row.subCategory}|${row.capacity}|${row.brand}|${row.model}|${row.ram}|${row.storage}|${row.colour}|${row.purchasePrice}|${row.sellPrice}|${row.mrp}|${row.gstRate}`.toLowerCase();
+      if (!grouped[key]) {
+        grouped[key] = {
+          category: row.category,
+          subCategory: row.subCategory,
+          capacity: row.capacity,
+          barcode: row.barcode,
+          codeFormat: row.codeFormat,
+          brand: row.brand,
+          model: row.model,
+          ram: row.ram,
+          storage: row.storage,
+          colour: row.colour,
+          hsn: row.hsn,
+          gstRate: row.gstRate,
+          purchasePrice: row.purchasePrice,
+          sellPrice: row.sellPrice,
+          mrp: row.mrp,
+          rack: row.rack,
+          bin: row.bin,
+          warranty: row.warranty,
+          receivedDate: row.receivedDate,
+          description: row.description,
+          isMasterRow: row.isMasterRow,
+          units: []
+        };
+      }
+
+      // Add physical units for this row
+      for (let i = 0; i < row.quantity; i++) {
+        const uBarcode = row.quantity === 1 ? row.barcode : `${row.barcode}-${i + 1}`;
+        grouped[key].units.push({
+          unitId: `UNIT-EX-${Date.now()}-${Math.random()}`,
+          imei1: i === 0 ? row.imei1 : '',
+          imei2: i === 0 ? row.imei2 : '',
+          serialNumber: row.serialNumbers[i] || '',
+          barcode: uBarcode,
+          color: row.colour,
+          rack: row.rack,
+          bin: row.bin,
+          status: 'In Stock'
+        });
+      }
+    });
+
+    const newInventoryItems = Object.values(grouped).map((group, gIdx) => {
+      const isPhoneCategory = isPhoneSpecificationCategory(group.category);
+      const tracksImei = isImeiCategory(group.category);
+      const specs = isPhoneCategory ? `${group.ram}/${group.storage}` : [group.subCategory, group.capacity].filter(Boolean).join(' · ');
+      const variantName = group.isMasterRow || !isPhoneCategory
+        ? group.model
+        : `${group.brand} ${group.model}${specs ? ` (${specs})` : ''}${group.colour ? ` - ${group.colour}` : ''}`;
+      const variantImeis = [];
+      const variantSerialNumbers = [];
+      group.units.forEach(u => {
+        if (u.imei1) variantImeis.push(u.imei1);
+        if (u.imei2) variantImeis.push(u.imei2);
+        if (u.serialNumber) variantSerialNumbers.push(u.serialNumber);
+      });
+
+      return {
+        id: `PROD-EX-${Date.now()}-${gIdx + 1}`,
+        category: group.category,
+        subCategory: group.subCategory,
+        capacity: group.capacity,
+        brand: group.brand,
+        model: group.model,
+        name: variantName,
+        ram: group.ram,
+        storage: group.storage,
+        color: group.colour,
+        description: group.description || (group.isMasterRow ? '' : `${group.brand} ${group.model}${specs ? ` ${specs}` : ''}${group.colour ? ` (${group.colour})` : ''} imported from spreadsheet.`),
+        isGst: (Number(group.gstRate) || 0) > 0,
+        hsn: group.hsn,
+        gstRate: group.gstRate,
+        buyPrice: group.purchasePrice,
+        sellPrice: group.sellPrice,
+        mrp: group.mrp,
+        stock: group.units.length,
+        lowStockThreshold: 2,
+        rack: group.rack,
+        bin: group.bin,
+        locations: [{ rack: group.rack, bin: group.bin, qty: group.units.length }],
+        barcode: group.units[0]?.barcode || group.barcode || `ALZ-EX-${Date.now().toString().slice(-6)}`,
+        codeFormat: group.codeFormat || 'barcode',
+        barcodes: group.units.map(u => u.barcode).filter(Boolean),
+        imeis: tracksImei ? variantImeis : [],
+        serialNumbers: tracksImei ? [] : variantSerialNumbers,
+        units: group.units,
+        warranty: group.warranty,
+          receivedDate: group.receivedDate || '',
+        // Imported stock with a verified selling price can be published. Rows
+        // with missing prices stay private until an admin completes the product.
+        isPublished: group.units.length > 0 && Number(group.sellPrice) > 0,
+        createdAt: new Date().toISOString(),
+        status: 'Active'
+      };
+    });
+
+    onSaveBatch(newInventoryItems);
+    setIsImporting(false);
+    alert(`✓ Successfully imported ${excelRows.reduce((acc, r) => acc + r.quantity, 0)} inventory units into ALZINO!`);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-backdrop no-print" style={{ zIndex: 1200, padding: '1rem' }}>
+      <div 
+        className="modal-dialog" 
+        style={{ 
+          maxWidth: '1100px', 
+          width: '100%', 
+          maxHeight: '92vh', 
+          display: 'flex', 
+          flexDirection: 'column',
+          padding: 0,
+          overflow: 'hidden',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)'
+        }}
+      >
+        {/* Modal Top Header */}
+        <div style={{
+          padding: '1.1rem 1.4rem',
+          background: 'var(--surface-header, #1F2937)',
+          color: '#FFFFFF',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #10B981, #059669)',
+              padding: '0.5rem',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 10px rgba(16, 185, 129, 0.3)'
+            }}>
+              <Smartphone size={22} color="#FFFFFF" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800 }}>
+                  Bulk Add
+                </h3>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            {/* Tab Switcher */}
+            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', padding: '3px', borderRadius: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setActiveTab('manual')}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: activeTab === 'manual' ? '#10B981' : 'transparent',
+                  color: activeTab === 'manual' ? '#FFFFFF' : '#9CA3AF',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                ⚡ Fast Variant Entry
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('excel')}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: activeTab === 'excel' ? '#10B981' : 'transparent',
+                  color: activeTab === 'excel' ? '#FFFFFF' : '#9CA3AF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FileSpreadsheet size={13} />
+                <span>Excel / CSV Bulk Import</span>
+              </button>
+            </div>
+
+            <button 
+              onClick={onClose} 
+              style={{ 
+                background: 'rgba(255,255,255,0.1)', 
+                border: 'none', 
+                color: '#FFF', 
+                borderRadius: '8px', 
+                padding: '0.4rem', 
+                cursor: 'pointer' 
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Scrollable Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', background: 'var(--bg-main, #F9FAFB)' }}>
+          {activeTab === 'manual' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* STEP 1: MODEL & SPECIFICATIONS CARD (ENTER ONLY ONCE) */}
+              <div style={{
+                background: 'var(--surface-primary, #FFFFFF)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color, #E5E7EB)',
+                padding: '1.1rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8rem', borderBottom: '1px solid var(--border-color, #E5E7EB)', paddingBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ 
+                      width: '22px', 
+                      height: '22px', 
+                      borderRadius: '50%', 
+                      background: '#10B981', 
+                      color: '#FFF', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800 
+                    }}>
+                      1
+                    </span>
+                    <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Common Product & Purchase Details (Enter Once)
+                    </h4>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Applies across all product variants
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                  {/* Product type and saved subcategory */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Product Type *</label>
+                    <select className="input-field" value={isCustomCategory ? 'Other' : modelDetails.category} onChange={(e) => {
+                      if (e.target.value === 'Other') { setIsCustomCategory(true); setIsCustomSubcategory(false); setModelDetails(prev => ({ ...prev, category: '', subCategory: '', capacity: '', ram: '', storage: '', brand: '' })); setIsCustomBrand(false); }
+                      else { setIsCustomCategory(false); setIsCustomSubcategory(false); const brands = getAvailableBrandsForCategory(e.target.value, inventory); const hasPhoneSpecs = isPhoneSpecificationCategory(e.target.value); setModelDetails(prev => ({ ...prev, category: e.target.value, subCategory: '', capacity: '', ram: hasPhoneSpecs ? '8GB' : '', storage: hasPhoneSpecs ? '128GB' : '', brand: brands[0] || 'Universal' })); setIsCustomBrand(false); }
+                    }}>
+                      {availableCategories.map(category => <option key={category} value={category}>{category}</option>)}
+                      <option value="Other">Other (Add Custom)</option>
+                    </select>
+                    {isCustomCategory && <input className="input-field" style={{ marginTop: '0.3rem' }} autoFocus required placeholder="Enter product type" aria-label="Custom product type" value={modelDetails.category} onChange={e => setModelDetails(prev => ({ ...prev, category: e.target.value }))} onBlur={e => { if (e.target.value.trim()) saveCustomCategory(e.target.value.trim()); }} />}
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Subcategory</label>
+                    <select className="input-field" value={isCustomSubcategory ? 'Other' : modelDetails.subCategory} onChange={e => {
+                      if (e.target.value === 'Other') { setIsCustomSubcategory(true); setModelDetails(prev => ({ ...prev, subCategory: '', capacity: '' })); }
+                      else { setIsCustomSubcategory(false); setModelDetails(prev => ({ ...prev, subCategory: e.target.value, capacity: '' })); }
+                    }}>
+                      <option value="">Select subcategory</option>
+                      {availableSubcategories.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                      <option value="Other">Other (Add Custom)</option>
+                    </select>
+                    {isCustomSubcategory && <input className="input-field" style={{ marginTop: '0.3rem' }} placeholder="Enter subcategory" aria-label="Custom subcategory" value={modelDetails.subCategory} onChange={e => setModelDetails(prev => ({ ...prev, subCategory: e.target.value }))} onBlur={e => { if (e.target.value.trim()) saveCustomSubcategory(e.target.value, modelDetails.category); }} />}
+                    {modelDetails.category === 'Home Appliances' && <input className="input-field" style={{ marginTop: '0.3rem' }} placeholder="Capacity / size (e.g. 250L, 1.5 Ton, 7kg)" value={modelDetails.capacity} onChange={e => setModelDetails(prev => ({ ...prev, capacity: e.target.value }))} />}
+                  </div>
+
+                  {/* Brand */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Brand *</label>
+                    <select
+                      value={isCustomBrand ? 'Other' : (availableBrands.includes(modelDetails.brand) ? modelDetails.brand : (modelDetails.brand || 'Other'))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'Other') {
+                          setIsCustomBrand(true);
+                          setModelDetails({ ...modelDetails, brand: '' });
+                        } else {
+                          setIsCustomBrand(false);
+                          setModelDetails({ ...modelDetails, brand: val });
+                        }
+                      }}
+                      className="input-field"
+                    >
+                      {availableBrands.map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                      {modelDetails.brand && !availableBrands.includes(modelDetails.brand) && !isCustomBrand && (
+                        <option key={modelDetails.brand} value={modelDetails.brand}>{modelDetails.brand}</option>
+                      )}
+                      <option value="Other">Other (Add Custom)</option>
+                    </select>
+
+                    {isCustomBrand && (
+                      <input
+                        type="text"
+                        placeholder="Enter custom brand..."
+                        value={modelDetails.brand}
+                        onChange={(e) => setModelDetails({ ...modelDetails, brand: e.target.value })}
+                        onBlur={(e) => {
+                          if (e.target.value.trim()) {
+                            saveCustomBrand(e.target.value.trim(), modelDetails.category);
+                          }
+                        }}
+                        required
+                        className="input-field animate-fade-in"
+                        style={{ marginTop: '0.3rem' }}
+                        autoFocus
+                      />
+                    )}
+                  </div>
+
+                  {/* Model Name */}
+                  <div style={{ gridColumn: 'span 2', position: 'relative' }}>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>
+                      Product Name / Model * <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', fontWeight: 600 }}>(Auto Suggest)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. apple 18 pro, Galaxy S24, Nord CE4"
+                      value={modelDetails.model}
+                      onChange={(e) => {
+                        setModelDetails({ ...modelDetails, model: e.target.value });
+                        setShowModelSuggestions(true);
+                      }}
+                      onFocus={() => setShowModelSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowModelSuggestions(false), 250)}
+                      onKeyDown={(e) => {
+                        if (!showModelSuggestions || modelSuggestions.length === 0) return;
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setModelSuggestionIndex(prev => (prev + 1) % modelSuggestions.length);
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setModelSuggestionIndex(prev => (prev <= 0 ? modelSuggestions.length - 1 : prev - 1));
+                        } else if (e.key === 'Enter' && modelSuggestionIndex >= 0) {
+                          e.preventDefault();
+                          handleSelectModelSuggestion(modelSuggestions[modelSuggestionIndex]);
+                        } else if (e.key === 'Escape') {
+                          setShowModelSuggestions(false);
+                        }
+                      }}
+                      className="input-field"
+                      style={{ fontWeight: 700 }}
+                      autoComplete="off"
+                    />
+
+                    {/* Floating Model Suggestions */}
+                    {showModelSuggestions && modelSuggestions.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          zIndex: 1300,
+                          background: 'var(--surface-primary)',
+                          border: '1.5px solid var(--accent-primary)',
+                          borderRadius: '8px',
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                          marginTop: '4px',
+                          maxHeight: '230px',
+                          overflowY: 'auto'
+                        }}
+                      >
+                        <div style={{
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.62rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          color: 'var(--accent-primary)',
+                          background: 'var(--surface-secondary)',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          justifyContent: 'space-between'
+                        }}>
+                          <span>⚡ Fast Model Pick (Click or Enter ↵)</span>
+                          <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>Auto-fills brand, specs & price</span>
+                        </div>
+                        {modelSuggestions.map((sug, idx) => (
+                          <div
+                            key={idx}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSelectModelSuggestion(sug);
+                            }}
+                            onMouseEnter={() => setModelSuggestionIndex(idx)}
+                            style={{
+                              padding: '0.5rem 0.65rem',
+                              cursor: 'pointer',
+                              background: idx === modelSuggestionIndex ? 'var(--surface-hover)' : 'transparent',
+                              borderBottom: '1px solid var(--border-color)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                {sug.model || sug.name}
+                              </div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', gap: '0.3rem', alignItems: 'center', marginTop: '0.1rem' }}>
+                                <span style={{ fontWeight: 800, color: 'var(--accent-primary)' }}>{sug.brand}</span>
+                                {sug.ram && sug.storage ? <span>• {sug.ram}/{sug.storage}</span> : null}
+                              </div>
+                            </div>
+                            {sug.suggestedSell > 0 && (
+                              <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                                ₹{sug.suggestedSell.toLocaleString('en-IN')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Phones use RAM and storage; other types use their subcategory and appliance size. */}
+                  {isPhoneSpecificationCategory(modelDetails.category) && <><div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>RAM *</label>
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      <select
+                        value={modelDetails.ram}
+                        onChange={(e) => setModelDetails({ ...modelDetails, ram: e.target.value })}
+                        className="input-field"
+                      >
+                        {COMMON_RAM_OPTIONS.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                      {modelDetails.ram === 'Other' && (
+                        <input
+                          type="text"
+                          placeholder="e.g. 18GB"
+                          value={modelDetails.customRam}
+                          onChange={(e) => setModelDetails({ ...modelDetails, customRam: e.target.value })}
+                          className="input-field"
+                          style={{ width: '80px' }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Storage */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Storage *</label>
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      <select
+                        value={modelDetails.storage}
+                        onChange={(e) => setModelDetails({ ...modelDetails, storage: e.target.value })}
+                        className="input-field"
+                      >
+                        {COMMON_STORAGE_OPTIONS.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      {modelDetails.storage === 'Other' && (
+                        <input
+                          type="text"
+                          placeholder="e.g. 2TB"
+                          value={modelDetails.customStorage}
+                          onChange={(e) => setModelDetails({ ...modelDetails, customStorage: e.target.value })}
+                          className="input-field"
+                          style={{ width: '80px' }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  </>}
+
+                  {/* Buy Price */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Purchase Cost ₹</label>
+                    <input
+                      type="number"
+                      placeholder="Cost ₹"
+                      value={modelDetails.buyPrice}
+                      onChange={(e) => setModelDetails({ ...modelDetails, buyPrice: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+
+                  {/* Selling Price */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ *</label>
+                    <input
+                      type="number"
+                      placeholder="Sell ₹"
+                      value={modelDetails.sellPrice}
+                      onChange={(e) => setModelDetails({ ...modelDetails, sellPrice: e.target.value })}
+                      className="input-field"
+                      style={{ fontWeight: 800, color: 'var(--accent-primary, #10B981)' }}
+                    />
+                  </div>
+
+                  {/* MRP */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Box MRP ₹</label>
+                    <input
+                      type="number"
+                      placeholder="Box MRP"
+                      value={modelDetails.mrp}
+                      onChange={(e) => setModelDetails({ ...modelDetails, mrp: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+
+                  {/* Rack & Bin */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Shelf Rack & Bin</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem' }}>
+                      <input
+                        type="text"
+                        placeholder="R-01"
+                        value={modelDetails.rack}
+                        onChange={(e) => setModelDetails({ ...modelDetails, rack: e.target.value })}
+                        className="input-field"
+                        style={{ textTransform: 'uppercase' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="B-01"
+                        value={modelDetails.bin}
+                        onChange={(e) => setModelDetails({ ...modelDetails, bin: e.target.value })}
+                        className="input-field"
+                        style={{ textTransform: 'uppercase' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warranty */}
+                  <div>
+                    <label style={{ fontSize: '0.73rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Warranty</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1 Year Brand Warranty"
+                      value={modelDetails.warranty}
+                      onChange={(e) => setModelDetails({ ...modelDetails, warranty: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+
+                {/* TERMS & CONDITIONS (SHOWN UPON SCANNING QR OR BARCODE) */}
+                <div style={{
+                  marginTop: '0.85rem',
+                  padding: '0.85rem',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--bg-main, #F9FAFB)',
+                  border: '1px solid var(--border-color, #E5E7EB)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-primary, #111827)' }}>
+                        📜 Product Terms & Conditions
+                      </label>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted, #6B7280)' }}>
+                        (Applies to all colour variants & displays upon QR scan)
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#10B981' }}>
+                      {termsAndConditions.length} policies active
+                    </span>
+                  </div>
+
+                  {/* Pre-set Quick Add Pills */}
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted, #6B7280)', marginBottom: '0.35rem', fontWeight: 600 }}>
+                      Quick-Add Pre-set Conditions (Tap to toggle):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {STANDARD_PRODUCT_TERMS_PRESETS.map((preset) => {
+                        const isSelected = termsAndConditions.some(t => t.includes(preset.text) || preset.text.includes(t));
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setTermsAndConditions(prev => prev.filter(t => !t.includes(preset.text) && !preset.text.includes(t)));
+                              } else {
+                                setTermsAndConditions(prev => [...prev, preset.text]);
+                              }
+                            }}
+                            style={{
+                              padding: '0.25rem 0.55rem',
+                              borderRadius: '6px',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: isSelected ? '1px solid #10B981' : '1px solid var(--border-color, #D1D5DB)',
+                              backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-primary, #FFFFFF)',
+                              color: isSelected ? '#047857' : 'var(--text-secondary, #4B5563)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}
+                          >
+                            {isSelected && <Check size={11} strokeWidth={3} />}
+                            <span>{preset.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Active List of Terms */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '160px', overflowY: 'auto' }}>
+                    {termsAndConditions.map((term, tIdx) => (
+                      <div
+                        key={tIdx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem',
+                          padding: '0.35rem 0.6rem',
+                          backgroundColor: 'var(--surface-primary, #FFFFFF)',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color, #E5E7EB)',
+                          fontSize: '0.72rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '0.4rem', flex: 1 }}>
+                          <span style={{ color: '#10B981', fontWeight: 800 }}>{tIdx + 1}.</span>
+                          <span style={{ color: 'var(--text-primary, #1F2937)', lineHeight: 1.35 }}>{term}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTermsAndConditions(prev => prev.filter((_, i) => i !== tIdx))}
+                          style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                          title="Remove condition"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Custom Term Input */}
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Type custom condition (e.g. Free tempered glass & cover, Festive store offer)..."
+                      value={customTermInput}
+                      onChange={(e) => setCustomTermInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (customTermInput.trim()) {
+                            setTermsAndConditions(prev => [...prev, customTermInput.trim()]);
+                            setCustomTermInput('');
+                          }
+                        }
+                      }}
+                      className="input-field"
+                      style={{ fontSize: '0.74rem', flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customTermInput.trim()) {
+                          setTermsAndConditions(prev => [...prev, customTermInput.trim()]);
+                          setCustomTermInput('');
+                        }
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.74rem', fontWeight: 700 }}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* STEP 2: COLOUR VARIANTS & QUANTITIES */}
+              <div style={{
+                background: 'var(--surface-primary, #FFFFFF)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color, #E5E7EB)',
+                padding: '1.1rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8rem', borderBottom: '1px solid var(--border-color, #E5E7EB)', paddingBottom: '0.5rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ 
+                      width: '22px', 
+                      height: '22px', 
+                      borderRadius: '50%', 
+                      background: '#10B981', 
+                      color: '#FFF', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800 
+                    }}>
+                      2
+                    </span>
+                    <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Colour Variants & Stock Quantities
+                    </h4>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ 
+                      fontSize: '0.8rem', 
+                      fontWeight: 800, 
+                      color: '#10B981', 
+                      background: 'rgba(16, 185, 129, 0.1)', 
+                      padding: '0.25rem 0.65rem', 
+                      borderRadius: '8px' 
+                    }}>
+                      Total Stock: {totalStockCount} Physical Mobiles
+                    </span>
+                  </div>
+                </div>
+
+                {/* Popular Color Chips for 1-Click Adding */}
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>
+                    Quick-Add Popular Mobile Colours:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                    {POPULAR_COLORS.map(c => {
+                      const isAdded = colourVariants.some(v => v.color.toLowerCase() === c.name.toLowerCase());
+                      return (
+                        <button
+                          key={c.name}
+                          type="button"
+                          onClick={() => handleAddColor(c.name, c.hex)}
+                          disabled={isAdded}
+                          style={{
+                            padding: '0.22rem 0.55rem',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            borderRadius: '20px',
+                            border: '1px solid var(--border-color, #D1D5DB)',
+                            background: isAdded ? 'rgba(0,0,0,0.05)' : 'var(--bg-main, #FFFFFF)',
+                            color: isAdded ? 'var(--text-muted)' : 'var(--text-primary)',
+                            cursor: isAdded ? 'default' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            opacity: isAdded ? 0.6 : 1
+                          }}
+                        >
+                          <span style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: c.hex, border: '1px solid rgba(0,0,0,0.2)' }} />
+                          <span>{c.name}</span>
+                          {isAdded ? <Check size={11} color="#10B981" /> : <Plus size={11} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Colour Variant Rows */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                  {colourVariants.map((variant, idx) => (
+                    <div 
+                      key={variant.id}
+                      style={{
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: '10px',
+                        border: '1px solid var(--border-color, #E5E7EB)',
+                        background: 'var(--bg-main, #F9FAFB)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      {/* Left: Swatch + Variant info */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0, flex: '1 1 100%' }}>
+                        <label aria-label={`Choose ${variant.color} shade`} title="Click to adjust color shade" style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                          <span style={{ 
+                            width: '20px', 
+                            height: '20px', 
+                            borderRadius: '50%', 
+                            backgroundColor: variant.hex || getProductColorHex(variant.color), 
+                            border: '2px solid rgba(0,0,0,0.15)',
+                            display: 'inline-block',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }} />
+                          <input
+                            type="color"
+                            value={variant.hex || getProductColorHex(variant.color)}
+                            onChange={(e) => handleUpdateColorHex(variant.id, e.target.value)}
+                            style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                          />
+                        </label>
+                          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                          <div 
+                            title={variant.color}
+                            style={{ 
+                              fontWeight: 800, 
+                              fontSize: '0.8rem', 
+                              whiteSpace: 'normal',
+                              overflowWrap: 'anywhere',
+                              lineHeight: 1.25,
+                              color: 'var(--text-primary)'
+                            }}
+                          >
+                            {variant.color}
+                          </div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            Variant #{idx + 1}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Middle: Front & Back Colour Photos */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                        {/* Front Photo Slot */}
+                        {(variant.frontImage || variant.image) ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: 'var(--bg-main)', padding: '2px 4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            <div 
+                              onClick={() => setPreviewImage({ url: variant.frontImage || variant.image, title: `${variant.color} Front Photo` })}
+                              title="Click to zoom Front photo"
+                              style={{ 
+                                width: '32px', 
+                                height: '32px', 
+                                borderRadius: '5px', 
+                                overflow: 'hidden', 
+                                border: '1px solid var(--border-color, #D1D5DB)', 
+                                cursor: 'pointer',
+                                background: '#FFF',
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <img 
+                                src={variant.frontImage || variant.image} 
+                                alt={`${variant.color} Front`} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              />
+                              <span style={{
+                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                background: 'rgba(0,0,0,0.65)', color: '#FFF',
+                                fontSize: '8px', fontWeight: 800, textAlign: 'center', lineHeight: '10px'
+                              }}>
+                                FRONT
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <label 
+                                title="Change Front photo" 
+                                style={{ 
+                                  cursor: 'pointer', 
+                                  color: 'var(--accent-primary)', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <Camera size={11} />
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  style={{ display: 'none' }} 
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'front', e.target.files[0]);
+                                  }} 
+                                />
+                              </label>
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveColorImage(variant.id, 'front')}
+                                title="Remove Front photo"
+                                style={{ 
+                                  background: 'transparent', 
+                                  border: 'none', 
+                                  color: '#EF4444', 
+                                  cursor: 'pointer', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label 
+                            title={`Upload Front photo for ${variant.color}`} 
+                            style={{ 
+                              cursor: 'pointer', 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '0.2rem', 
+                              fontSize: '0.68rem', 
+                              fontWeight: 700,
+                              padding: '0.25rem 0.45rem', 
+                              borderRadius: '6px', 
+                              background: 'rgba(79, 70, 229, 0.08)', 
+                              color: 'var(--accent-primary, #4F46E5)', 
+                              border: '1px dashed var(--accent-primary, #4F46E5)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Camera size={12} />
+                            <span>+ Front</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'front', e.target.files[0]);
+                              }} 
+                            />
+                          </label>
+                        )}
+
+                        {/* Back Photo Slot */}
+                        {variant.backImage ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: 'var(--bg-main)', padding: '2px 4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            <div 
+                              onClick={() => setPreviewImage({ url: variant.backImage, title: `${variant.color} Back Photo` })}
+                              title="Click to zoom Back photo"
+                              style={{ 
+                                width: '32px', 
+                                height: '32px', 
+                                borderRadius: '5px', 
+                                overflow: 'hidden', 
+                                border: '1px solid var(--border-color, #D1D5DB)', 
+                                cursor: 'pointer',
+                                background: '#FFF',
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <img 
+                                src={variant.backImage} 
+                                alt={`${variant.color} Back`} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              />
+                              <span style={{
+                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                background: 'rgba(0,0,0,0.65)', color: '#FFF',
+                                fontSize: '8px', fontWeight: 800, textAlign: 'center', lineHeight: '10px'
+                              }}>
+                                BACK
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <label 
+                                title="Change Back photo" 
+                                style={{ 
+                                  cursor: 'pointer', 
+                                  color: 'var(--accent-primary)', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <Camera size={11} />
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  style={{ display: 'none' }} 
+                                  onChange={(e) => {
+                                    if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'back', e.target.files[0]);
+                                  }} 
+                                />
+                              </label>
+                              <button 
+                                type="button" 
+                                onClick={() => handleRemoveColorImage(variant.id, 'back')}
+                                title="Remove Back photo"
+                                style={{ 
+                                  background: 'transparent', 
+                                  border: 'none', 
+                                  color: '#EF4444', 
+                                  cursor: 'pointer', 
+                                  padding: '1px', 
+                                  display: 'flex', 
+                                  alignItems: 'center' 
+                                }}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label 
+                            title={`Upload Back photo for ${variant.color}`} 
+                            style={{ 
+                              cursor: 'pointer', 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '0.2rem', 
+                              fontSize: '0.68rem', 
+                              fontWeight: 700,
+                              padding: '0.25rem 0.45rem', 
+                              borderRadius: '6px', 
+                              background: 'rgba(16, 185, 129, 0.08)', 
+                              color: '#059669', 
+                              border: '1px dashed #059669',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Camera size={12} />
+                            <span>+ Back</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleUpdateColorImage(variant.id, 'back', e.target.files[0]);
+                              }} 
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      {/* Right: Quantity & Remove */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Qty:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={variant.qty}
+                            onChange={(e) => handleUpdateColorQty(variant.id, e.target.value)}
+                            style={{
+                              width: '50px',
+                              padding: '0.25rem 0.35rem',
+                              fontSize: '0.82rem',
+                              fontWeight: 800,
+                              textAlign: 'center',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-color, #D1D5DB)'
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColor(variant.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#EF4444',
+                            cursor: 'pointer',
+                            padding: '0.2rem'
+                          }}
+                          title="Remove colour variant"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Custom Colour Input */}
+                <div style={{ display: 'flex', gap: '0.4rem', maxWidth: '420px', alignItems: 'center' }}>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1 }}>
+                    <input
+                      type="text"
+                      placeholder="Enter custom colour (e.g. Pink, Coral, Mint)..."
+                      value={newColorInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewColorInput(val);
+                        if (val.trim()) {
+                          setCustomColorHex(getProductColorHex(val));
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddColor(newColorInput, customColorHex);
+                        }
+                      }}
+                      className="input-field"
+                      style={{ fontSize: '0.78rem', paddingRight: '2.5rem' }}
+                    />
+                    <label
+                      aria-label="Choose custom colour shade"
+                      title="Custom colour shade" 
+                      style={{ 
+                        position: 'absolute', 
+                        right: '8px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center' 
+                      }}
+                    >
+                      <span style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        backgroundColor: customColorHex || getProductColorHex(newColorInput),
+                        border: '1px solid rgba(0,0,0,0.2)',
+                        display: 'inline-block'
+                      }} />
+                      <input
+                        type="color"
+                        value={customColorHex || '#EC4899'}
+                        onChange={(e) => setCustomColorHex(e.target.value)}
+                        style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAddColor(newColorInput, customColorHex)}
+                    className="btn-secondary"
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                  >
+                    <Plus size={13} />
+                    <span>Add Colour</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* STEP 3: PHYSICAL UNITS & IDENTIFIER ENTRY */}
+              <div style={{
+                background: 'var(--surface-primary, #FFFFFF)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color, #E5E7EB)',
+                padding: '1.1rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color, #E5E7EB)', paddingBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ 
+                      width: '22px', 
+                      height: '22px', 
+                      borderRadius: '50%', 
+                      background: '#10B981', 
+                      color: '#FFF', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800 
+                    }}>
+                      3
+                    </span>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        Unit-by-Unit {isImeiCategory(modelDetails.category) ? 'IMEI' : 'Serial Number'} Entry ({units.length} Physical Units)
+                      </h4>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {isImeiCategory(modelDetails.category) ? 'Enter or scan mobile IMEIs' : 'Enter or scan optional product serial numbers'} • Alzino auto-generates scannable Barcodes or QR Codes
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fast Helper Actions */}
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Admin Choice: Barcode vs QR Code vs Both */}
+                    <div style={{ display: 'inline-flex', background: 'var(--bg-main, #F3F4F6)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color, #E5E7EB)' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('barcode')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'barcode' ? '#10B981' : 'transparent',
+                          color: codeFormat === 'barcode' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Barcode size={12} />
+                        <span>Barcode</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('qr')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                          color: codeFormat === 'qr' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <QrCode size={12} />
+                        <span>QR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCodeFormat('both')}
+                        style={{
+                          padding: '0.24rem 0.55rem',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: codeFormat === 'both' ? '#2563EB' : 'transparent',
+                          color: codeFormat === 'both' ? '#FFFFFF' : 'var(--text-muted, #6B7280)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Include both 1D Barcode & 2D QR Code"
+                      >
+                        <Layers size={12} />
+                        <span>Both</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRegenerateBarcodes}
+                      className="btn-secondary"
+                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                      title="Regenerate unique Barcode or QR code for each unit"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Reset {codeFormat === 'qr' ? 'QR Codes' : 'Barcodes'}</span>
+                    </button>
+
+                    {onPrintBarcodeSheet && (
+                      <button
+                        type="button"
+                        onClick={handlePrintAllStickers}
+                        disabled={units.length === 0}
+                        className="btn-secondary"
+                        style={{ padding: '0.28rem 0.65rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#4F46E5' }}
+                        title="Print stickers for all physical units"
+                      >
+                        <Printer size={12} />
+                        <span>Print Labels</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Units List */}
+                {units.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No physical units configured. Please add product variants and quantities above.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '0.2rem' }}>
+                    {units.map((unit, idx) => (
+                      <div 
+                        key={unit.unitKey || idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: isImeiCategory(modelDetails.category) ? '1.2fr 2fr 2fr 1.6fr' : '1.2fr 2fr 1.6fr',
+                          gap: '0.65rem',
+                          alignItems: 'center',
+                          padding: '0.55rem 0.75rem',
+                          background: idx % 2 === 0 ? 'var(--bg-main, #F9FAFB)' : 'var(--surface-primary, #FFFFFF)',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color, #E5E7EB)'
+                        }}
+                      >
+                        {/* Unit Label & Colour */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            fontWeight: 800, 
+                            fontFamily: 'var(--font-mono)', 
+                            background: 'rgba(0,0,0,0.06)', 
+                            padding: '0.15rem 0.4rem', 
+                            borderRadius: '4px' 
+                          }}>
+                            #{unit.globalIndex}
+                          </span>
+                          {unit.image && (
+                            <img 
+                              src={unit.image} 
+                              alt={unit.color}
+                              onClick={() => setPreviewImage({ url: unit.image, title: `${unit.color} - Unit #${unit.unitNo}` })}
+                              title="Click to zoom image"
+                              style={{ width: '26px', height: '26px', borderRadius: '4px', objectFit: 'cover', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', flexShrink: 0 }}
+                            />
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <span style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: unit.colorHex || getProductColorHex(unit.color), border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                                {unit.color}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                              Unit {unit.unitNo} of {unit.color}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isImeiCategory(modelDetails.category) ? <>
+                        {/* IMEI 1 (SIM 1) */}
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: '#10B981' }}>
+                              IMEI 1 (SIM 1){requiresDualImei(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleStartCameraScan(idx, 'imei1')}
+                              style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }}
+                              title="Scan IMEI 1 with phone camera"
+                            >
+                              <Camera size={11} />
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="e.g. 86345605..."
+                            data-unit-idx={idx}
+                            data-field="imei1"
+                            value={unit.imei1}
+                            onChange={(e) => handleUnitChange(idx, 'imei1', e.target.value)}
+                            onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei1')}
+                            required={requiresDualImei(modelDetails.category)}
+                            className="input-field"
+                            style={{ 
+                              padding: '0.28rem 0.5rem', 
+                              fontSize: '0.78rem', 
+                              fontFamily: 'var(--font-mono)', 
+                              border: unit.imei1 ? '1px solid #10B981' : '1px solid var(--border-color, #D1D5DB)' 
+                            }}
+                          />
+                        </div>
+
+                        {/* IMEI 2 (SIM 2 / eSIM) */}
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                              IMEI 2 (SIM 2 / eSIM){requiresDualImei(modelDetails.category) && <span style={{ color: '#DC2626' }}> *</span>}
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => handleStartCameraScan(idx, 'imei2')}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                              title="Scan IMEI 2 with phone camera"
+                            >
+                              <Camera size={11} />
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="e.g. 86345606..."
+                            data-unit-idx={idx}
+                            data-field="imei2"
+                            value={unit.imei2}
+                            onChange={(e) => handleUnitChange(idx, 'imei2', e.target.value)}
+                            onKeyDown={(e) => handleUnitKeyDown(e, idx, 'imei2')}
+                            required={requiresDualImei(modelDetails.category)}
+                            className="input-field"
+                            style={{ padding: '0.28rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)' }}
+                          />
+                        </div>
+                        </> : <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                            <label style={{ fontSize: '0.66rem', fontWeight: 700, color: '#10B981' }}>Serial No. (optional)</label>
+                            <button type="button" onClick={() => handleStartCameraScan(idx, 'serialNumber')} style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer', padding: 0 }} title="Scan serial number"><Camera size={11} /></button>
+                          </div>
+                          <input type="text" placeholder="Enter or scan serial number" data-unit-idx={idx} data-field="serialNumber" value={unit.serialNumber || ''} onChange={event => handleUnitChange(idx, 'serialNumber', event.target.value)} onKeyDown={event => handleUnitKeyDown(event, idx, 'serialNumber')} className="input-field" style={{ padding: '0.28rem 0.5rem', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', border: unit.serialNumber ? '1px solid #10B981' : '1px solid var(--border-color, #D1D5DB)' }} />
+                        </div>}
+
+                        {/* Unique Unit Barcode & QR Code Option */}
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.18rem', gap: '0.2rem' }}>
+                            <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.06)', padding: '2px', borderRadius: '5px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'barcode')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: (unit.codeFormat || 'barcode') === 'barcode' ? '#10B981' : 'transparent',
+                                  color: (unit.codeFormat || 'barcode') === 'barcode' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set 1D Barcode (Code-128) for this unit"
+                              >
+                                <Barcode size={10} />
+                                <span>Barcode</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'qr')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: unit.codeFormat === 'qr' ? '#4F46E5' : 'transparent',
+                                  color: unit.codeFormat === 'qr' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set 2D QR Code for this unit"
+                              >
+                                <QrCode size={10} />
+                                <span>QR</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUnitCodeFormat(idx, 'both')}
+                                style={{
+                                  padding: '0.12rem 0.35rem',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  border: 'none',
+                                  borderRadius: '3px',
+                                  cursor: 'pointer',
+                                  background: unit.codeFormat === 'both' ? '#2563EB' : 'transparent',
+                                  color: unit.codeFormat === 'both' ? '#FFF' : 'var(--text-muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Set Both 1D Barcode & 2D QR Code for this unit"
+                              >
+                                <Layers size={10} />
+                                <span>Both</span>
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {unit.barcode ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewUnit(unit)}
+                                    style={{ 
+                                      background: 'transparent', 
+                                      border: 'none', 
+                                      color: unit.codeFormat === 'qr' ? '#4F46E5' : '#10B981', 
+                                      cursor: 'pointer', 
+                                      padding: '0 2px', 
+                                      fontSize: '0.64rem', 
+                                      fontWeight: 800, 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: '1px' 
+                                    }}
+                                    title={`Preview & Print ${unit.codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker`}
+                                  >
+                                    <Eye size={11} />
+                                    <span>View</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteUnitBarcode(idx)}
+                                    style={{ 
+                                      background: 'transparent', 
+                                      border: 'none', 
+                                      color: '#EF4444', 
+                                      cursor: 'pointer', 
+                                      padding: '0 2px', 
+                                      display: 'flex', 
+                                      alignItems: 'center' 
+                                    }}
+                                    title="Delete barcode/QR code from this unit (stores empty in DB)"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const brandCode = (modelDetails.brand || 'MOB').slice(0, 3).toUpperCase();
+                                    const modelCode = (modelDetails.model || 'GEN').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+                                    const colorSlug = unit.color.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
+                                    const prefix = unit.codeFormat === 'qr' ? 'ALZ-QR' : 'ALZ';
+                                    handleUnitChange(idx, 'barcode', `${prefix}-${brandCode}-${modelCode}-${colorSlug}-${String(unit.unitNo).padStart(2, '0')}`);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--accent-primary)',
+                                    cursor: 'pointer',
+                                    padding: '0 2px',
+                                    fontSize: '0.64rem',
+                                    fontWeight: 700
+                                  }}
+                                  title="Add fresh code to this unit"
+                                >
+                                  + Add Code
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            placeholder="No code (deleted)"
+                            value={unit.barcode || ''}
+                            onChange={(e) => handleUnitChange(idx, 'barcode', e.target.value)}
+                            className="input-field"
+                            style={{ 
+                              padding: '0.28rem 0.5rem', 
+                              fontSize: '0.74rem', 
+                              fontFamily: 'var(--font-mono)', 
+                              color: !unit.barcode ? 'var(--text-muted)' : (unit.codeFormat === 'qr' ? '#4F46E5' : '#10B981'),
+                              fontWeight: 700
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* MODAL FOOTER SAVE ACTIONS */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingTop: '0.75rem',
+                borderTop: '1px solid var(--border-color, #E5E7EB)'
+              }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  📦 Ready to inward: <strong style={{ color: 'var(--text-primary)' }}>{totalStockCount} units</strong> in <strong style={{ color: 'var(--text-primary)' }}>{colourVariants.length} variants</strong>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.6rem' }}>
+                  <button type="button" onClick={onClose} className="btn-secondary">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAll}
+                    className="btn-primary"
+                    style={{
+                      padding: '0.6rem 1.6rem',
+                      fontSize: '0.88rem',
+                      fontWeight: 800,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      background: 'linear-gradient(135deg, #10B981, #059669)',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)'
+                    }}
+                  >
+                    <CheckCircle size={17} />
+                    <span>Save All {totalStockCount} Mobiles to Inventory</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* EXCEL / CSV BULK IMPORT TAB */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{
+                background: 'var(--surface-primary, #FFFFFF)',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color, #E5E7EB)',
+                padding: '1.4rem',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Bulk Product Stock Import via Excel / CSV
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      Import products by category and subcategory, with matching brand, specifications, variants, prices, and optional serial numbers.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadSampleExcel}
+                    className="btn-secondary"
+                    style={{
+                      padding: '0.45rem 0.95rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      borderColor: '#10B981',
+                      color: '#10B981'
+                    }}
+                  >
+                    <Download size={15} />
+                    <span>Download Sample Excel / CSV Template</span>
+                  </button>
+                </div>
+
+                {/* Drag and Drop / Upload Box */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={event => { event.preventDefault(); event.currentTarget.style.borderColor = '#10B981'; }}
+                  onDragLeave={event => { event.currentTarget.style.borderColor = 'var(--border-color, #D1D5DB)'; }}
+                  onDrop={event => {
+                    event.preventDefault();
+                    event.currentTarget.style.borderColor = 'var(--border-color, #D1D5DB)';
+                    const droppedFile = event.dataTransfer.files?.[0];
+                    if (droppedFile) handleFileUpload({ target: { files: [droppedFile], value: '' } });
+                  }}
+                  style={{
+                    border: '2px dashed var(--border-color, #D1D5DB)',
+                    borderRadius: '12px',
+                    padding: '2.5rem 1.5rem',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'var(--bg-main, #F9FAFB)',
+                    transition: 'all 0.2s ease',
+                    marginBottom: '1rem'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.borderColor = '#10B981'}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-color, #D1D5DB)'}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".xlsx, .xls, .csv,.pdf,application/pdf"
+                    onChange={handleFileUpload}
+                    style={{ display: 'none' }}
+                  />
+                  <div style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 0.75rem',
+                    color: '#10B981'
+                  }}>
+                    <Upload size={24} />
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: '0.25rem' }}>
+                    {isExtractingPdf ? `Reading PDF: ${excelFileName}` : (excelFileName ? `Selected: ${excelFileName}` : 'Click or Drag & Drop PDF, Excel (.xlsx, .xls) or CSV File')}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    Extracted details open as editable drafts. Review and confirm before inventory is changed; missing details can be entered manually. Scanned image-only PDFs may need manual entry.
+                  </div>
+                </div>
+
+                {excelRows.some(row => row.source === 'pdf') && <div role="status" style={{ fontSize: '0.74rem', color: 'var(--status-amber)', marginBottom: '0.75rem' }}>
+                  PDF text was extracted into draft fields. Check each product, quantity, identifier, and price before selecting Confirm &amp; Import.
+                </div>}
+
+                {/* Validation warnings if any */}
+                {excelErrors.length > 0 && (
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid #EF4444',
+                    borderRadius: '8px',
+                    padding: '0.75rem 1rem',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#EF4444', fontWeight: 800, fontSize: '0.8rem', marginBottom: '0.25rem' }}>
+                      <AlertCircle size={15} />
+                      <span>Validation Notes:</span>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.74rem', color: '#B91C1C' }}>
+                      {excelErrors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Parsed Rows Preview Table */}
+                {excelRows.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800 }}>
+                        Parsed Rows Preview ({excelRows.length} models / {excelRows.reduce((a, b) => a + b.quantity, 0)} total units)
+                      </span>
+                      <span style={{ fontSize: '0.74rem', color: '#10B981', fontWeight: 700 }}>
+                        Total Purchase Value: ₹{excelRows.reduce((acc, r) => acc + (r.purchasePrice * r.quantity), 0).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', maxHeight: '340px', border: '1px solid var(--border-color, #E5E7EB)', borderRadius: '8px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
+                        <thead style={{ background: 'var(--surface-header, #1F2937)', color: '#FFF', position: 'sticky', top: 0 }}>
+                          <tr>
+                            <th style={{ padding: '0.5rem' }}>#</th>
+                            <th style={{ padding: '0.5rem' }}>Category / subcategory</th>
+                            <th style={{ padding: '0.5rem' }}>Brand & product name</th>
+                            <th style={{ padding: '0.5rem' }}>Specifications / colour</th>
+                            <th style={{ padding: '0.5rem', textAlign: 'center' }}>Qty</th>
+                            <th style={{ padding: '0.5rem' }}>IMEI 1 / Serial No.</th>
+                            <th style={{ padding: '0.5rem' }}>Selling ₹</th>
+                            <th style={{ padding: '0.5rem' }}>Cost ₹</th>
+                            <th style={{ padding: '0.5rem' }}>MRP / GST %</th>
+                            <th style={{ padding: '0.5rem' }}>Shelf</th>
+                            <th style={{ padding: '0.5rem' }}>Review</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {excelRows.map((row, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-color, #E5E7EB)', background: idx % 2 === 0 ? 'var(--bg-main, #FFF)' : 'var(--surface-primary, #F9FAFB)' }}>
+                              <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{row.rowNo}</td>
+                              <td style={{ padding: '0.35rem', minWidth: 150 }}>
+                                <input aria-label={`Row ${row.rowNo} category`} value={row.category} onChange={event => updateExcelRow(idx, 'category', event.target.value)} placeholder="Category" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} subcategory`} value={row.subCategory} onChange={event => updateExcelRow(idx, 'subCategory', event.target.value)} placeholder="Subcategory" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 160 }}>
+                                <input aria-label={`Row ${row.rowNo} brand`} value={row.brand} onChange={event => updateExcelRow(idx, 'brand', event.target.value)} placeholder="Brand" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} product name`} value={row.model} onChange={event => updateExcelRow(idx, 'model', event.target.value)} placeholder="Product name / model" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 140 }}>
+                                <input aria-label={`Row ${row.rowNo} RAM`} value={row.ram} onChange={event => updateExcelRow(idx, 'ram', event.target.value)} placeholder="RAM" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} storage`} value={row.storage} onChange={event => updateExcelRow(idx, 'storage', event.target.value)} placeholder="Storage" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} colour`} value={row.colour} onChange={event => updateExcelRow(idx, 'colour', event.target.value)} placeholder="Colour" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 60 }}><input aria-label={`Row ${row.rowNo} quantity`} type="number" min="0" value={row.quantity} onChange={event => updateExcelRow(idx, 'quantity', Math.max(0, Number.parseInt(event.target.value, 10) || 0))} className="input-field" style={{ padding: '0.3rem', width: 62, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 150 }}>
+                                {isImeiCategory(row.category) ? <>
+                                  <input aria-label={`Row ${row.rowNo} IMEI 1`} value={row.imei1} onChange={event => updateExcelRow(idx, 'imei1', event.target.value)} placeholder="IMEI 1" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                  {requiresDualImei(row.category) && <input aria-label={`Row ${row.rowNo} IMEI 2`} value={row.imei2} onChange={event => updateExcelRow(idx, 'imei2', event.target.value)} placeholder="IMEI 2" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />}
+                                </> : <input aria-label={`Row ${row.rowNo} serial numbers`} value={(row.serialNumbers || []).join(', ')} onChange={event => updateExcelRow(idx, 'serialNumbers', event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean))} placeholder="Serial numbers (optional)" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />}
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} selling price`} type="number" min="0" value={row.sellPrice} onChange={event => updateExcelRow(idx, 'sellPrice', Number(event.target.value) || 0)} className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} buy cost`} type="number" min="0" value={row.purchasePrice} onChange={event => updateExcelRow(idx, 'purchasePrice', Number(event.target.value) || 0)} className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} MRP`} type="number" min="0" value={row.mrp} onChange={event => updateExcelRow(idx, 'mrp', Number(event.target.value) || 0)} placeholder="MRP" className="input-field" style={{ padding: '0.3rem', width: 82, marginBottom: 4, fontSize: '0.7rem' }} /><input aria-label={`Row ${row.rowNo} GST percent`} type="number" min="0" value={row.gstRate} onChange={event => updateExcelRow(idx, 'gstRate', Number(event.target.value) || 0)} placeholder="GST %" className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 100 }}><input aria-label={`Row ${row.rowNo} rack`} value={row.rack} onChange={event => updateExcelRow(idx, 'rack', event.target.value.toUpperCase())} placeholder="Rack" className="input-field" style={{ padding: '0.3rem', width: 78, marginBottom: 4, fontSize: '0.7rem' }} /><input aria-label={`Row ${row.rowNo} bin`} value={row.bin} onChange={event => updateExcelRow(idx, 'bin', event.target.value.toUpperCase())} placeholder="Bin" className="input-field" style={{ padding: '0.3rem', width: 78, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem' }}><button type="button" className="btn-outline" onClick={() => setExcelRows(rows => rows.filter((_, rowIndex) => rowIndex !== idx))} style={{ padding: '0.3rem 0.45rem', color: 'var(--status-red)' }}>Remove</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleImportExcelRows}
+                        disabled={isImporting}
+                        className="btn-primary"
+                        style={{
+                          padding: '0.6rem 1.6rem',
+                          fontSize: '0.86rem',
+                          fontWeight: 800,
+                          background: 'linear-gradient(135deg, #10B981, #059669)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem'
+                        }}
+                      >
+                        <CheckCircle size={16} />
+                        <span>Confirm & Import All {excelRows.reduce((a, b) => a + b.quantity, 0)} Units</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CAMERA SCANNER MODAL */}
+      {activeScanUnitIndex !== null && (
+        <CameraBarcodeScannerModal
+          isOpen={true}
+          onClose={() => {
+            scanTargetRef.current = { unitIndex: null, field: 'imei1' };
+            setActiveScanUnitIndex(null);
+          }}
+          onScan={handleCameraScanSuccess}
+          title={activeScanField === 'serialNumber' ? `Scan Serial Number for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : activeScanField === 'imei2' ? `Scan IMEI 2 (SIM 2) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}` : `Scan IMEI 1 (SIM 1) for Unit #${(activeScanUnitIndex !== null ? activeScanUnitIndex + 1 : 1)}`}
+          description="Point camera at the barcode or QR code on the phone box"
+        />
+      )}
+
+      {/* Code Preview & Instant Sticker Modal */}
+      {previewUnit && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1350, padding: '1rem' }}>
+          <div className="illoca-card animate-fade-in" style={{ maxWidth: '380px', width: '100%', background: 'var(--surface-primary)', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                {codeFormat === 'qr' ? <QrCode size={18} color="#4F46E5" /> : <Barcode size={18} color="#10B981" />}
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 800 }}>
+                  Unit {codeFormat === 'qr' ? 'QR Code' : 'Barcode'} Sticker
+                </h4>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setPreviewUnit(null)} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{
+              background: '#FFFFFF',
+              color: '#0A0D14',
+              padding: '0.9rem',
+              borderRadius: '8px',
+              border: '2px dashed #CBD5E1',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 900, letterSpacing: '0.04em' }}>ALZINO • BODHAN</div>
+              <div style={{ fontSize: '0.82rem', fontWeight: 800, margin: '2px 0' }}>
+                {modelDetails.brand} {modelDetails.model}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>
+                {modelDetails.ram}/{modelDetails.storage} • {previewUnit.color}
+              </div>
+
+              <div 
+                style={{ margin: '0.6rem 0', display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ 
+                  __html: renderCodeSvg(previewUnit.barcode, codeFormat, 220, codeFormat === 'qr' ? 95 : 55, true) 
+                }} 
+              />
+
+              <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#0F172A' }}>
+                ₹{Number(modelDetails.sellPrice || 0).toLocaleString()} 
+                {modelDetails.mrp && Number(modelDetails.mrp) > Number(modelDetails.sellPrice) && (
+                  <span style={{ textDecoration: 'line-through', fontSize: '0.72rem', color: '#94A3B8', marginLeft: '6px' }}>
+                    MRP: ₹{Number(modelDetails.mrp).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {(previewUnit.imei1 || previewUnit.serialNumber) && (
+                <div style={{ fontSize: '0.66rem', fontFamily: 'var(--font-mono)', color: '#475569', marginTop: '4px' }}>
+                  {isImeiCategory(modelDetails.category) ? 'IMEI' : 'Serial No.'}: {previewUnit.imei1 || previewUnit.serialNumber}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setPreviewUnit(null)}
+                className="btn-secondary"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem' }}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  downloadStickerImage({
+                    title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage} - ${previewUnit.color})`,
+                    barcode: previewUnit.barcode,
+                    codeFormat: previewUnit.codeFormat || codeFormat,
+                    price: modelDetails.sellPrice || 0,
+                    mrp: Number(modelDetails.mrp) || 0,
+                    shopName: 'ALZINO MOBILES • BODHAN'
+                  });
+                }}
+                className="btn-secondary"
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                title="Download sticker as high-res PNG image"
+              >
+                <Download size={13} />
+                <span>Download</span>
+              </button>
+              {onPrintBarcodeSheet && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPrintBarcodeSheet({
+                      title: `${modelDetails.brand} ${modelDetails.model} (${modelDetails.ram}/${modelDetails.storage} - ${previewUnit.color})`,
+                      barcode: previewUnit.barcode,
+                      codeFormat: previewUnit.codeFormat || codeFormat,
+                      price: modelDetails.sellPrice || 0,
+                      mrp: Number(modelDetails.mrp) || 0,
+                      copies: 1,
+                      format: 'single'
+                    });
+                    setPreviewUnit(null);
+                  }}
+                  className="btn-primary"
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Printer size={13} />
+                  <span>Print Sticker</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / Preview Image Modal */}
+      {previewImage && (
+        <div 
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface-primary, #FFFFFF)',
+              borderRadius: '12px',
+              padding: '1rem',
+              maxWidth: '460px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <strong style={{ fontSize: '0.9rem' }}>{previewImage.title || 'Colour Variant Photo'}</strong>
+              <button 
+                type="button" 
+                onClick={() => setPreviewImage(null)} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--text-muted)' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ borderRadius: '8px', overflow: 'hidden', maxHeight: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F3F4F6' }}>
+              <img src={previewImage.url} alt="Variant" style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain' }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

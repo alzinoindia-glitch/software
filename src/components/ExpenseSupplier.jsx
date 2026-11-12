@@ -318,4 +318,477 @@ export default function ExpenseSupplier({
           barcode: `ALZ-${Date.now().toString().slice(-8)}-${String(line.id).slice(-5)}-${index + 1}`,
           rack: item.rack || 'R-01',
           bin: item.bin || 'B-01',
-        
+          status: 'In Stock',
+          supplierId: selectedSupplierId,
+          supplierBillId: billId
+        };
+      }));
+      const totalReceived = received.reduce((sum, line) => sum + line.totalAmount, 0);
+      const oldIdentifiers = oldLines.filter(line => String(line.productId) === String(item.id)).flatMap(line => [...(line.identifiers || []), ...(line.imei1Values || []), ...(line.imei2Values || [])]);
+      const newIdentifiers = received.flatMap(line => imeiTracked ? [...(line.imei1Values || []), ...(line.imei2Values || [])] : (line.identifiers || []));
+      const oldUnitBarcodes = (item.units || []).filter(unit => unit.supplierBillId === billId).map(unit => unit.barcode).filter(Boolean);
+      return {
+        ...item,
+        stock: Math.max(0, (Number(item.stock) || 0) - previousQty + addedQty),
+        ...(addedQty ? { buyPrice: totalReceived / addedQty } : {}),
+        imeis: imeiTracked ? [...(item.imeis || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers] : (item.imeis || []),
+        serialNumbers: imeiTracked ? (item.serialNumbers || []) : [...(item.serialNumbers || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers],
+        barcodes: [...(item.barcodes || []).filter(value => !oldUnitBarcodes.includes(value)), ...addedUnits.map(unit => unit.barcode)],
+        barcode: item.barcode && !oldUnitBarcodes.includes(item.barcode) ? item.barcode : (addedUnits[0]?.barcode || ''),
+        units: [...existingUnits, ...addedUnits],
+        supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: addedQty, unitCost: totalReceived / addedQty }] : [])]
+      };
+    }));
+
+    setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? {
+      ...s,
+      balancePayable: Math.max(0, (Number(s.balancePayable) || 0) + (billTotal - Number(existingBill?.paidAmount || 0)) - Number(existingBill?.balanceDue ?? Math.max(0, Number(existingBill?.totalAmount || 0) - Number(existingBill?.paidAmount || 0)))),
+      purchaseBills: existingBill ? (s.purchaseBills || []).map(previous => previous.id === billId ? bill : previous) : [bill, ...(s.purchaseBills || [])],
+    } : s));
+
+    alert(existingBill ? `Updated supplier bill ${invoiceNumber}. Stock and payable totals were adjusted.` : `Received ${bill.quantity} units from ${supplier?.name || 'supplier'} and recorded bill ${invoiceNumber}.`);
+    setShowInwardModal(false);
+    setEditingBillId('');
+    setInwardItems([newInwardLine()]);
+    setInwardDocument(null);
+    setInwardInvoiceNumber('');
+    setInwardDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const handleOpenSupplierBill = async attachment => {
+    if (!attachment?.id) return;
+    try {
+      const file = await getSupplierBillDocument(attachment.id);
+      if (!file) return alert('This bill document is not available in this browser.');
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      alert(`Could not open bill document: ${error.message || 'unknown error'}`);
+    }
+  };
+
+  const supplierBills = suppliers.flatMap(supplier => (supplier.purchaseBills || []).map(bill => ({
+    ...bill,
+    supplierId: supplier.id,
+    supplierName: supplier.name,
+  }))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const supplierSales = useMemo(() => {
+    const totals = new Map();
+    invoices.forEach(invoice => (invoice.items || []).forEach(line => {
+      let allocations = line.supplierAllocations || [];
+      if (!allocations.length) {
+        const stockProduct = inventory.find(product => String(product.id) === String(line.id || line.productId));
+        const sourceIds = [...new Set([...(stockProduct?.supplierPurchases || []).map(purchase => purchase.supplierId), stockProduct?.supplierId].filter(Boolean).map(String))];
+        if (sourceIds.length === 1) allocations = [{ supplierId: sourceIds[0], quantity: Number(line.qty || 0) }];
+      }
+      allocations.forEach(allocation => {
+      if (!allocation.supplierId) return;
+      const supplierTotal = totals.get(allocation.supplierId) || { quantity: 0, products: new Map() };
+      const productKey = String(line.id || line.productId || line.name);
+      const product = supplierTotal.products.get(productKey) || { name: line.name || 'Product', quantity: 0 };
+      product.quantity += Number(allocation.quantity || 0);
+      supplierTotal.quantity += Number(allocation.quantity || 0);
+      supplierTotal.products.set(productKey, product);
+      totals.set(allocation.supplierId, supplierTotal);
+      });
+    }));
+    return totals;
+  }, [invoices, inventory]);
+  const openInwardForSupplier = supplierId => {
+    setEditingBillId('');
+    setSelectedSupplierId(supplierId || '');
+    setInwardItems([newInwardLine()]);
+    setInwardDocument(null);
+    setInwardInvoiceNumber('');
+    setInwardDate(new Date().toISOString().split('T')[0]);
+    setShowInwardModal(true);
+  };
+  const visibleSuppliers = suppliers.filter(supplier => [supplier.name, supplier.contactPerson, supplier.phone, supplier.city, supplier.gstin]
+    .some(value => String(value || '').toLowerCase().includes(supplierSearch.trim().toLowerCase())));
+  const getSupplierLinkedStock = supplierId => inventory.reduce((sum, product) => {
+    const sourcedUnits = (product.units || []).filter(unit => String(unit.supplierId || '') === String(supplierId)).length;
+    if (sourcedUnits) return sum + sourcedUnits;
+    const sourceIds = [...new Set([...(product.supplierPurchases || []).map(purchase => purchase.supplierId), product.supplierId].filter(Boolean).map(String))];
+    return sourceIds.length === 1 && sourceIds[0] === String(supplierId) ? sum + Number(product.stock || 0) : sum;
+  }, 0);
+
+  return (
+    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      
+      {/* Sleek Minimalist Title Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>{activeSubTab === 'suppliers' ? 'Supplier Portal' : 'Shop Expenses'}</h2>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            {activeSubTab === 'suppliers' ? `${suppliers.length} supplier records` : `Total Outflow: ₹${totalExpenses.toLocaleString()}`}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.45rem' }}>
+          {activeSubTab === 'expenses' && <button
+            onClick={() => setShowExpenseModal(true)}
+            className="btn-primary"
+            style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
+          >
+            <Plus size={15} />
+            <span>Add Expense</span>
+          </button>}
+
+          {activeSubTab === 'suppliers' && <button
+            onClick={() => openInwardForSupplier('')}
+            className="btn-primary"
+            style={{ padding: '0.45rem 0.9rem', fontSize: '0.82rem' }}
+          >
+            <Truck size={14} color="var(--accent-primary)" />
+            <span>Receive Stock & Add Bill</span>
+          </button>}
+          {activeSubTab === 'suppliers' && <button onClick={() => { setEditingSupplierId(''); setSuppName(''); setSuppContact(''); setSuppPhone(''); setSuppCity(''); setSuppGstin(''); setShowSupplierModal(true); }} className="btn-outline" style={{ fontSize: '0.82rem' }}><Plus size={14} /> Add Supplier</button>}
+        </div>
+      </div>
+
+      {/* Expenses Table */}
+      {activeSubTab === 'expenses' && (
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Date</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Category</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Amount (₹)</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Paid By</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Notes / Description</th>
+                <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map(exp => (
+                <tr key={exp.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{exp.date}</td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>
+                    <span className="mono-tag">{exp.category}</span>
+                  </td>
+                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: 700, color: 'var(--status-red)', fontSize: '0.95rem' }}>
+                    ₹{exp.amount.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{exp.paidBy}</td>
+                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{exp.notes}</td>
+                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
+                    {role === 'admin' && (
+                      <button 
+                        onClick={() => handleDeleteExpense(exp.id)} 
+                        className="btn-outline"
+                        style={{ padding: '0.25rem 0.45rem', color: 'var(--status-red)' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Suppliers Table */}
+      {activeSubTab === 'suppliers' && (
+        <>
+        <div className="illoca-card" style={{ padding: '1rem' }}>
+          <h3 style={{ margin: '0 0 0.65rem', fontSize: '1rem' }}>Supplier purchasing & sell-through</h3>
+          <p style={{ margin: '0 0 0.85rem', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Use “Add bill” on a supplier to record each new invoice and inward multiple product lines. Sales are attributed from POS invoices when the received stock carries that supplier’s batch details.</p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}><input className="input-field" value={supplierSearch} onChange={event => setSupplierSearch(event.target.value)} placeholder="Search supplier name, phone, or city" style={{ maxWidth: 380, minWidth: 220 }} /><span style={{ alignSelf: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{visibleSuppliers.length} of {suppliers.length} suppliers</span></div>
+          {visibleSuppliers.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: '0.7rem' }}>{visibleSuppliers.map(supplier => {
+            const bills = supplier.purchaseBills || [];
+            const unitsReceived = bills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((qty, line) => qty + Number(line.quantity || 0), 0)), 0);
+            const purchaseValue = bills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
+            const sales = supplierSales.get(supplier.id) || { quantity: 0, products: new Map() };
+            const topProducts = [...sales.products.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 3);
+            const linkedStock = getSupplierLinkedStock(supplier.id);
+            return <article key={supplier.id} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={() => editSupplier(supplier)} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={() => openInwardForSupplier(supplier.id)} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{bills.length}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
+              <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Purchase value: <strong>₹{purchaseValue.toLocaleString('en-IN')}</strong> · Payable: <strong>₹{(Number(supplier.balancePayable) || 0).toLocaleString('en-IN')}</strong></div>
+              <div style={{ marginTop: 7, fontSize: '0.75rem' }}><strong>Top selling products from supplier</strong>{topProducts.length ? topProducts.map((product, index) => <div key={`${product.name}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4, color: 'var(--text-secondary)' }}><span>{index + 1}. {product.name}</span><strong>{product.quantity} sold</strong></div>) : <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>No supplier-attributed POS sales yet.</div>}</div>
+            </article>;
+          })}</div> : <div style={{ color: 'var(--text-secondary)' }}>{suppliers.length ? 'No suppliers match this search.' : 'Add a supplier, then record their purchase bills here.'}</div>}
+        </div>
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Supplier Name</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Contact Person & Phone</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>City / Hub</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>GSTIN</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Bills</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Units Sold</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleSuppliers.map(sup => (
+                <tr key={sup.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: 600 }}>{sup.name}</td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>
+                    <div>{sup.contactPerson || '—'}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{sup.phone}</div>
+                  </td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{sup.city}</td>
+                  <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{sup.gstin || '—'}</td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{(sup.purchaseBills || []).length}</td>
+                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: 700 }}>{supplierSales.get(sup.id)?.quantity || 0}</td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}><div style={{ display: 'flex', gap: 5 }}><button type="button" className="btn-outline" onClick={() => editSupplier(sup)} style={{ padding: '0.3rem 0.5rem' }}>Edit</button><button type="button" className="btn-outline" onClick={() => openInwardForSupplier(sup.id)} style={{ padding: '0.3rem 0.5rem' }}><Plus size={13} /> Add bill</button></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: '0.75rem' }}><h3 style={{ margin: 0, fontSize: '1rem' }}>Received Products & Supplier Bills ({supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).length})</h3><select className="input-field" value={supplierBillFilter} onChange={event => setSupplierBillFilter(event.target.value)} style={{ width: 'auto', minWidth: 190 }}><option value="all">All suppliers</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div>
+          {supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+            <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}>
+              <th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Bill / Invoice No.</th><th style={{ padding: '0.6rem' }}>Products Received</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Qty</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Bill Total</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Paid</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Due (Khata)</th><th style={{ padding: '0.6rem' }}>Actions</th>
+            </tr></thead>
+            <tbody>{supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).map(bill => <tr key={bill.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '0.65rem' }}>{bill.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{bill.supplierName}</td><td style={{ padding: '0.65rem' }}>{bill.invoiceNumber}</td><td style={{ padding: '0.65rem' }}>{bill.lines?.length ? bill.lines.map(line => `${line.productName} × ${line.quantity}`).join(', ') : bill.productName}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{bill.quantity}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>₹{(Number(bill.totalAmount) || 0).toLocaleString()}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>₹{(Number(bill.paidAmount) || 0).toLocaleString()}</td><td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 700 }}>₹{(Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0).toLocaleString()}</td><td style={{ padding: '0.65rem' }}><div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>{bill.attachment && <button type="button" onClick={() => handleOpenSupplierBill(bill.attachment)} className="btn-outline" style={{ padding: '0.3rem 0.45rem' }}><FileCheck size={13} /> Open</button>}{role === 'admin' && <button type="button" onClick={() => editSupplierBill(bill.supplierId, bill)} className="btn-outline" style={{ padding: '0.3rem 0.45rem' }}>Edit</button>}{!bill.attachment && role !== 'admin' ? '—' : null}</div></td>
+            </tr>)}</tbody>
+          </table> : <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem' }}>No supplier bills yet. Use “Receive Stock & Add Bill” when products arrive.</div>}
+        </div>
+        </>
+      )}
+
+      {/* Add Expense Modal */}
+      {showExpenseModal && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <form onSubmit={handleAddExpense} className="illoca-card animate-fade-in" style={{ maxWidth: '440px', width: '100%', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.2rem' }}>Record Shop Expense</h3>
+              <button type="button" onClick={() => setShowExpenseModal(false)} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Expense Category *</label>
+                <select 
+                  value={expCategory} 
+                  onChange={(e) => setExpCategory(e.target.value)}
+                  className="input-field"
+                >
+                  {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Amount (₹) *</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 1500"
+                  value={expAmount}
+                  onChange={(e) => setExpAmount(e.target.value)}
+                  required
+                  className="input-field"
+                  style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--status-red)' }}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Paid Via</label>
+                <select 
+                  value={expPaidBy} 
+                  onChange={(e) => setExpPaidBy(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="Cash">Cash Drawer</option>
+                  <option value="UPI">Shop UPI (GPay/PhonePe)</option>
+                  <option value="Bank Transfer">Bank Transfer (HDFC)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Notes / Description</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Tea for customers or TSSPDCL bill"
+                  value={expNotes}
+                  onChange={(e) => setExpNotes(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button type="button" onClick={() => setShowExpenseModal(false)} className="btn-outline">Cancel</button>
+              <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.4rem' }}>
+                Save Expense
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Stock Inward Modal */}
+      {showInwardModal && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in" style={{ maxWidth: '680px', width: '100%', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.2rem' }}>{editingBillId ? 'Edit Supplier Bill & Stock Inward' : 'Purchase Stock Inward (From Supplier)'}</h3>
+              <button type="button" onClick={() => { setShowInwardModal(false); setEditingBillId(''); }} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Select Supplier</label>
+                <select 
+                  value={selectedSupplierId} 
+                  onChange={(e) => setSelectedSupplierId(e.target.value)}
+                  required
+                  disabled={Boolean(editingBillId)}
+                  disabled={Boolean(editingBillId)}
+                  className="input-field"
+                >
+                  <option value="">-- Choose Supplier --</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Supplier Bill / Invoice No.</label>
+                  <input type="text" value={inwardInvoiceNumber} onChange={e => setInwardInvoiceNumber(e.target.value)} placeholder="e.g. INV-1042" className="input-field" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Received Date *</label>
+                  <input type="date" value={inwardDate} onChange={e => setInwardDate(e.target.value)} required className="input-field" />
+                </div>
+              </div>
+
+              <div className="illoca-card" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); handleBillFile(event.dataTransfer.files?.[0]); }} style={{ padding: '0.85rem', border: '1px dashed var(--border-color)', background: 'var(--bg-main)' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Supplier bill file (PDF, Excel, or CSV)</label>
+                <input type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" onChange={event => handleBillFile(event.target.files?.[0])} className="input-field" />
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                  {isImportingBill ? 'Reading spreadsheet…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : ' · PDF attached'}` : 'Drop a bill here. Excel/CSV rows can prefill products, quantities, costs and identifiers.'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>Products on this bill</label>
+                <button type="button" className="btn-outline" onClick={() => setInwardItems(previous => [...previous, newInwardLine()])} style={{ padding: '0.35rem 0.6rem', fontSize: '0.76rem' }}><Plus size={13} /> Add product</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '32vh', overflowY: 'auto' }}>
+                {inwardItems.map((line, index) => (
+                  <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) repeat(2, minmax(80px, 0.8fr)) auto', gap: '0.5rem', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Product {index + 1} *</label>
+                      <select value={line.productId} onChange={event => updateInwardLine(line.id, { productId: event.target.value })} required className="input-field">
+                        <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
+                        {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Qty *</label>
+                      <input type="number" min="1" step="1" value={line.quantity} onChange={event => updateInwardLine(line.id, { quantity: event.target.value })} required className="input-field" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Unit cost ₹ *</label>
+                      <input type="number" min="0.01" step="0.01" value={line.unitCost} onChange={event => updateInwardLine(line.id, { unitCost: event.target.value })} required className="input-field" />
+                    </div>
+                    <button type="button" className="btn-outline" title="Remove product" disabled={inwardItems.length === 1} onClick={() => setInwardItems(previous => previous.filter(item => item.id !== line.id))} style={{ color: 'var(--status-red)', padding: '0.45rem' }}><Trash2 size={14} /></button>
+                    {(line.identifiers?.length > 0 || line.imei1Values?.length > 0 || line.imei2Values?.length > 0) && <div style={{ gridColumn: '1 / -1', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{line.identifiers.length + line.imei1Values.length + line.imei2Values.length} identifier(s) imported from bill; identifiers can also be added from inventory edit.</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button type="button" onClick={() => { setShowInwardModal(false); setEditingBillId(''); }} className="btn-outline">Cancel</button>
+              <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.4rem' }}>
+                {editingBillId ? 'Save Bill Changes' : 'Inward to Stock'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Add Supplier Modal */}
+      {showSupplierModal && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <form onSubmit={handleAddSupplier} className="illoca-card animate-fade-in" style={{ maxWidth: '440px', width: '100%', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.2rem' }}>{editingSupplierId ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+              <button type="button" onClick={() => { setShowSupplierModal(false); setEditingSupplierId(''); }} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.25rem' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Supplier Business Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Hyderabad Mobile Hub"
+                  value={suppName}
+                  onChange={(e) => setSuppName(e.target.value)}
+                  required
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Contact Person Name</label>
+                <input
+                  type="text"
+                  placeholder="Manager / Sales Rep"
+                  value={suppContact}
+                  onChange={(e) => setSuppContact(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Phone Number *</label>
+                <input
+                  type="text"
+                  placeholder="10-digit Phone"
+                  value={suppPhone}
+                  onChange={(e) => setSuppPhone(e.target.value)}
+                  required
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>City / Location</label>
+                <input
+                  type="text"
+                  placeholder="Hyderabad / Nizamabad"
+                  value={suppCity}
+                  onChange={(e) => setSuppCity(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>GSTIN</label>
+                <input
+                  type="text"
+                  placeholder="GST Number"
+                  value={suppGstin}
+                  onChange={(e) => setSuppGstin(e.target.value.toUpperCase())}
+                  className="input-field"
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button type="button" onClick={() => { setShowSupplierModal(false); setEditingSupplierId(''); }} className="btn-outline">Cancel</button>
+              <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.4rem' }}>
+                {editingSupplierId ? 'Save Changes' : 'Save Supplier'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+    </div>
+  );
+}
