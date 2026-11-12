@@ -1417,6 +1417,13 @@ export default function InventoryManager({
             const hasValidMrp = mrp > 0 && mrp > sellingPrice;
             const savings = hasValidMrp ? mrp - sellingPrice : 0;
             const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
+            const latestSupplierPurchase = [...(item.supplierPurchases || [])]
+              .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+            const supplierPrice = Number(latestSupplierPurchase?.unitCost || item.buyCostEntered || item.buyPrice) || 0;
+            const supplierName = latestSupplierPurchase?.supplierName
+              || suppliers.find(supplier => supplier.id === latestSupplierPurchase?.supplierId)?.name
+              || item.supplierName
+              || suppliers.find(supplier => supplier.id === item.supplierId)?.name;
             const isCopied = copiedId === item.id;
             const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
 
@@ -1668,6 +1675,13 @@ export default function InventoryManager({
                   )}
                 </div>
 
+                {role === 'admin' && supplierPrice > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    <span style={{ fontWeight: 700 }}>Supplier price</span>
+                    <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>₹{supplierPrice.toLocaleString()}{supplierName ? ` · ${supplierName}` : ''}</span>
+                  </div>
+                )}
+
                 {/* ACTION DOCK: Instant Tactile Interaction */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
                   {/* Primary: BILL BUTTON */}
@@ -1794,6 +1808,7 @@ export default function InventoryManager({
                 <th style={{ padding: '0.65rem 0.85rem' }}>STOCK</th>
                 <th style={{ padding: '0.65rem 0.85rem' }}>SHELF</th>
                 <th style={{ padding: '0.65rem 0.85rem' }}>PRICE</th>
+                {role === 'admin' && <th style={{ padding: '0.65rem 0.85rem' }}>SUPPLIER PRICE</th>}
                 <th style={{ padding: '0.65rem 0.85rem' }}>ID</th>
                 <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>ACTIONS</th>
               </tr>
@@ -1807,6 +1822,13 @@ export default function InventoryManager({
                 const isOut = stock <= 0;
                 const isCopied = copiedId === item.id;
                 const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
+                const latestSupplierPurchase = [...(item.supplierPurchases || [])]
+                  .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+                const supplierPrice = Number(latestSupplierPurchase?.unitCost || item.buyCostEntered || item.buyPrice) || 0;
+                const supplierName = latestSupplierPurchase?.supplierName
+                  || suppliers.find(supplier => supplier.id === latestSupplierPurchase?.supplierId)?.name
+                  || item.supplierName
+                  || suppliers.find(supplier => supplier.id === item.supplierId)?.name;
 
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -1896,6 +1918,17 @@ export default function InventoryManager({
                         )}
                       </div>
                     </td>
+
+                    {role === 'admin' && (
+                      <td style={{ padding: '0.65rem 0.85rem', whiteSpace: 'nowrap' }}>
+                        {supplierPrice > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.12rem' }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>₹{supplierPrice.toLocaleString()}</span>
+                            {supplierName && <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{supplierName}</span>}
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                    )}
 
                     <td style={{ padding: '0.65rem 0.85rem' }}>
                       <button
@@ -3621,7 +3654,8 @@ export default function InventoryManager({
                 return <div key={`${purchase.billId}-${index}`} className="illoca-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.8rem', fontSize: '0.78rem' }}>
                   <strong>{supplier?.name || purchase.supplierName || 'Supplier'}</strong><span>{supplier?.phone || '—'}{supplier?.city ? ` · ${supplier.city}` : ''}</span>
                   <span>Bill: {purchase.invoiceNumber || bill?.invoiceNumber || '—'}</span><span>Date: {purchase.date || bill?.date || '—'}</span>
-                  <span>Received: {billLine?.quantity || purchase.quantity || '—'} pcs</span><span>Unit cost: ₹{Number(billLine?.unitCost || purchase.unitCost || 0).toLocaleString()}</span>
+                  <span>Received: {billLine?.quantity || purchase.quantity || '—'} pcs</span>
+                  {role === 'admin' && <span>Unit cost: ₹{Number(billLine?.unitCost || purchase.unitCost || 0).toLocaleString()}</span>}
                   {bill?.attachment && <button type="button" className="btn-outline" onClick={() => openSupplierBillDocument(bill.attachment)} style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '0.3rem 0.55rem' }}><FileCheck size={13} /> Open bill file</button>}
                 </div>;
               })}
