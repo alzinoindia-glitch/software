@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Menu,
   X,
@@ -44,6 +44,8 @@ export default function Header({
   onNavigatePortal = () => {}
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
+  const menuDrawerRef = useRef(null);
   const [customerPortalOpen, setCustomerPortalOpen] = useState(['customers', 'suppliers', 'khata'].includes(activeTab));
   const [portalNavigationOpen, setPortalNavigationOpen] = useState(false);
   const [copiedPortalPath, setCopiedPortalPath] = useState('');
@@ -52,6 +54,29 @@ export default function Header({
   // Lock the page behind the drawer while keeping its own menu list scrollable.
   useEffect(() => {
     if (!menuOpen) return undefined;
+    const drawer = menuDrawerRef.current;
+    const firstFocusable = drawer?.querySelector('button, select, a[href], input, [tabindex]:not([tabindex="-1"])');
+    firstFocusable?.focus();
+    const trapFocus = (event) => {
+      if (event.key !== 'Tab' || !drawer) return;
+      const focusable = [...drawer.querySelectorAll('button:not([disabled]), select:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter(element => element.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', trapFocus);
     const scrollY = window.scrollY;
     const body = document.body;
     const html = document.documentElement;
@@ -68,12 +93,14 @@ export default function Header({
     body.style.width = '100%';
     html.style.overflow = 'hidden';
     return () => {
+      document.removeEventListener('keydown', trapFocus);
       body.style.overflow = previous.bodyOverflow;
       body.style.position = previous.bodyPosition;
       body.style.top = previous.bodyTop;
       body.style.width = previous.bodyWidth;
       html.style.overflow = previous.htmlOverflow;
       window.scrollTo(0, scrollY);
+      menuButtonRef.current?.focus();
     };
   }, [menuOpen]);
 
@@ -270,8 +297,12 @@ export default function Header({
 
       <div className="header-menu-row no-print">
         <button
+          ref={menuButtonRef}
           onClick={() => setMenuOpen(!menuOpen)}
           className="btn-secondary main-menu-btn"
+          aria-expanded={menuOpen}
+          aria-controls="admin-navigation-drawer"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -300,7 +331,12 @@ export default function Header({
           style={{ zIndex: 1100, overflow: 'hidden', overscrollBehavior: 'contain' }}
         >
           <div 
+            ref={menuDrawerRef}
             className="main-menu-drawer animate-fade-in"
+            id="admin-navigation-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={role === 'cashier' ? 'Cashier navigation' : 'Admin navigation'}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Menu Header */}
@@ -379,6 +415,8 @@ export default function Header({
                   <React.Fragment key={item.id}>
                   <button
                     onClick={() => isPortalGroup ? setCustomerPortalOpen(value => !value) : handleSelectTab(item.id)}
+                    aria-expanded={isPortalGroup ? customerPortalOpen : undefined}
+                    aria-current={!isPortalGroup && activeTab === item.id ? 'page' : undefined}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -458,7 +496,7 @@ export default function Header({
                   {isPortalGroup && customerPortalOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', margin: '0.1rem 0 0.35rem 1.1rem', paddingLeft: '0.65rem', borderLeft: '1px solid rgba(169,188,92,0.35)' }}>
                       {[['customers', 'Customers'], ['suppliers', 'Suppliers'], ['khata', 'Khata']].map(([id, label]) => (
-                        <button key={id} onClick={() => handleSelectTab(id)} style={{ textAlign: 'left', padding: '0.48rem 0.7rem', border: 0, borderRadius: 'var(--radius-sm)', background: activeTab === id || (id === 'khata' && activeTab === 'customers') ? 'rgba(169,188,92,0.18)' : 'transparent', color: '#F1EFE5', cursor: 'pointer', fontSize: '0.82rem' }}>{label}</button>
+                        <button key={id} onClick={() => handleSelectTab(id)} aria-current={activeTab === id ? 'page' : undefined} style={{ textAlign: 'left', padding: '0.48rem 0.7rem', border: 0, borderRadius: 'var(--radius-sm)', background: activeTab === id || (id === 'khata' && activeTab === 'customers') ? 'rgba(169,188,92,0.18)' : 'transparent', color: '#F1EFE5', cursor: 'pointer', fontSize: '0.82rem' }}>{label}</button>
                       ))}
                     </div>
                   )}
