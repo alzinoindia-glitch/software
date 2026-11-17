@@ -49,34 +49,6 @@ export default function Header({
   const [copiedPortalPath, setCopiedPortalPath] = useState('');
   const [copyPortalError, setCopyPortalError] = useState(false);
 
-  // Lock the page behind the drawer while keeping its own menu list scrollable.
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const scrollY = window.scrollY;
-    const body = document.body;
-    const html = document.documentElement;
-    const previous = {
-      bodyOverflow: body.style.overflow,
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyWidth: body.style.width,
-      htmlOverflow: html.style.overflow,
-    };
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = '-' + scrollY + 'px';
-    body.style.width = '100%';
-    html.style.overflow = 'hidden';
-    return () => {
-      body.style.overflow = previous.bodyOverflow;
-      body.style.position = previous.bodyPosition;
-      body.style.top = previous.bodyTop;
-      body.style.width = previous.bodyWidth;
-      html.style.overflow = previous.htmlOverflow;
-      window.scrollTo(0, scrollY);
-    };
-  }, [menuOpen]);
-
   // Close menu on ESC key or toggle on M key
   useEffect(() => {
     const handleKeyDown = (e) => {
