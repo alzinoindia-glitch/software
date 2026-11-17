@@ -10,7 +10,8 @@ import {
   Calendar,
   Building2,
   FileCheck,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
@@ -50,7 +51,7 @@ export default function ExpenseSupplier({
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
-  const [expandedSupplierId, setExpandedSupplierId] = useState('');
+  const [selectedSupplierProfileId, setSelectedSupplierProfileId] = useState('');
   const [suppName, setSuppName] = useState('');
   const [suppContact, setSuppContact] = useState('');
   const [suppPhone, setSuppPhone] = useState('');
@@ -419,6 +420,22 @@ export default function ExpenseSupplier({
     }));
     return totals;
   }, [invoices, inventory]);
+  const supplierSaleRows = useMemo(() => invoices.flatMap(invoice => (invoice.items || []).flatMap(line => {
+    let allocations = line.supplierAllocations || [];
+    if (!allocations.length) {
+      const stockProduct = inventory.find(product => String(product.id) === String(line.id || line.productId));
+      const sourceIds = [...new Set([...(stockProduct?.supplierPurchases || []).map(purchase => purchase.supplierId), stockProduct?.supplierId].filter(Boolean).map(String))];
+      if (sourceIds.length === 1) allocations = [{ supplierId: sourceIds[0], quantity: Number(line.qty || 0) }];
+    }
+    return allocations.map(allocation => ({
+      supplierId: String(allocation.supplierId || ''),
+      invoiceNo: invoice.invoiceNo || invoice.id || 'Invoice',
+      date: invoice.date || '',
+      customerName: invoice.customerName || 'Counter Customer',
+      productName: line.name || 'Product',
+      quantity: Number(allocation.quantity || 0),
+    })).filter(row => row.supplierId && row.quantity > 0);
+  })).sort((a, b) => String(b.date).localeCompare(String(a.date))), [invoices, inventory]);
   const openInwardForSupplier = supplierId => {
     setEditingBillId('');
     setSelectedSupplierId(supplierId || '');
@@ -436,6 +453,49 @@ export default function ExpenseSupplier({
     const sourceIds = [...new Set([...(product.supplierPurchases || []).map(purchase => purchase.supplierId), product.supplierId].filter(Boolean).map(String))];
     return sourceIds.length === 1 && sourceIds[0] === String(supplierId) ? sum + Number(product.stock || 0) : sum;
   }, 0);
+  const selectedSupplier = suppliers.find(supplier => String(supplier.id) === String(selectedSupplierProfileId));
+  const selectedSupplierBills = selectedSupplier?.purchaseBills || [];
+  const selectedSupplierSales = supplierSales.get(selectedSupplierProfileId) || { quantity: 0, products: new Map() };
+  const selectedSupplierBillCount = countUniqueSupplierBills(selectedSupplierBills);
+  const selectedSupplierUnitsReceived = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((quantity, line) => quantity + Number(line.quantity || 0), 0)), 0);
+  const selectedSupplierPurchaseValue = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
+  const selectedSupplierInventory = (() => {
+    if (!selectedSupplier) return [];
+    const rows = new Map();
+    const ensureRow = (productId, productName = '') => {
+      const key = String(productId || `name:${productName}`);
+      if (!rows.has(key)) rows.set(key, { key, productId: productId || '', productName, purchased: 0, purchaseValue: 0, billCount: 0, lastPurchaseDate: '' });
+      return rows.get(key);
+    };
+    selectedSupplierBills.forEach(bill => {
+      const lines = bill.lines?.length ? bill.lines : [{ productId: bill.productId, productName: bill.productName, quantity: bill.quantity, totalAmount: bill.totalAmount }];
+      lines.forEach(line => {
+        const row = ensureRow(line.productId, line.productName);
+        row.productName ||= line.productName || 'Stock product';
+        row.purchased += Number(line.quantity || 0);
+        row.purchaseValue += Number(line.totalAmount || (Number(line.unitCost || 0) * Number(line.quantity || 0)));
+        row.billCount += 1;
+        if (String(bill.date || '') > row.lastPurchaseDate) row.lastPurchaseDate = String(bill.date || '');
+      });
+    });
+    inventory.forEach(product => {
+      const purchases = (product.supplierPurchases || []).filter(purchase => String(purchase.supplierId || '') === String(selectedSupplier.id));
+      const units = (product.units || []).filter(unit => String(unit.supplierId || '') === String(selectedSupplier.id));
+      const isLinked = purchases.length || units.length || String(product.supplierId || '') === String(selectedSupplier.id);
+      if (!isLinked) return;
+      const row = ensureRow(product.id, product.name);
+      row.productName ||= product.name || 'Stock product';
+      if (!row.purchased) row.purchased = purchases.reduce((sum, purchase) => sum + Number(purchase.quantity || 0), 0);
+      if (!row.lastPurchaseDate) row.lastPurchaseDate = purchases.map(purchase => String(purchase.date || '')).sort().at(-1) || '';
+      const sourceIds = [...new Set([...(product.supplierPurchases || []).map(purchase => purchase.supplierId), product.supplierId].filter(Boolean).map(String))];
+      row.linkedStock = units.length || ((product.units || []).length > 0 ? 0 : sourceIds.length === 1 ? Number(product.stock || 0) : null);
+      row.currentStock = Number(product.stock || 0);
+      row.category = product.category || '—';
+      row.sold = selectedSupplierSales.products.get(String(product.id))?.quantity || 0;
+      row.buyPrice = Number(product.buyPrice || 0);
+    });
+    return [...rows.values()].sort((a, b) => String(a.productName).localeCompare(String(b.productName)));
+  })();
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -529,26 +589,12 @@ export default function ExpenseSupplier({
             const purchaseValue = bills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
             const sales = supplierSales.get(supplier.id) || { quantity: 0, products: new Map() };
             const linkedStock = getSupplierLinkedStock(supplier.id);
-            const isExpanded = expandedSupplierId === supplier.id;
-            const supplierProductSales = [...sales.products.values()].sort((a, b) => b.quantity - a.quantity);
-            const toggleSupplierDetails = () => setExpandedSupplierId(current => current === supplier.id ? '' : supplier.id);
-            return <article key={supplier.id} role="button" tabIndex={0} aria-expanded={isExpanded} onClick={toggleSupplierDetails} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSupplierDetails(); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={event => { event.stopPropagation(); editSupplier(supplier); }} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={event => { event.stopPropagation(); openInwardForSupplier(supplier.id); }} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button><ChevronDown size={16} aria-hidden="true" style={{ alignSelf: 'center', transition: 'transform 0.18s', transform: isExpanded ? 'rotate(180deg)' : 'none' }} /></div></div>
+            const openSupplierProfile = () => setSelectedSupplierProfileId(supplier.id);
+            return <article key={supplier.id} role="button" tabIndex={0} onClick={openSupplierProfile} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSupplierProfile(); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={event => { event.stopPropagation(); editSupplier(supplier); }} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={event => { event.stopPropagation(); openInwardForSupplier(supplier.id); }} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button><ChevronDown size={16} aria-hidden="true" /></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{billCount}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
               <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Purchase value: <strong>₹{purchaseValue.toLocaleString('en-IN')}</strong> · Payable: <strong>₹{(Number(supplier.balancePayable) || 0).toLocaleString('en-IN')}</strong></div>
-              {isExpanded && <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-color)', cursor: 'default' }} onClick={event => event.stopPropagation()}>
-                <strong style={{ fontSize: '0.78rem' }}>Supplier bills ({billCount}) · {bills.length} product entries</strong>
-                {bills.length ? <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>{[...bills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(bill => {
-                  const billLines = bill.lines?.length ? bill.lines : [{ productName: bill.productName || 'Stock item', quantity: bill.quantity, unitCost: bill.unitCost }];
-                  return <div key={bill.id} style={{ padding: '0.55rem', borderRadius: 8, background: 'var(--surface-secondary, var(--surface-primary))', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><strong>{bill.invoiceNumber || 'Supplier bill'}</strong><span>{bill.date || 'Date not recorded'}</span></div>
-                    <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>{billLines.map(line => `${line.productName || 'Stock item'} × ${Number(line.quantity || 0)}`).join(' · ')}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}><span>Total ₹{(Number(bill.totalAmount) || 0).toLocaleString('en-IN')} · Paid ₹{(Number(bill.paidAmount) || 0).toLocaleString('en-IN')}</span><strong>Due ₹{(Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0).toLocaleString('en-IN')}</strong></div>
-                  </div>;
-                })}</div> : <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginTop: 5 }}>No bills recorded yet.</div>}
-                <strong style={{ display: 'block', fontSize: '0.78rem', marginTop: 10 }}>Products sold from this supplier</strong>
-                {supplierProductSales.length ? supplierProductSales.map((product, index) => <div key={`${product.name}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.74rem' }}><span>{index + 1}. {product.name}</span><strong>{product.quantity} sold</strong></div>) : <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginTop: 4 }}>No supplier-attributed POS sales yet.</div>}
-              </div>}
+              <div style={{ marginTop: 8, color: 'var(--accent-primary)', fontSize: '0.72rem', fontWeight: 700 }}>Open supplier bills, inventory and sales history</div>
             </article>;
           })}</div> : <div style={{ color: 'var(--text-secondary)' }}>{suppliers.length ? 'No suppliers match this search.' : 'Add a supplier, then record their purchase bills here.'}</div>}
         </div>
@@ -595,6 +641,87 @@ export default function ExpenseSupplier({
           </table> : <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem' }}>No supplier bills yet. Use “Receive Stock & Add Bill” when products arrive.</div>}
         </div>
         </>
+      )}
+
+      {selectedSupplier && (
+        <div
+          className="drawer-overlay"
+          role="presentation"
+          onMouseDown={event => { if (event.target === event.currentTarget) setSelectedSupplierProfileId(''); }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 2400 }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="supplier-profile-title"
+            onMouseDown={event => event.stopPropagation()}
+            className="illoca-card animate-fade-in supplier-profile-dialog"
+            style={{ width: 'min(1120px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: '1.1rem', background: 'var(--surface-primary)' }}
+          >
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, paddingBottom: 12, borderBottom: '1px solid var(--border-color)' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={19} color="var(--accent-primary)" /><h2 id="supplier-profile-title" style={{ margin: 0, fontSize: '1.18rem' }}>{selectedSupplier.name}</h2></div>
+                <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{selectedSupplier.contactPerson || 'No contact person'} · {selectedSupplier.phone || 'No phone'} · {selectedSupplier.city || 'Location not recorded'}{selectedSupplier.gstin ? ` · GSTIN ${selectedSupplier.gstin}` : ''}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+                <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier</button>
+                <button type="button" className="btn-primary" onClick={() => { setSelectedSupplierProfileId(''); openInwardForSupplier(selectedSupplier.id); }}><Plus size={14} /> Add bill</button>
+                <button type="button" className="btn-outline" aria-label="Close supplier profile" onClick={() => setSelectedSupplierProfileId('')}><X size={17} /></button>
+              </div>
+            </header>
+
+            <div className="supplier-profile-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: 8, marginTop: 12 }}>
+              {[
+                ['Bills', selectedSupplierBillCount],
+                ['Units received', selectedSupplierUnitsReceived],
+                ['Linked stock now', getSupplierLinkedStock(selectedSupplier.id)],
+                ['Units sold', selectedSupplierSales.quantity],
+                ['Purchase value', `₹${selectedSupplierPurchaseValue.toLocaleString('en-IN')}`],
+                ['Payable due', `₹${(Number(selectedSupplier.balancePayable) || 0).toLocaleString('en-IN')}`],
+              ].map(([label, value]) => <div key={label} style={{ padding: '0.7rem 0.8rem', border: '1px solid var(--border-color)', borderRadius: 10, background: 'var(--surface-secondary, var(--surface-primary))' }}><small style={{ color: 'var(--text-secondary)' }}>{label}</small><strong style={{ display: 'block', fontSize: '1.05rem', marginTop: 3 }}>{value}</strong></div>)}
+            </div>
+
+            <section style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Inventory linked to this supplier</h3>
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 720 }}>
+                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Category</th><th style={{ padding: 9 }}>Received</th><th style={{ padding: 9 }}>Linked stock</th><th style={{ padding: 9 }}>Current total stock</th><th style={{ padding: 9 }}>Sold from supplier</th><th style={{ padding: 9 }}>Last received</th></tr></thead>
+                  <tbody>{selectedSupplierInventory.length ? selectedSupplierInventory.map(product => <tr key={product.key} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: 9, fontWeight: 700 }}>{product.productName}{!product.currentStock && product.currentStock !== 0 ? <small style={{ display: 'block', color: 'var(--status-red)' }}>Product not found in inventory</small> : null}</td>
+                    <td style={{ padding: 9 }}>{product.category || '—'}</td>
+                    <td style={{ padding: 9 }}>{product.purchased}</td>
+                    <td style={{ padding: 9 }}>{product.linkedStock == null ? 'Not batch-tracked' : product.linkedStock}</td>
+                    <td style={{ padding: 9 }}>{product.currentStock ?? '—'}</td>
+                    <td style={{ padding: 9 }}>{product.sold || 0}</td>
+                    <td style={{ padding: 9 }}>{product.lastPurchaseDate || '—'}</td>
+                  </tr>) : <tr><td colSpan="7" style={{ padding: 14, textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier-linked stock or purchase lines have been recorded.</td></tr>}</tbody>
+                </table>
+              </div>
+            </section>
+
+            <section style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Supplier bills & purchase dates</h3>
+              {selectedSupplierBills.length ? <div style={{ display: 'grid', gap: 8 }}>{[...selectedSupplierBills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(bill => {
+                const lines = bill.lines?.length ? bill.lines : [{ productName: bill.productName || 'Stock item', quantity: bill.quantity, unitCost: bill.unitCost }];
+                return <article key={bill.id} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong>{bill.invoiceNumber || 'Supplier bill'}</strong><span style={{ color: 'var(--text-secondary)' }}>{bill.date || 'Date not recorded'}</span></div>
+                  <div style={{ marginTop: 5, fontSize: '0.82rem' }}>{lines.map(line => `${line.productName || 'Stock item'} × ${Number(line.quantity || 0)} @ ₹${Number(line.unitCost || 0).toLocaleString('en-IN')}`).join(' · ')}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 7, fontSize: '0.8rem' }}><span>Total ₹{Number(bill.totalAmount || 0).toLocaleString('en-IN')} · Paid ₹{Number(bill.paidAmount || 0).toLocaleString('en-IN')} · Due ₹{Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)).toLocaleString('en-IN')}</span><span style={{ display: 'flex', gap: 6 }}>{bill.attachment && <button type="button" className="btn-outline" onClick={() => handleOpenSupplierBill(bill.attachment)}><FileCheck size={13} /> Open bill</button>}{role === 'admin' && <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplierBill(selectedSupplier.id, bill); }}>Edit bill</button>}</span></div>
+                </article>;
+              })}</div> : <div style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 10, color: 'var(--text-secondary)' }}>No bills have been recorded for this supplier.</div>}
+            </section>
+
+            <section style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Recent sales from this supplier’s stock</h3>
+              {supplierSaleRows.some(row => row.supplierId === String(selectedSupplier.id)) ? <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 620 }}>
+                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Sale date</th><th style={{ padding: 9 }}>Invoice</th><th style={{ padding: 9 }}>Customer</th><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Qty</th></tr></thead>
+                  <tbody>{supplierSaleRows.filter(row => row.supplierId === String(selectedSupplier.id)).slice(0, 30).map((row, index) => <tr key={`${row.invoiceNo}-${row.productName}-${index}`} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: 9 }}>{row.date || '—'}</td><td style={{ padding: 9 }}>{row.invoiceNo}</td><td style={{ padding: 9 }}>{row.customerName}</td><td style={{ padding: 9 }}>{row.productName}</td><td style={{ padding: 9 }}>{row.quantity}</td></tr>)}</tbody>
+                </table>
+              </div> : <div style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 10, color: 'var(--text-secondary)' }}>No POS sales have been attributed to this supplier yet.</div>}
+            </section>
+          </section>
+        </div>
       )}
 
       {/* Add Expense Modal */}
