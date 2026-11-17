@@ -9,7 +9,8 @@ import {
   IndianRupee,
   Calendar,
   Building2,
-  FileCheck
+  FileCheck,
+  ChevronDown
 } from 'lucide-react';
 import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
@@ -46,6 +47,7 @@ export default function ExpenseSupplier({
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [editingSupplierId, setEditingSupplierId] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
+  const [expandedSupplierId, setExpandedSupplierId] = useState('');
   const [suppName, setSuppName] = useState('');
   const [suppContact, setSuppContact] = useState('');
   const [suppPhone, setSuppPhone] = useState('');
@@ -503,13 +505,27 @@ export default function ExpenseSupplier({
             const unitsReceived = bills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((qty, line) => qty + Number(line.quantity || 0), 0)), 0);
             const purchaseValue = bills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
             const sales = supplierSales.get(supplier.id) || { quantity: 0, products: new Map() };
-            const topProducts = [...sales.products.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 3);
             const linkedStock = getSupplierLinkedStock(supplier.id);
-            return <article key={supplier.id} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={() => editSupplier(supplier)} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={() => openInwardForSupplier(supplier.id)} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button></div></div>
+            const isExpanded = expandedSupplierId === supplier.id;
+            const supplierProductSales = [...sales.products.values()].sort((a, b) => b.quantity - a.quantity);
+            const toggleSupplierDetails = () => setExpandedSupplierId(current => current === supplier.id ? '' : supplier.id);
+            return <article key={supplier.id} role="button" tabIndex={0} aria-expanded={isExpanded} onClick={toggleSupplierDetails} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSupplierDetails(); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={event => { event.stopPropagation(); editSupplier(supplier); }} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={event => { event.stopPropagation(); openInwardForSupplier(supplier.id); }} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button><ChevronDown size={16} aria-hidden="true" style={{ alignSelf: 'center', transition: 'transform 0.18s', transform: isExpanded ? 'rotate(180deg)' : 'none' }} /></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{bills.length}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
               <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Purchase value: <strong>₹{purchaseValue.toLocaleString('en-IN')}</strong> · Payable: <strong>₹{(Number(supplier.balancePayable) || 0).toLocaleString('en-IN')}</strong></div>
-              <div style={{ marginTop: 7, fontSize: '0.75rem' }}><strong>Top selling products from supplier</strong>{topProducts.length ? topProducts.map((product, index) => <div key={`${product.name}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4, color: 'var(--text-secondary)' }}><span>{index + 1}. {product.name}</span><strong>{product.quantity} sold</strong></div>) : <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>No supplier-attributed POS sales yet.</div>}</div>
+              {isExpanded && <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-color)', cursor: 'default' }} onClick={event => event.stopPropagation()}>
+                <strong style={{ fontSize: '0.78rem' }}>Supplier bills ({bills.length})</strong>
+                {bills.length ? <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>{[...bills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(bill => {
+                  const billLines = bill.lines?.length ? bill.lines : [{ productName: bill.productName || 'Stock item', quantity: bill.quantity, unitCost: bill.unitCost }];
+                  return <div key={bill.id} style={{ padding: '0.55rem', borderRadius: 8, background: 'var(--surface-secondary, var(--surface-primary))', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><strong>{bill.invoiceNumber || 'Supplier bill'}</strong><span>{bill.date || 'Date not recorded'}</span></div>
+                    <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>{billLines.map(line => `${line.productName || 'Stock item'} × ${Number(line.quantity || 0)}`).join(' · ')}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4 }}><span>Total ₹{(Number(bill.totalAmount) || 0).toLocaleString('en-IN')} · Paid ₹{(Number(bill.paidAmount) || 0).toLocaleString('en-IN')}</span><strong>Due ₹{(Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0).toLocaleString('en-IN')}</strong></div>
+                  </div>;
+                })}</div> : <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginTop: 5 }}>No bills recorded yet.</div>}
+                <strong style={{ display: 'block', fontSize: '0.78rem', marginTop: 10 }}>Products sold from this supplier</strong>
+                {supplierProductSales.length ? supplierProductSales.map((product, index) => <div key={`${product.name}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.74rem' }}><span>{index + 1}. {product.name}</span><strong>{product.quantity} sold</strong></div>) : <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginTop: 4 }}>No supplier-attributed POS sales yet.</div>}
+              </div>}
             </article>;
           })}</div> : <div style={{ color: 'var(--text-secondary)' }}>{suppliers.length ? 'No suppliers match this search.' : 'Add a supplier, then record their purchase bills here.'}</div>}
         </div>
