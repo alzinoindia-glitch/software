@@ -33,6 +33,12 @@ const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   </svg>
 );
 
+const findRepairInvoice = (job, invoices) => invoices.find((invoice) =>
+  (job.invoiceNo && String(invoice.invoiceNo || '') === String(job.invoiceNo))
+  || (job.recordId && String(invoice.repairJobRef || '') === String(job.recordId))
+  || (!job.recordId && invoice.isRepairInvoice && String(invoice.repairJobId || '') === String(job.jobId))
+);
+
 export default function RepairLab({ 
   repairJobs = [], 
   setRepairJobs = () => {}, 
@@ -363,6 +369,12 @@ export default function RepairLab({
 
   // Open Generate Bill Modal for a specific job
   const handleOpenBillModal = (job) => {
+    const linkedInvoice = findRepairInvoice(job, invoices);
+    if (linkedInvoice) {
+      onPrintInvoice(linkedInvoice, 'thermal');
+      showToast(`Existing invoice ${linkedInvoice.invoiceNo} opened for ${job.customerName}.`);
+      return;
+    }
     setJobToBill(job);
     setFinalServicePrice(String(job.estimatedCost || job.balanceDue || 500));
     setRepairDescription(`${job.deviceModel} Repair: ${job.issues.join(', ')}`);
@@ -418,7 +430,11 @@ export default function RepairLab({
 
     const isNonGst = repairBillingType === 'non-gst';
     const prefix = isNonGst ? 'ALZ-SRV' : 'ALZ-INV';
-    const invoiceNo = `${prefix}-${String(invoices.length + 201).padStart(4, '0')}`;
+    const highestSequence = invoices.reduce((highest, invoice) => {
+      const match = String(invoice.invoiceNo || '').match(new RegExp(`^${prefix}-(\\d+)$`));
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 200);
+    const invoiceNo = `${prefix}-${String(highestSequence + 1).padStart(4, '0')}`;
     const today = new Date().toISOString().split('T')[0];
 
     const advance = Number(jobToBill.advancePaid) || 0;
@@ -703,7 +719,8 @@ export default function RepairLab({
         {filteredJobs.map((job, jobIndex) => {
           const isReady = job.status === 'Ready for Delivery';
           const isDelivered = job.status === 'Delivered';
-          const isBilled = Boolean(job.invoiceNo);
+          const linkedInvoice = findRepairInvoice(job, invoices);
+          const isBilled = Boolean(linkedInvoice);
 
           return (
             <div 
@@ -883,10 +900,10 @@ export default function RepairLab({
                       justifyContent: 'center',
                       gap: '0.35rem'
                     }}
-                    title="Generate official repair invoice with custom final price & warranty"
+                    title={isBilled ? 'Open the existing repair invoice for printing' : 'Generate official repair invoice with custom final price & warranty'}
                   >
                     <Receipt size={14} />
-                    <span>{isBilled ? 'Re-generate Bill' : 'Generate Bill'}</span>
+                    <span>{isBilled ? 'Print Existing Bill' : 'Generate Bill'}</span>
                   </button>
 
                   <button
