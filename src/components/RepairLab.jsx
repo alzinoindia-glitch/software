@@ -51,6 +51,26 @@ export default function RepairLab({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('All');
 
+  // Backfill a stable identity for historical repair cards. Older records only
+  // had a human-facing job number, which was not unique and caused actions on
+  // one card to update or delete every card with the same number.
+  useEffect(() => {
+    setRepairJobs(previous => {
+      const seen = new Set();
+      let changed = false;
+      const next = previous.map(job => {
+        let recordId = String(job.recordId || '').trim();
+        if (!recordId || seen.has(recordId)) {
+          recordId = `REPAIR-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+          changed = true;
+        }
+        seen.add(recordId);
+        return job.recordId === recordId ? job : { ...job, recordId };
+      });
+      return changed ? next : previous;
+    });
+  }, [setRepairJobs]);
+
   // Success toast
   const [toastMessage, setToastMessage] = useState(null);
   const showToast = (msg) => {
@@ -124,10 +144,15 @@ export default function RepairLab({
     const adv = parseFloat(advancePaid) || 0;
     const balance = costInformedAfterChecking ? 0 : Math.max(0, est - adv);
 
-    const jobId = `ALZ-REP-${String(repairJobs.length + 1024)}`;
+    const highestJobNumber = repairJobs.reduce((highest, job) => {
+      const match = String(job.jobId || '').match(/^ALZ-REP-(\d+)$/i);
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 1023);
+    const jobId = `ALZ-REP-${highestJobNumber + 1}`;
     const today = new Date().toISOString().split('T')[0];
 
     const newJob = {
+      recordId: `REPAIR-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
       jobId,
       date: today,
       customerName: customerName.trim(),
@@ -214,7 +239,7 @@ export default function RepairLab({
       if (!isNaN(newCost) && newCost >= 0) {
         const newBalance = Math.max(0, newCost - (job.advancePaid || 0));
         setRepairJobs(prev => prev.map(j => {
-          if (j.jobId === job.jobId) {
+          if (j.recordId === job.recordId) {
             return {
               ...j,
               estimatedCost: newCost,
@@ -321,7 +346,7 @@ export default function RepairLab({
     const isAllPassed = passedCount === defaultQcItems.length;
 
     setRepairJobs(prev => prev.map(j => {
-      if (j.jobId === qcJob.jobId) {
+      if (j.recordId === qcJob.recordId) {
         return {
           ...j,
           qcChecklist: qcChecks,
@@ -424,7 +449,8 @@ export default function RepairLab({
       date: today,
       isNonGst,
       isRepairInvoice: true,
-      repairJobRef: jobToBill.jobId,
+      repairJobRef: jobToBill.recordId || jobToBill.jobId,
+      repairJobId: jobToBill.jobId,
       invoiceType: isNonGst ? 'Repair Service Cash Memo' : 'GST Tax Invoice (Service & Maintenance)',
       customerName: jobToBill.customerName,
       customerPhone: jobToBill.customerMobile,
@@ -488,7 +514,7 @@ export default function RepairLab({
 
     // 3. Update repair job status to Delivered & record invoiceNo & consumed parts
     setRepairJobs(prev => prev.map(job => {
-      if (job.jobId === jobToBill.jobId) {
+      if (job.recordId === jobToBill.recordId) {
         return {
           ...job,
           status: 'Delivered',
@@ -538,10 +564,9 @@ export default function RepairLab({
     onPrintInvoice(newInvoice, printFormat);
   };
 
-  const updateStatus = (jobId, newStatus) => {
-    const targetJob = repairJobs.find(j => j.jobId === jobId);
+  const updateStatus = (targetJob, newStatus) => {
     setRepairJobs(prev => prev.map(job => {
-      if (job.jobId === jobId) {
+      if (job.recordId === targetJob.recordId) {
         let newBalance = job.balanceDue;
         if (newStatus === 'Delivered' && job.balanceDue > 0) {
           const collect = confirm(`Collect remaining balance ₹${job.balanceDue} for ${job.deviceModel}?`);
@@ -675,14 +700,14 @@ export default function RepairLab({
 
       {/* Repair Cards Pipeline */}
       <div className="repair-jobs-grid">
-        {filteredJobs.map(job => {
+        {filteredJobs.map((job, jobIndex) => {
           const isReady = job.status === 'Ready for Delivery';
           const isDelivered = job.status === 'Delivered';
           const isBilled = Boolean(job.invoiceNo);
 
           return (
             <div 
-              key={job.jobId} 
+              key={job.recordId || `${job.jobId}-${jobIndex}`}
               className="illoca-card" 
               style={{ 
                 padding: '1.1rem',
@@ -718,7 +743,7 @@ export default function RepairLab({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <select
                     value={job.status}
-                    onChange={(e) => updateStatus(job.jobId, e.target.value)}
+                    onChange={(e) => updateStatus(job, e.target.value)}
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: '0.75rem',
@@ -740,7 +765,7 @@ export default function RepairLab({
                   <button type="button" onClick={() => {
                     if (!window.confirm(`Delete repair card ${job.jobId}? Any invoice already created will remain in Invoices.`)) return;
                     if (!window.confirm(`Confirm permanent deletion of repair record ${job.jobId}? The record will be removed from this device and synced to the store database. This cannot be undone.`)) return;
-                    setRepairJobs(prev => prev.filter(row => row.jobId !== job.jobId));
+                    setRepairJobs(prev => prev.filter(row => row.recordId !== job.recordId));
                   }} className="btn-outline" title="Delete repair card" aria-label={`Delete repair card ${job.jobId}`} style={{ padding: '0.3rem', color: 'var(--status-red)', borderColor: 'var(--status-red)' }}>
                     <Trash2 size={14} />
                   </button>

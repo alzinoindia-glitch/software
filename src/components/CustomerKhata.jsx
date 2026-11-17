@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 import { 
   Users, 
   Search, 
@@ -35,6 +36,9 @@ import {
 } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
+
+const getRepairRecordId = job => String(job?.recordId || job?.id || [job?.jobId, job?.customerMobile || job?.customerPhone, job?.date, job?.deviceModel].join('|'));
+const invoiceMatchesRepair = (invoice, repair) => invoice.repairJobRef === getRepairRecordId(repair) || invoice.repairJobRef === repair.jobId;
 
 export default function CustomerKhata({ 
   initialView = 'customers',
@@ -192,7 +196,7 @@ export default function CustomerKhata({
       if (!rec.phone && (rep.customerMobile || rep.customerPhone)) rec.phone = rep.customerMobile || rep.customerPhone;
       
       // Avoid duplicate repairs in list
-      if (!rec.repairs.some(r => r.id === rep.id)) {
+      if (!rec.repairs.some(r => getRepairRecordId(r) === getRepairRecordId(rep))) {
         rec.repairs.push(rep);
       }
     });
@@ -293,10 +297,16 @@ export default function CustomerKhata({
     // Filter by type
     if (typeFilter === 'both') {
       list = list.filter(c => c.type === 'both');
+    } else if (typeFilter === 'sales-only') {
+      list = list.filter(c => c.hasPurchases && !c.hasRepairs);
+    } else if (typeFilter === 'repairs-only') {
+      list = list.filter(c => c.hasRepairs && !c.hasPurchases);
     } else if (typeFilter === 'sales') {
       list = list.filter(c => c.hasPurchases);
     } else if (typeFilter === 'repairs') {
       list = list.filter(c => c.hasRepairs);
+    } else if (typeFilter === 'registered') {
+      list = list.filter(c => !c.hasPurchases && !c.hasRepairs);
     } else if (typeFilter === 'due') {
       list = list.filter(c => c.balanceDue > 0);
     }
@@ -373,6 +383,9 @@ export default function CustomerKhata({
   const countBoth = unifiedCustomers.filter(c => c.type === 'both').length;
   const countSales = unifiedCustomers.filter(c => c.hasPurchases).length;
   const countRepairs = unifiedCustomers.filter(c => c.hasRepairs).length;
+  const countSalesOnly = unifiedCustomers.filter(c => c.hasPurchases && !c.hasRepairs).length;
+  const countRepairsOnly = unifiedCustomers.filter(c => c.hasRepairs && !c.hasPurchases).length;
+  const countRegistered = unifiedCustomers.filter(c => !c.hasPurchases && !c.hasRepairs).length;
   const countDue = unifiedCustomers.filter(c => c.balanceDue > 0).length;
   const totalReceivables = unifiedCustomers.reduce((sum, c) => sum + (c.balanceDue || 0), 0);
 
@@ -402,7 +415,7 @@ export default function CustomerKhata({
     // Repairs
     cust.repairs.forEach(rep => {
       // Check if already represented in invoices
-      const alreadyInvoiced = cust.invoices.some(inv => inv.repairJobRef === rep.id);
+      const alreadyInvoiced = cust.invoices.some(inv => invoiceMatchesRepair(inv, rep));
       if (!alreadyInvoiced) {
         const cost = Number(rep.finalPrice || rep.finalCost || rep.estimatedCost) || 0;
         const advance = Number(rep.advancePaid) || 0;
@@ -519,7 +532,7 @@ export default function CustomerKhata({
       const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
       const matches = (selectedPhone && jobPhone === selectedPhone)
         || (!jobPhone && (job.customerName || '').trim().toLowerCase() === selectedCustomerForPayment.name.trim().toLowerCase());
-      const alreadyInvoiced = invoices.some(invoice => invoice.repairJobRef === job.id);
+      const alreadyInvoiced = invoices.some(invoice => invoiceMatchesRepair(invoice, job));
       const jobDue = Math.max(0, (Number(job.finalPrice || job.finalCost || job.estimatedCost) || 0) - (Number(job.advancePaid) || 0));
       if (!matches || alreadyInvoiced || job.status === 'Delivered' || unapplied <= 0 || jobDue <= 0) return job;
       const applied = Math.min(jobDue, unapplied);
@@ -580,7 +593,7 @@ export default function CustomerKhata({
 
   const customerDueStatus = (customer) => dueStatus([
     ...(customer.invoices || []).map(invoice => ({ ...invoice, balanceDue: Number(invoice.balanceDue ?? invoice.khataDue) || 0 })),
-    ...(customer.repairs || []).filter(job => job.status !== 'Delivered' && !invoices.some(invoice => invoice.repairJobRef === job.id)).map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })),
+    ...(customer.repairs || []).filter(job => job.status !== 'Delivered' && !invoices.some(invoice => invoiceMatchesRepair(invoice, job))).map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })),
     ...(customer.khataEntries || [])
   ]);
 
@@ -744,6 +757,7 @@ export default function CustomerKhata({
     const totalSupplierDue = suppliers.reduce((sum, supplier) => sum + (Number(supplier.balancePayable) || 0), 0);
     const supplierBills = suppliers.flatMap(supplier => (supplier.purchaseBills || []).map(bill => ({ ...bill, supplierName: supplier.name, supplierId: supplier.id })))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const uniqueSupplierBillCount = countUniqueSupplierBills(supplierBills.map(bill => ({ ...bill, invoiceNumber: `${bill.supplierId}:${bill.invoiceNumber || bill.id}` })));
     const supplierPayments = suppliers.flatMap(supplier => (supplier.payments || []).map(payment => ({ ...payment, supplierId: supplier.id, supplierName: supplier.name })))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     const supplierActivity = [
@@ -760,7 +774,7 @@ export default function CustomerKhata({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.65rem' }}>
           <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SUPPLIERS</div><strong style={{ fontSize: '1.25rem' }}>{suppliers.length}</strong></div>
           <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>OUTSTANDING PAYABLE</div><strong style={{ fontSize: '1.25rem', color: 'var(--status-amber)' }}>₹{totalSupplierDue.toLocaleString()}</strong></div>
-          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>RECORDED BILLS</div><strong style={{ fontSize: '1.25rem' }}>{supplierBills.length}</strong></div>
+          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>RECORDED BILLS</div><strong style={{ fontSize: '1.25rem' }}>{uniqueSupplierBillCount}</strong></div>
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
           <div style={{ position: 'relative', maxWidth: '520px', marginBottom: '0.75rem' }}><Search size={15} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} /><input className="input-field" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search supplier, phone, or GSTIN..." style={{ paddingLeft: '2rem' }} /></div>
@@ -868,45 +882,56 @@ export default function CustomerKhata({
 
         {/* Sales Invoices Only */}
         <div 
-          onClick={() => setTypeFilter('sales')}
+          onClick={() => setTypeFilter('sales-only')}
           style={{ 
-            background: typeFilter === 'sales' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', 
+            background: typeFilter === 'sales-only' ? 'var(--surface-card-hover)' : 'var(--surface-primary)',
             padding: '0.65rem 0.85rem', 
             borderRadius: 'var(--radius-sm)', 
-            border: `1px solid ${typeFilter === 'sales' ? 'var(--status-blue)' : 'var(--border-color)'}`,
+            border: `1px solid ${typeFilter === 'sales-only' ? 'var(--status-blue)' : 'var(--border-color)'}`,
             cursor: 'pointer',
             transition: 'var(--transition-smooth)'
           }}
         >
           <div style={{ fontSize: '0.68rem', color: 'var(--status-blue)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
-            <span>🛒 Sales Counter Clients</span>
+            <span>🛒 Sales Only</span>
             <ShoppingBag size={12} color="var(--status-blue)" />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--status-blue)' }}>
-            {countSales}
+            {countSalesOnly}
           </div>
         </div>
 
         {/* Repair Jobs Only */}
         <div 
-          onClick={() => setTypeFilter('repairs')}
+          onClick={() => setTypeFilter('repairs-only')}
           style={{ 
-            background: typeFilter === 'repairs' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', 
+            background: typeFilter === 'repairs-only' ? 'var(--surface-card-hover)' : 'var(--surface-primary)',
             padding: '0.65rem 0.85rem', 
             borderRadius: 'var(--radius-sm)', 
-            border: `1px solid ${typeFilter === 'repairs' ? 'var(--status-amber)' : 'var(--border-color)'}`,
+            border: `1px solid ${typeFilter === 'repairs-only' ? 'var(--status-amber)' : 'var(--border-color)'}`,
             cursor: 'pointer',
             transition: 'var(--transition-smooth)'
           }}
         >
           <div style={{ fontSize: '0.68rem', color: 'var(--status-amber)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
-            <span>🔧 Repair Lab Clients</span>
+            <span>🔧 Repairs Only</span>
             <Wrench size={12} color="var(--status-amber)" />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--status-amber)' }}>
-            {countRepairs}
+            {countRepairsOnly}
           </div>
         </div>
+
+        {initialView !== 'khata' && <div
+          onClick={() => setTypeFilter('registered')}
+          style={{ background: typeFilter === 'registered' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+        >
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
+            <span>Registered only</span>
+            <Users size={12} color="var(--text-secondary)" />
+          </div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--text-primary)' }}>{countRegistered}</div>
+        </div>}
 
         {/* Outstanding Receivables */}
         {initialView === 'khata' && <div
@@ -952,6 +977,7 @@ export default function CustomerKhata({
             { id: 'both', label: `⭐ Both (${countBoth})` },
             { id: 'sales', label: `🛒 Sales (${countSales})` },
             { id: 'repairs', label: `🔧 Repairs (${countRepairs})` },
+            ...(initialView !== 'khata' ? [{ id: 'registered', label: `Registered (${countRegistered})` }] : []),
             ...(initialView === 'khata' ? [{ id: 'due', label: `⚠️ Due (${countDue})` }] : [])
           ].map(f => (
             <button
