@@ -18,7 +18,7 @@ import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supp
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
@@ -74,6 +74,9 @@ export default function ExpenseSupplier({
   const [editingSupplierId, setEditingSupplierId] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
   const [selectedSupplierProfileId, setSelectedSupplierProfileId] = useState('');
+  const [supplierReorderLines, setSupplierReorderLines] = useState([]);
+  const [reorderProductId, setReorderProductId] = useState('');
+  const [reorderQuantity, setReorderQuantity] = useState('1');
   const [suppName, setSuppName] = useState('');
   const [suppContact, setSuppContact] = useState('');
   const [suppPhone, setSuppPhone] = useState('');
@@ -277,18 +280,51 @@ export default function ExpenseSupplier({
   const handleStockInward = async (e) => {
     e.preventDefault();
     if (!selectedSupplierId || !inwardItems.length) return;
-    const validLines = inwardItems.map(line => ({
-      ...line,
-      quantity: Number.parseInt(line.quantity, 10),
-      unitCost: Number.parseFloat(line.unitCost),
-      product: inventory.find(item => item.id === line.productId)
-    }));
-    if (validLines.some(line => !line.product || !Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.unitCost) || line.unitCost <= 0)) {
-      alert('Choose an inventory product and enter a valid quantity and unit cost for every bill line.');
+    const validLines = inwardItems.map((line, index) => {
+      const quantity = Number.parseInt(line.quantity, 10);
+      const unitCost = Number.parseFloat(line.unitCost);
+      if (!line.isNewProduct) return { ...line, quantity, unitCost, product: inventory.find(item => String(item.id) === String(line.productId)) };
+      const productId = line.productId || `PROD-SUPP-${Date.now()}-${index}`;
+      return {
+        ...line,
+        productId,
+        quantity,
+        unitCost,
+        product: {
+          id: productId,
+          name: String(line.newProductName || '').trim(),
+          category: String(line.newProductCategory || '').trim(),
+          brand: String(line.newProductBrand || '').trim() || 'General',
+          sellPrice: Number(line.newProductSellPrice) || unitCost,
+          mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || unitCost,
+          gstRate: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18,
+          isGst: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) > 0 : true,
+          stock: 0,
+          lowStockThreshold: 2,
+          rack: 'R-01',
+          bin: 'B-01',
+          locations: [],
+          units: [],
+          imeis: [],
+          serialNumbers: [],
+          barcodes: [],
+          status: 'Active',
+          isPublished: false,
+          supplierId: selectedSupplierId,
+          supplierName: suppliers.find(supplier => String(supplier.id) === String(selectedSupplierId))?.name || ''
+        }
+      };
+    });
+    if (validLines.some(line => !line.product || (line.isNewProduct && (!line.product.name || !line.product.category)) || !Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.unitCost) || line.unitCost <= 0)) {
+      alert('Choose an inventory product or enter a name and category for each new product, then enter a valid quantity and unit cost.');
       return;
     }
     if (validLines.some(line => line.identifiers.length > line.quantity || line.imei1Values.length > line.quantity || line.imei2Values.length > line.quantity)) {
       alert('A bill line has more identifiers than received units. Check the spreadsheet quantity and serial/IMEI columns.');
+      return;
+    }
+    if (validLines.some(line => line.isNewProduct && isImeiTrackedCategory(line.product.category) && line.imei1Values.length < line.quantity)) {
+      alert('Enter one IMEI per new mobile unit before adding it to stock.');
       return;
     }
     const existingSupplier = suppliers.find(s => s.id === selectedSupplierId);
@@ -369,7 +405,37 @@ export default function ExpenseSupplier({
       attachment: inwardDocument ? { id: attachmentId, name: inwardDocument.name, type: inwardDocument.type, size: inwardDocument.size } : existingBill?.attachment || null
     };
 
-    setInventory(prev => prev.map(item => {
+    const newInventoryProducts = validLines.filter(line => line.isNewProduct).map(line => {
+      const purchaseCost = getPurchaseCostBreakdown(line.unitCost, productGstRate(line.product), line.unitCostIncludesGst);
+      const imeiTracked = isImeiTrackedCategory(line.product.category);
+      const identifiers = imeiTracked ? [...(line.imei1Values || []), ...(line.imei2Values || [])] : (line.identifiers || []);
+      const units = Array.from({ length: line.quantity }, (_, index) => ({
+        unitId: `UNIT-${billId}-${line.productId}-${index}`,
+        ...(imeiTracked ? { ...(line.imei1Values[index] ? { imei1: line.imei1Values[index] } : {}), ...(line.imei2Values[index] ? { imei2: line.imei2Values[index] } : {}) } : (line.identifiers[index] ? { serialNumber: line.identifiers[index] } : {})),
+        barcode: `ALZ-${Date.now().toString().slice(-8)}-${String(line.id).slice(-5)}-${index + 1}`,
+        rack: 'R-01', bin: 'B-01', status: 'In Stock', supplierId: selectedSupplierId,
+        supplierName: supplier?.name || '', supplierBillId: billId
+      }));
+      return {
+        ...line.product,
+        buyPrice: purchaseCost.gross,
+        buyCostEntered: line.unitCost,
+        buyCostBase: purchaseCost.taxable,
+        buyCostGst: purchaseCost.gst,
+        buyPriceIncludesGst: Boolean(line.unitCostIncludesGst),
+        stock: line.quantity,
+        locations: [{ rack: 'R-01', bin: 'B-01', qty: line.quantity }],
+        receivedDate: inwardDate,
+        createdAt: new Date().toISOString(),
+        units,
+        imeis: imeiTracked ? identifiers : [],
+        serialNumbers: imeiTracked ? [] : identifiers,
+        barcodes: units.map(unit => unit.barcode),
+        barcode: units[0]?.barcode || '',
+        supplierPurchases: [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: line.quantity, unitCost: purchaseCost.gross, unitCostEntered: line.unitCost, unitCostIncludesGst: Boolean(line.unitCostIncludesGst), gstRate: productGstRate(line.product) }]
+      };
+    });
+    setInventory(prev => [...newInventoryProducts, ...prev.map(item => {
       const oldLines = existingBill ? (existingBill.lines?.length ? existingBill.lines : [{ productId: existingBill.productId, quantity: existingBill.quantity, unitCost: existingBill.unitCost, identifiers: [] }]) : [];
       const previousQty = oldLines.filter(line => String(line.productId) === String(item.id)).reduce((sum, line) => sum + Number(line.quantity || 0), 0);
       const received = billLines.filter(line => String(line.productId) === String(item.id));
@@ -417,7 +483,7 @@ export default function ExpenseSupplier({
         units: [...existingUnits, ...addedUnits],
         supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: addedQty, unitCost: totalReceived / addedQty, unitCostEntered: latestReceived.unitCostEntered, unitCostIncludesGst: latestReceived.unitCostIncludesGst, gstRate: latestReceived.gstRate }] : [])]
       };
-    }));
+    })]);
 
     setSuppliers(prev => prev.map(s => s.id === selectedSupplierId ? {
       ...s,
@@ -434,6 +500,7 @@ export default function ExpenseSupplier({
     setInwardGstHint(null);
     setInwardInvoiceNumber('');
     setInwardDate(new Date().toISOString().split('T')[0]);
+    setSupplierReorderLines([]);
   };
 
   const handleOpenSupplierBill = async attachment => {
@@ -493,11 +560,35 @@ export default function ExpenseSupplier({
       quantity: Number(allocation.quantity || 0),
     })).filter(row => row.supplierId && row.quantity > 0);
   })).sort((a, b) => String(b.date).localeCompare(String(a.date))), [invoices, inventory]);
-  const openInwardForSupplier = supplierId => {
+  const unattributedSupplierSales = useMemo(() => {
+    const totals = new Map();
+    invoices.forEach(invoice => (invoice.items || []).forEach(line => {
+      if (line.supplierAllocations?.length) return;
+      const productId = String(line.id || line.productId || '');
+      const product = inventory.find(item => String(item.id) === productId);
+      const sources = [...new Set([...(product?.supplierPurchases || []).map(purchase => purchase.supplierId), product?.supplierId].filter(Boolean).map(String))];
+      if (sources.length < 2) return;
+      totals.set(productId, (totals.get(productId) || 0) + Number(line.qty || 0));
+    }));
+    return totals;
+  }, [invoices, inventory]);
+  const openInwardForSupplier = (supplierId, draftLines = []) => {
     setEditingBillId('');
     setSelectedSupplierId(supplierId || '');
-    setInwardItems([newInwardLine()]);
+    setInwardItems(draftLines.length ? draftLines.map(draft => {
+      const product = inventory.find(item => String(item.id) === String(draft.productId));
+      const lastPurchase = (product?.supplierPurchases || []).filter(purchase => String(purchase.supplierId) === String(supplierId)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+      return {
+        ...newInwardLine(),
+        productId: String(draft.productId || ''),
+        quantity: String(draft.quantity || 1),
+        unitCost: String(lastPurchase?.unitCostEntered ?? product?.buyCostEntered ?? product?.buyPrice ?? ''),
+        unitCostIncludesGst: lastPurchase?.unitCostIncludesGst ?? product?.buyPriceIncludesGst !== false,
+        gstInclusionSource: lastPurchase ? 'supplier purchase record' : 'product setting'
+      };
+    }) : [newInwardLine()]);
     setInwardDocument(null);
+    setInwardGstHint(null);
     setInwardInvoiceNumber('');
     setInwardDate(new Date().toISOString().split('T')[0]);
     setShowInwardModal(true);
@@ -512,10 +603,21 @@ export default function ExpenseSupplier({
   }, 0);
   const selectedSupplier = suppliers.find(supplier => String(supplier.id) === String(selectedSupplierProfileId));
   const selectedSupplierBills = selectedSupplier?.purchaseBills || [];
+  const selectedSupplierRecordedBillIds = new Set(selectedSupplierBills.map(bill => String(bill.id)));
+  const selectedSupplierRecordedInvoiceNumbers = new Set(selectedSupplierBills.map(bill => String(bill.invoiceNumber || '').trim().toLowerCase()).filter(Boolean));
+  const selectedSupplierUnbilledPurchases = inventory.flatMap(product => (product.supplierPurchases || [])
+    .filter(purchase => String(purchase.supplierId || '') === String(selectedSupplier?.id || '')
+      && !(purchase.billId && selectedSupplierRecordedBillIds.has(String(purchase.billId)))
+      && !(purchase.invoiceNumber && selectedSupplierRecordedInvoiceNumbers.has(String(purchase.invoiceNumber).trim().toLowerCase())))
+    .map(purchase => ({ ...purchase, productName: product.name })));
   const selectedSupplierSales = supplierSales.get(selectedSupplierProfileId) || { quantity: 0, products: new Map() };
   const selectedSupplierBillCount = countUniqueSupplierBills(selectedSupplierBills);
-  const selectedSupplierUnitsReceived = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((quantity, line) => quantity + Number(line.quantity || 0), 0)), 0);
-  const selectedSupplierPurchaseValue = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
+  const selectedSupplierUnitsReceived = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((quantity, line) => quantity + Number(line.quantity || 0), 0)), 0)
+    + selectedSupplierUnbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.quantity || 0), 0);
+  const selectedSupplierPurchaseValue = selectedSupplierBills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0)
+    + selectedSupplierUnbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.unitCost || 0) * Number(purchase.quantity || 0), 0);
+  const selectedSupplierBillsDue = selectedSupplierBills.reduce((sum, bill) => sum + Math.max(0, Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0), 0);
+  const selectedSupplierOtherKhataDue = (selectedSupplier?.khataEntries || []).reduce((sum, entry) => sum + Math.max(0, Number(entry.balanceDue ?? Number(entry.amount || 0) - Number(entry.paidAmount || 0)) || 0), 0);
   const selectedSupplierInventory = (() => {
     if (!selectedSupplier) return [];
     const rows = new Map();
@@ -542,17 +644,43 @@ export default function ExpenseSupplier({
       if (!isLinked) return;
       const row = ensureRow(product.id, product.name);
       row.productName ||= product.name || 'Stock product';
-      if (!row.purchased) row.purchased = purchases.reduce((sum, purchase) => sum + Number(purchase.quantity || 0), 0);
+      const unbilledPurchases = purchases.filter(purchase => !(purchase.billId && selectedSupplierRecordedBillIds.has(String(purchase.billId)))
+        && !(purchase.invoiceNumber && selectedSupplierRecordedInvoiceNumbers.has(String(purchase.invoiceNumber).trim().toLowerCase())));
+      row.purchased += unbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.quantity || 0), 0);
+      row.purchaseValue += unbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.unitCost || 0) * Number(purchase.quantity || 0), 0);
       if (!row.lastPurchaseDate) row.lastPurchaseDate = purchases.map(purchase => String(purchase.date || '')).sort().at(-1) || '';
       const sourceIds = [...new Set([...(product.supplierPurchases || []).map(purchase => purchase.supplierId), product.supplierId].filter(Boolean).map(String))];
-      row.linkedStock = units.length || ((product.units || []).length > 0 ? 0 : sourceIds.length === 1 ? Number(product.stock || 0) : null);
+      const availableUnits = (product.units || []).filter(unit => !['sold', 'returned', 'removed'].includes(String(unit.status || '').toLowerCase()));
+      row.linkedStock = units.length || (sourceIds.length === 1 ? (availableUnits.length || Number(product.stock || 0)) : ((product.units || []).length > 0 ? 0 : null));
       row.currentStock = Number(product.stock || 0);
       row.category = product.category || '—';
       row.sold = selectedSupplierSales.products.get(String(product.id))?.quantity || 0;
+      row.unattributedSold = unattributedSupplierSales.get(String(product.id)) || 0;
       row.buyPrice = Number(product.buyPrice || 0);
+      row.lowStockThreshold = Number(product.lowStockThreshold || 2);
+      row.reorderQuantity = Math.max(1, row.lowStockThreshold - row.currentStock);
+      row.lastUnitCost = unbilledPurchases.at(-1)?.unitCostEntered ?? unbilledPurchases.at(-1)?.unitCost ?? product.buyCostEntered ?? product.buyPrice ?? '';
     });
     return [...rows.values()].sort((a, b) => String(a.productName).localeCompare(String(b.productName)));
   })();
+  const addSupplierReorderLine = (productId, quantity = 1) => {
+    if (!productId) return;
+    const parsedQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
+    setSupplierReorderLines(previous => {
+      const existing = previous.find(line => String(line.productId) === String(productId));
+      return existing
+        ? previous.map(line => String(line.productId) === String(productId) ? { ...line, quantity: Number(line.quantity || 0) + parsedQuantity } : line)
+        : [...previous, { productId: String(productId), quantity: parsedQuantity }];
+    });
+    setReorderProductId('');
+    setReorderQuantity('1');
+  };
+  const openSupplierProfile = supplierId => {
+    setSupplierReorderLines([]);
+    setReorderProductId('');
+    setReorderQuantity('1');
+    setSelectedSupplierProfileId(supplierId);
+  };
 
   return (
     <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -646,8 +774,7 @@ export default function ExpenseSupplier({
             const purchaseValue = bills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
             const sales = supplierSales.get(supplier.id) || { quantity: 0, products: new Map() };
             const linkedStock = getSupplierLinkedStock(supplier.id);
-            const openSupplierProfile = () => setSelectedSupplierProfileId(supplier.id);
-            return <article key={supplier.id} role="button" tabIndex={0} onClick={openSupplierProfile} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSupplierProfile(); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
+            return <article key={supplier.id} role="button" tabIndex={0} onClick={() => openSupplierProfile(supplier.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSupplierProfile(supplier.id); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={event => { event.stopPropagation(); editSupplier(supplier); }} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={event => { event.stopPropagation(); openInwardForSupplier(supplier.id); }} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button><ChevronDown size={16} aria-hidden="true" /></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{billCount}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
               <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Purchase value: <strong>₹{purchaseValue.toLocaleString('en-IN')}</strong> · Payable: <strong>₹{(Number(supplier.balancePayable) || 0).toLocaleString('en-IN')}</strong></div>
@@ -715,7 +842,7 @@ export default function ExpenseSupplier({
             className="illoca-card animate-fade-in supplier-profile-dialog"
             style={{ width: 'min(1120px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: '1.1rem', background: 'var(--surface-primary)' }}
           >
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, paddingBottom: 12, borderBottom: '1px solid var(--border-color)' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', paddingBottom: 12, borderBottom: '1px solid var(--border-color)' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={19} color="var(--accent-primary)" /><h2 id="supplier-profile-title" style={{ margin: 0, fontSize: '1.18rem' }}>{selectedSupplier.name}</h2></div>
                 <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{selectedSupplier.contactPerson || 'No contact person'} · {selectedSupplier.phone || 'No phone'} · {selectedSupplier.city || 'Location not recorded'}{selectedSupplier.gstin ? ` · GSTIN ${selectedSupplier.gstin}` : ''}</div>
@@ -723,6 +850,7 @@ export default function ExpenseSupplier({
               <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
                 <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier</button>
                 <button type="button" className="btn-primary" onClick={() => { setSelectedSupplierProfileId(''); openInwardForSupplier(selectedSupplier.id); }}><Plus size={14} /> Add bill</button>
+                <button type="button" className="btn-outline" disabled={!supplierReorderLines.length} onClick={() => { openInwardForSupplier(selectedSupplier.id, supplierReorderLines); setSelectedSupplierProfileId(''); }}>Create bill from reorder list ({supplierReorderLines.length})</button>
                 <button type="button" className="btn-outline" aria-label="Close supplier profile" onClick={() => setSelectedSupplierProfileId('')}><X size={17} /></button>
               </div>
             </header>
@@ -734,7 +862,9 @@ export default function ExpenseSupplier({
                 ['Linked stock now', getSupplierLinkedStock(selectedSupplier.id)],
                 ['Units sold', selectedSupplierSales.quantity],
                 ['Purchase value', `₹${selectedSupplierPurchaseValue.toLocaleString('en-IN')}`],
-                ['Payable due', `₹${(Number(selectedSupplier.balancePayable) || 0).toLocaleString('en-IN')}`],
+                ['Bills due', `₹${selectedSupplierBillsDue.toLocaleString('en-IN')}`],
+                ['Other Khata due', `₹${selectedSupplierOtherKhataDue.toLocaleString('en-IN')}`],
+                ['Total payable', `₹${(Number(selectedSupplier.balancePayable) || 0).toLocaleString('en-IN')}`],
               ].map(([label, value]) => <div key={label} style={{ padding: '0.7rem 0.8rem', border: '1px solid var(--border-color)', borderRadius: 10, background: 'var(--surface-secondary, var(--surface-primary))' }}><small style={{ color: 'var(--text-secondary)' }}>{label}</small><strong style={{ display: 'block', fontSize: '1.05rem', marginTop: 3 }}>{value}</strong></div>)}
             </div>
 
@@ -742,7 +872,7 @@ export default function ExpenseSupplier({
               <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Inventory linked to this supplier</h3>
               <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 720 }}>
-                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Category</th><th style={{ padding: 9 }}>Received</th><th style={{ padding: 9 }}>Linked stock</th><th style={{ padding: 9 }}>Current total stock</th><th style={{ padding: 9 }}>Sold from supplier</th><th style={{ padding: 9 }}>Last received</th></tr></thead>
+                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Category</th><th style={{ padding: 9 }}>Received</th><th style={{ padding: 9 }}>Linked stock</th><th style={{ padding: 9 }}>Current total stock</th><th style={{ padding: 9 }}>Sold from supplier</th><th style={{ padding: 9 }}>Mixed-source sales not traced</th><th style={{ padding: 9 }}>Last received</th><th style={{ padding: 9 }}>Reorder</th></tr></thead>
                   <tbody>{selectedSupplierInventory.length ? selectedSupplierInventory.map(product => <tr key={product.key} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: 9, fontWeight: 700 }}>{product.productName}{!product.currentStock && product.currentStock !== 0 ? <small style={{ display: 'block', color: 'var(--status-red)' }}>Product not found in inventory</small> : null}</td>
                     <td style={{ padding: 9 }}>{product.category || '—'}</td>
@@ -750,9 +880,26 @@ export default function ExpenseSupplier({
                     <td style={{ padding: 9 }}>{product.linkedStock == null ? 'Not batch-tracked' : product.linkedStock}</td>
                     <td style={{ padding: 9 }}>{product.currentStock ?? '—'}</td>
                     <td style={{ padding: 9 }}>{product.sold || 0}</td>
+                    <td style={{ padding: 9 }}>{product.unattributedSold ? `${product.unattributedSold} · source unknown` : '—'}</td>
                     <td style={{ padding: 9 }}>{product.lastPurchaseDate || '—'}</td>
-                  </tr>) : <tr><td colSpan="7" style={{ padding: 14, textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier-linked stock or purchase lines have been recorded.</td></tr>}</tbody>
+                    <td style={{ padding: 9 }}>{product.productId ? <button type="button" className="btn-outline" onClick={() => addSupplierReorderLine(product.productId, product.reorderQuantity || 1)}>Add {product.reorderQuantity || 1}</button> : '—'}</td>
+                  </tr>) : <tr><td colSpan="9" style={{ padding: 14, textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier-linked stock or purchase lines have been recorded.</td></tr>}</tbody>
                 </table>
+              </div>
+              <div style={{ marginTop: 10, padding: 10, border: '1px solid var(--border-color)', borderRadius: 10, background: 'var(--surface-secondary, var(--surface-primary))' }}>
+                <strong style={{ fontSize: '0.84rem' }}>Supplier reorder list</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(70px,90px) auto', gap: 8, marginTop: 8 }}>
+                  <select className="input-field" value={reorderProductId} onChange={event => setReorderProductId(event.target.value)} aria-label="Choose inventory product to reorder">
+                    <option value="">Choose any inventory product</option>
+                    {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} · Stock {product.stock}</option>)}
+                  </select>
+                  <input className="input-field" type="number" min="1" step="1" value={reorderQuantity} onChange={event => setReorderQuantity(event.target.value)} aria-label="Reorder quantity" />
+                  <button type="button" className="btn-outline" disabled={!reorderProductId} onClick={() => addSupplierReorderLine(reorderProductId, reorderQuantity)}><Plus size={14} /> Add to list</button>
+                </div>
+                {supplierReorderLines.length ? <div style={{ display: 'grid', gap: 5, marginTop: 8 }}>{supplierReorderLines.map(line => {
+                  const product = inventory.find(item => String(item.id) === String(line.productId));
+                  return <div key={line.productId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0.4rem 0.55rem', border: '1px solid var(--border-color)', borderRadius: 7, fontSize: '0.78rem' }}><span>{product?.name || 'Product'} · stock {product?.stock ?? '—'}</span><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><label>Qty <input className="input-field" type="number" min="1" step="1" value={line.quantity} onChange={event => setSupplierReorderLines(previous => previous.map(item => item.productId === line.productId ? { ...item, quantity: Math.max(1, Number.parseInt(event.target.value, 10) || 1) } : item))} style={{ width: 75 }} /></label><button type="button" className="btn-outline" onClick={() => setSupplierReorderLines(previous => previous.filter(item => item.productId !== line.productId))}>Remove</button></div></div>;
+                })}</div> : <div style={{ marginTop: 7, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Add low stock products above or choose any inventory item. The list becomes a draft supplier bill.</div>}
               </div>
             </section>
 
@@ -766,6 +913,13 @@ export default function ExpenseSupplier({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 7, fontSize: '0.8rem' }}><span>Total ₹{Number(bill.totalAmount || 0).toLocaleString('en-IN')} · Paid ₹{Number(bill.paidAmount || 0).toLocaleString('en-IN')} · Due ₹{Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)).toLocaleString('en-IN')}</span><span style={{ display: 'flex', gap: 6 }}>{bill.attachment && <button type="button" className="btn-outline" onClick={() => handleOpenSupplierBill(bill.attachment)}><FileCheck size={13} /> Open bill</button>}{role === 'admin' && <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplierBill(selectedSupplier.id, bill); }}>Edit bill</button>}</span></div>
                 </article>;
               })}</div> : <div style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 10, color: 'var(--text-secondary)' }}>No bills have been recorded for this supplier.</div>}
+              {selectedSupplierUnbilledPurchases.length > 0 && <div style={{ marginTop: 10, padding: 10, border: '1px solid var(--border-color)', borderRadius: 10 }}>
+                <strong style={{ fontSize: '0.82rem' }}>Older inventory purchase records not linked to a bill ({selectedSupplierUnbilledPurchases.length})</strong>
+                <div style={{ overflowX: 'auto', marginTop: 6 }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', minWidth: 460 }}>
+                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 7 }}>Date</th><th style={{ padding: 7 }}>Invoice ref</th><th style={{ padding: 7 }}>Product</th><th style={{ padding: 7 }}>Qty</th><th style={{ padding: 7 }}>Recorded unit cost</th></tr></thead>
+                  <tbody>{[...selectedSupplierUnbilledPurchases].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map((purchase, index) => <tr key={`${purchase.supplierId}-${purchase.productName}-${purchase.date}-${index}`} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: 7 }}>{purchase.date || '—'}</td><td style={{ padding: 7 }}>{purchase.invoiceNumber || '—'}</td><td style={{ padding: 7 }}>{purchase.productName}</td><td style={{ padding: 7 }}>{purchase.quantity || '—'}</td><td style={{ padding: 7 }}>{purchase.unitCost == null ? '—' : `₹${Number(purchase.unitCost).toLocaleString('en-IN')}`}</td></tr>)}</tbody>
+                </table></div>
+              </div>}
             </section>
 
             <section style={{ marginTop: 16 }}>
@@ -773,9 +927,18 @@ export default function ExpenseSupplier({
               {supplierSaleRows.some(row => row.supplierId === String(selectedSupplier.id)) ? <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 620 }}>
                   <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Sale date</th><th style={{ padding: 9 }}>Invoice</th><th style={{ padding: 9 }}>Customer</th><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Qty</th></tr></thead>
-                  <tbody>{supplierSaleRows.filter(row => row.supplierId === String(selectedSupplier.id)).slice(0, 30).map((row, index) => <tr key={`${row.invoiceNo}-${row.productName}-${index}`} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: 9 }}>{row.date || '—'}</td><td style={{ padding: 9 }}>{row.invoiceNo}</td><td style={{ padding: 9 }}>{row.customerName}</td><td style={{ padding: 9 }}>{row.productName}</td><td style={{ padding: 9 }}>{row.quantity}</td></tr>)}</tbody>
+                  <tbody>{supplierSaleRows.filter(row => row.supplierId === String(selectedSupplier.id)).map((row, index) => <tr key={`${row.invoiceNo}-${row.productName}-${index}`} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: 9 }}>{row.date || '—'}</td><td style={{ padding: 9 }}>{row.invoiceNo}</td><td style={{ padding: 9 }}>{row.customerName}</td><td style={{ padding: 9 }}>{row.productName}</td><td style={{ padding: 9 }}>{row.quantity}</td></tr>)}</tbody>
                 </table>
               </div> : <div style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 10, color: 'var(--text-secondary)' }}>No POS sales have been attributed to this supplier yet.</div>}
+            </section>
+
+            <section style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Supplier payment history</h3>
+              {selectedSupplier.payments?.length ? <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 500 }}>
+                <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Date</th><th style={{ padding: 9 }}>Mode</th><th style={{ padding: 9 }}>Reference / note</th><th style={{ padding: 9, textAlign: 'right' }}>Paid</th></tr></thead>
+                <tbody>{[...selectedSupplier.payments].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(payment => <tr key={payment.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: 9 }}>{payment.date || '—'}</td><td style={{ padding: 9 }}>{payment.mode || '—'}</td><td style={{ padding: 9 }}>{payment.note || '—'}</td><td style={{ padding: 9, textAlign: 'right', fontWeight: 700 }}>₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>)}</tbody>
+              </table></div> : <div style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 10, color: 'var(--text-secondary)' }}>No supplier payments recorded.</div>}
+              {selectedSupplier.khataEntries?.length > 0 && <div style={{ marginTop: 10, border: '1px solid var(--border-color)', borderRadius: 10, padding: 10 }}><strong style={{ fontSize: '0.82rem' }}>Other supplier Khata entries</strong><div style={{ display: 'grid', gap: 5, marginTop: 6 }}>{selectedSupplier.khataEntries.map(entry => <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: '0.78rem' }}><span>{entry.date || '—'} · {entry.description || 'Khata adjustment'}</span><span>₹{Number(entry.amount || 0).toLocaleString('en-IN')} · Due ₹{Number(entry.balanceDue ?? Number(entry.amount || 0) - Number(entry.paidAmount || 0)).toLocaleString('en-IN')}</span></div>)}</div></div>}
             </section>
           </section>
         </div>
@@ -899,18 +1062,24 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>Products on this bill</label>
                 <button type="button" className="btn-outline" onClick={() => setInwardItems(previous => [...previous, newInwardLine()])} style={{ padding: '0.35rem 0.6rem', fontSize: '0.76rem' }}><Plus size={13} /> Add product</button>
               </div>
+              <div style={{ marginTop: -8, fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Choose an inventory item or create a new unpublished product here. New mobile products need one IMEI per unit.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '32vh', overflowY: 'auto' }}>
                 {inwardItems.map((line, index) => (
-                  <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) repeat(2, minmax(80px, 0.8fr)) auto', gap: '0.5rem', alignItems: 'end' }}>
+                  <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', alignItems: 'end' }}>
                     <div>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Product {index + 1} *</label>
-                      <select value={line.productId} onChange={event => {
+                      <select value={line.isNewProduct ? '__new__' : line.productId} onChange={event => {
+                        if (event.target.value === '__new__') {
+                          updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true });
+                          return;
+                        }
                         const selectedProduct = inventory.find(product => String(product.id) === event.target.value);
                         const invoiceHint = line.unitCostIncludesGst !== null && line.unitCostIncludesGst !== undefined
                           ? line.unitCostIncludesGst
                           : inwardGstHint?.includesGst;
                         updateInwardLine(line.id, {
                           productId: event.target.value,
+                          isNewProduct: false,
                           unitCostIncludesGst: invoiceHint ?? (selectedProduct?.buyPriceIncludesGst !== false),
                           gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
                             ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
@@ -919,7 +1088,19 @@ export default function ExpenseSupplier({
                       }} required className="input-field">
                         <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
                         {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
+                        <option value="__new__">＋ Add a new product from this supplier</option>
                       </select>
+                      {line.isNewProduct && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 6 }}>
+                        <input className="input-field" value={line.newProductName} onChange={event => updateInwardLine(line.id, { newProductName: event.target.value })} placeholder="Product name *" required aria-label={`New product ${index + 1} name`} />
+                        <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
+                        <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
+                        <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (defaults to cost)" aria-label={`New product ${index + 1} selling price`} />
+                        <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
+                        <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
+                          const values = event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
+                          updateInwardLine(line.id, isImeiTrackedCategory(line.newProductCategory) ? { imei1Values: values } : { identifiers: values });
+                        }} placeholder={isImeiTrackedCategory(line.newProductCategory) ? 'IMEI 1 per unit, one per line *' : 'Serial numbers, one per line (optional)'} aria-label={`New product ${index + 1} identifiers`} rows={2} style={{ gridColumn: '1 / -1' }} />
+                      </div>}
                     </div>
                     <div>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Qty *</label>
