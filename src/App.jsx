@@ -878,6 +878,9 @@ export default function App() {
             setInvoices={setInvoices}
             inventory={inventory}
             setInventory={setInventory}
+            customers={customers}
+            setCustomers={setCustomers}
+            shopConfig={shopConfig}
           />
         )}
 
