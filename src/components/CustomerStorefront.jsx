@@ -669,6 +669,18 @@ export default function CustomerStorefront({
     return counts;
   }, [liveProducts, categoriesList]);
 
+  // Only offer category filters that currently have published, in-stock items.
+  // Keep All Products available as the safe fallback, even when the catalog is empty.
+  const visibleCategoriesList = categoriesList.filter(category =>
+    category.id === 'all' || (categoryCounts[category.id] || 0) > 0
+  );
+
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !(categoryCounts[selectedCategory] > 0)) {
+      setSelectedCategory('all');
+    }
+  }, [selectedCategory, categoryCounts]);
+
   const handleWhatsAppCheckout = () => {
     const targetPhone = '919121212292'; // Destination: 9121212292
     let message = `Namaste ALZINO Bodhan! 👋\n\n`;
@@ -749,12 +761,13 @@ export default function CustomerStorefront({
   };
 
   return (
-    <div style={{
+    <div className="storefront-root" style={{
+      display: 'flex',
+      flexDirection: 'column',
       minHeight: '100vh',
       backgroundColor: '#F4F6F8',
       color: '#1A1C1E',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-      paddingBottom: '5.25rem'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
     }}>
 
       {/* ========================================================================= */}
@@ -785,7 +798,7 @@ export default function CustomerStorefront({
               onClick={() => { setSelectedCategory('all'); setSearchTerm(''); }}
               style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
             >
-              <AlzinoLogo height={28} textColor="#0C5B43" swooshColor="#EAB308" />
+              <AlzinoLogo height={34} textColor="#0C5B43" swooshColor="#EAB308" />
             </div>
             <div className="storefront-mobile-contact-actions" aria-label="Contact ALZINO">
               <a
@@ -827,7 +840,7 @@ export default function CustomerStorefront({
               }}
               style={{
                 width: '100%',
-                padding: '0.75rem 1rem 0.75rem 2.6rem',
+                padding: '0.75rem 7.4rem 0.75rem 2.6rem',
                 backgroundColor: '#F3F4F6',
                 border: '1px solid #E5E7EB',
                 borderRadius: '10px',
@@ -863,22 +876,23 @@ export default function CustomerStorefront({
                 right: '8px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                background: '#0F251E',
-                border: 'none',
-                color: '#6EE7B7',
-                borderRadius: '8px',
-                padding: '4px 9px',
+                background: 'linear-gradient(135deg, #0C5B43, #087A59)',
+                border: '1px solid #087A59',
+                color: '#FFFFFF',
+                borderRadius: '9px',
+                padding: '0.48rem 0.72rem',
                 cursor: 'pointer',
-                fontSize: '0.72rem',
-                fontWeight: 700,
+                fontSize: '0.76rem',
+                fontWeight: 800,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                boxShadow: '0 2px 6px rgba(15, 37, 30, 0.2)'
+                gap: '0.38rem',
+                boxShadow: '0 2px 5px rgba(12, 91, 67, 0.22)',
+                whiteSpace: 'nowrap'
               }}
               title="Scan Product Box QR Code / Barcode"
             >
-              <Camera size={13} />
+              <Camera size={15} strokeWidth={2.4} />
               <span>Scan QR</span>
             </button>
           </div>
@@ -1289,7 +1303,7 @@ export default function CustomerStorefront({
       <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '1rem', backgroundColor: '#F1EFE5', borderRadius: '16px' }}>
         {/* Mobile category dropdown */}
         <select className="storefront-mobile-category-select" aria-label="Filter products by category" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} id="storefront-mobile-category">
-          {categoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}{categoryCounts[cat.id] !== undefined ? ' (' + categoryCounts[cat.id] + ')' : ''}</option>)}
+          {visibleCategoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label} ({categoryCounts[cat.id] || 0})</option>)}
         </select>
         {/* Category Filter Pills (Placed Above Product Listing) */}
         <div className="storefront-category-pills" style={{
@@ -1302,7 +1316,7 @@ export default function CustomerStorefront({
           WebkitOverflowScrolling: 'touch'
         }}>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {categoriesList.map(cat => {
+            {visibleCategoriesList.map(cat => {
               const isActive = selectedCategory === cat.id;
               const Icon = cat.icon;
               const count = categoryCounts[cat.id];
@@ -2130,7 +2144,7 @@ export default function CustomerStorefront({
             <button type="button" onClick={() => setIsMobileCategoriesOpen(false)} aria-label="Close categories" style={{ border: 0, borderRadius: 999, width: 36, height: 36, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151' }}><X size={19} /></button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.55rem' }}>
-            {categoriesList.map(category => {
+            {visibleCategoriesList.map(category => {
               const Icon = category.icon;
               const isActive = selectedCategory === category.id;
               return <button
@@ -2198,8 +2212,9 @@ export default function CustomerStorefront({
             <a href={shopConfig.mapsUrl || 'https://share.google/qAioj2tx1S9nvzmwX'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
               <MapPin size={19} color="#B45309" />
             </a>
-            <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review ALZINO" title="Review ALZINO">
+            <a className="storefront-review-link" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review Us" title="Review Us">
               <Star size={19} color="#D97706" fill="#F59E0B" />
+              <span>Review Us</span>
             </a>
           </nav>
         </div>
