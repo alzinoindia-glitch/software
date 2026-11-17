@@ -272,6 +272,9 @@ export default function RepairLab({
   const [repairBillingType, setRepairBillingType] = useState('non-gst'); // 'non-gst' or 'gst'
   const [repairPaymentMode, setRepairPaymentMode] = useState('Cash');
   const [repairPaymentRef, setRepairPaymentRef] = useState('');
+  const [repairPaymentConfirmed, setRepairPaymentConfirmed] = useState(false);
+  const [repairUpiAccountId, setRepairUpiAccountId] = useState('');
+  const [repairQrMode, setRepairQrMode] = useState('dynamic');
   const [repairDiscount, setRepairDiscount] = useState(0);
   const [repairNotes, setRepairNotes] = useState(
     'Device tested and confirmed working. 30 days warranty on replaced components only. Physical or liquid damage voids warranty.'
@@ -305,11 +308,11 @@ export default function RepairLab({
   }, [inventory, inventoryPartSearch]);
   const repairUpiAccount = useMemo(() => {
     const accounts = Array.isArray(shopConfig.upiAccounts) ? shopConfig.upiAccounts.filter(account => account?.upiId) : [];
-    return accounts.find(account => account.isDefault) || accounts[0] || {
+    return accounts.find(account => String(account.id) === String(repairUpiAccountId)) || accounts.find(account => account.isDefault) || accounts[0] || {
       upiId: shopConfig.upiId || 'alzino.bodhan@okhdfcbank',
       accountName: shopConfig.name || 'ALZINO'
     };
-  }, [shopConfig]);
+  }, [shopConfig, repairUpiAccountId]);
 
   // QC Checklist Modal state
   const [qcJob, setQcJob] = useState(null);
@@ -382,6 +385,9 @@ export default function RepairLab({
     setRepairBillingType('non-gst');
     setRepairPaymentMode('Cash');
     setRepairPaymentRef('');
+    setRepairPaymentConfirmed(false);
+    setRepairUpiAccountId('');
+    setRepairQrMode('dynamic');
     setRepairDiscount(0);
     setRepairNotes('Device tested and confirmed working. Keep bill for warranty claims.');
     setConsumedParts(job.consumedParts || []);
@@ -442,8 +448,8 @@ export default function RepairLab({
     const effectivePaymentMode = netBalanceToCollect === 0 && repairPaymentMode !== 'Khata'
       ? 'Advance Paid at Intake'
       : repairPaymentMode;
-    if (effectivePaymentMode === 'UPI / PhonePe / GPay' && !repairPaymentRef.trim()) {
-      alert('Enter the UPI UTR / transaction reference after confirming the payment was received.');
+    if (effectivePaymentMode === 'UPI / PhonePe / GPay' && (!repairPaymentRef.trim() || !repairPaymentConfirmed)) {
+      alert('Confirm the UPI payment was received and enter its UTR before generating the bill.');
       return;
     }
     const actualPaid = effectivePaymentMode === 'Khata' ? advance : grandTotalPrice;
@@ -474,6 +480,7 @@ export default function RepairLab({
       customerGstin: '',
       paymentMode: effectivePaymentMode,
       paymentRef: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairPaymentRef.trim() : '',
+      upiAccountId: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairUpiAccount.id || '' : '',
       paymentStatus: effectivePaymentMode === 'Khata' ? 'KHATA_DUE' : 'PAID',
       paymentConfirmedAt: new Date().toISOString(),
       warrantyNotes: repairWarranty,
@@ -503,6 +510,10 @@ export default function RepairLab({
       discount: discountAmt,
       grandTotal: grandTotalPrice,
       advancePaid: advance,
+      payments: [
+        ...((jobToBill.payments || []).length ? jobToBill.payments : (advance > 0 ? [{ date: jobToBill.date || today, amount: advance, mode: jobToBill.advancePaymentMode || 'Advance at Intake', reference: jobToBill.advancePaymentRef || '' }] : [])),
+        ...(effectivePaymentMode !== 'Khata' && netBalanceToCollect > 0 ? [{ date: today, amount: netBalanceToCollect, mode: effectivePaymentMode, reference: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairPaymentRef.trim() : '', upiAccountId: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairUpiAccount.id || '' : '' }] : []),
+      ],
       balanceCollectedNow: effectivePaymentMode === 'Khata' ? 0 : netBalanceToCollect,
       netBalanceToCollect: netBalanceToCollect,
       paidAmount: actualPaid,
@@ -1295,22 +1306,26 @@ export default function RepairLab({
                 {repairPaymentMode === 'UPI / PhonePe / GPay' && (() => {
                   const totalAfterDiscount = Math.max(0, Math.round((Number(finalServicePrice) || 0) - (Number(repairDiscount) || 0)));
                   const amountToCollect = Math.max(0, totalAfterDiscount - (Number(jobToBill?.advancePaid) || 0));
+                  const repairAccounts = Array.isArray(shopConfig.upiAccounts) ? shopConfig.upiAccounts.filter(account => account?.upiId) : [];
                   const paymentQrUrl = getUpiQrUrl(
                     repairUpiAccount.upiId,
                     repairUpiAccount.accountName || shopConfig.name || 'ALZINO',
                     amountToCollect,
                     `${repairBillingType === 'gst' ? 'GST' : 'CASH'}-${jobToBill?.jobId || 'REPAIR'}`
                   );
+                  const displayedQr = repairQrMode === 'standee' && repairUpiAccount.qrCodeImage ? repairUpiAccount.qrCodeImage : paymentQrUrl;
                   return (
                     <div style={{ marginTop: '0.5rem', padding: '0.65rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card)' }}>
+                      {repairAccounts.length > 1 && <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Receive into account<select className="input-field" value={repairUpiAccount.id || ''} onChange={event => setRepairUpiAccountId(event.target.value)} style={{ display: 'block', marginTop: '0.2rem' }}>{repairAccounts.map((account, index) => <option key={account.id || index} value={account.id || ''}>{account.bankName || account.accountName || `Account ${index + 1}`} · {account.upiId}</option>)}</select></label>}
+                      {repairUpiAccount.qrCodeImage && <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.45rem' }}><button type="button" className={repairQrMode === 'dynamic' ? 'btn-primary' : 'btn-outline'} onClick={() => setRepairQrMode('dynamic')} style={{ padding: '0.25rem 0.5rem', fontSize: '0.68rem' }}>Amount QR</button><button type="button" className={repairQrMode === 'standee' ? 'btn-primary' : 'btn-outline'} onClick={() => setRepairQrMode('standee')} style={{ padding: '0.25rem 0.5rem', fontSize: '0.68rem' }}>Uploaded QR</button></div>}
                       {amountToCollect > 0 ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <img src={paymentQrUrl} alt={`UPI payment QR for ₹${amountToCollect}`} width="112" height="112" style={{ width: 112, height: 112, objectFit: 'contain', background: '#fff', borderRadius: 6 }} />
+                            <img src={displayedQr} alt={`UPI payment QR for ₹${amountToCollect}`} width="112" height="112" style={{ width: 112, height: 112, objectFit: 'contain', background: '#fff', borderRadius: 6 }} />
                             <div style={{ fontSize: '0.72rem', minWidth: 0 }}>
                               <strong>Collect ₹{amountToCollect.toLocaleString('en-IN')} by UPI</strong>
                               <div style={{ color: 'var(--text-secondary)', marginTop: '0.2rem', overflowWrap: 'anywhere' }}>UPI ID: {repairUpiAccount.upiId}</div>
-                              <div style={{ color: 'var(--text-muted)', marginTop: '0.2rem' }}>{repairBillingType === 'gst' ? 'GST invoice' : 'Non-GST cash memo'} payment QR</div>
+                              <div style={{ color: 'var(--text-muted)', marginTop: '0.2rem' }}>{repairQrMode === 'standee' ? 'Uploaded merchant QR; enter the displayed amount' : `${repairBillingType === 'gst' ? 'GST invoice' : 'Non-GST cash memo'} QR with this bill amount`}</div>
                             </div>
                         </div>
                           <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginTop: '0.45rem', marginBottom: '0.2rem' }}>
@@ -1325,6 +1340,7 @@ export default function RepairLab({
                             style={{ fontSize: '0.76rem', fontFamily: 'var(--font-mono)' }}
                           />
                           <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>Verify that payment reached the shop account before creating the invoice.</div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', fontSize: '0.7rem' }}><input type="checkbox" checked={repairPaymentConfirmed} onChange={event => setRepairPaymentConfirmed(event.target.checked)} />I verified the payment in the selected account.</label>
                         </>
                       ) : (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>No balance is due; the intake advance covers this bill.</div>
