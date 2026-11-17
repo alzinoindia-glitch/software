@@ -26,6 +26,28 @@ const getCell = (row, ...names) => {
   const key = keys.find(candidate => names.includes(normalizedHeader(candidate)));
   return key ? row[key] : '';
 };
+const parseGstFlag = value => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (/^(yes|true|1|included|inclusive|incl|with gst)$/.test(normalized)) return true;
+  if (/^(no|false|0|excluded|exclusive|excl|without gst|gst extra)$/.test(normalized)) return false;
+  return null;
+};
+const inferGstInclusionFromRow = row => {
+  const entries = Object.entries(row || {}).map(([key, value]) => [normalizedHeader(key), value]);
+  const explicitFlag = entries.find(([key]) => ['gstincluded', 'taxincluded', 'priceincludesgst', 'unitcostincludesgst', 'costincludesgst'].includes(key));
+  if (explicitFlag) {
+    const parsed = parseGstFlag(explicitFlag[1]);
+    if (parsed !== null) return parsed;
+  }
+  if (entries.some(([key]) => ['taxablevalue', 'unitcostexcludinggst', 'costexcludinggst', 'priceexcludinggst', 'baseratebeforetax'].includes(key))) return false;
+  return null;
+};
+const inferGstInclusionFromText = text => {
+  const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  if (/\b(inclusive of|includes?|included in|incl\.?\s*)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(is\s+)?included\b/.test(normalized)) return true;
+  if (/\b(exclusive of|excludes?|excluding|plus|extra)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(will be\s+)?charged extra\b/.test(normalized)) return false;
+  return null;
+};
 
 export default function ExpenseSupplier({ 
   initialSubTab = 'expenses',
@@ -63,6 +85,7 @@ export default function ExpenseSupplier({
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [inwardItems, setInwardItems] = useState([newInwardLine()]);
   const [inwardDocument, setInwardDocument] = useState(null);
+  const [inwardGstHint, setInwardGstHint] = useState(null);
   const [isImportingBill, setIsImportingBill] = useState(false);
   const [inwardInvoiceNumber, setInwardInvoiceNumber] = useState('');
   const [inwardDate, setInwardDate] = useState(new Date().toISOString().split('T')[0]);
@@ -172,12 +195,41 @@ export default function ExpenseSupplier({
     setInwardDate(bill.date || new Date().toISOString().split('T')[0]);
     setInwardItems(lines.length ? lines : [newInwardLine()]);
     setInwardDocument(null);
+    setInwardGstHint(null);
     setShowInwardModal(true);
   };
 
   const handleBillFile = async file => {
     if (!file) return;
     setInwardDocument(file);
+    setInwardGstHint(null);
+    if (/\.pdf$/i.test(file.name)) {
+      try {
+        const [pdfjs, workerUrl] = await Promise.all([
+          import('pdfjs-dist/build/pdf.mjs'),
+          import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+        ]);
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+        const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
+          const page = await pdf.getPage(index + 1);
+          const content = await page.getTextContent();
+          return content.items.map(item => item.str || '').join(' ');
+        }));
+        const detected = inferGstInclusionFromText(pages.join(' '));
+        if (detected !== null) {
+          setInwardGstHint({ includesGst: detected, source: 'uploaded PDF' });
+          setInwardItems(previous => previous.map(line => line.gstInclusionSource === 'admin' ? line : {
+            ...line,
+            unitCostIncludesGst: detected,
+            gstInclusionSource: 'uploaded PDF'
+          }));
+        }
+      } catch (error) {
+        console.warn('Could not inspect supplier bill PDF for GST wording:', error);
+      }
+      return;
+    }
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return;
     setIsImportingBill(true);
     try {
@@ -203,6 +255,8 @@ export default function ExpenseSupplier({
           productId: product?.id || '',
           quantity: String(Number(getCell(row, 'quantity', 'qty', 'units', 'pcs')) || 1),
           unitCost: String(Number(getCell(row, 'unitcost', 'purchasecost', 'cost', 'rate', 'purchaseprice')) || ''),
+          unitCostIncludesGst: inferGstInclusionFromRow(row),
+          gstInclusionSource: inferGstInclusionFromRow(row) === null ? 'unknown' : 'uploaded spreadsheet',
           identifiers,
           imei1Values,
           imei2Values,
@@ -211,7 +265,8 @@ export default function ExpenseSupplier({
       }).filter(line => line.importedName || line.productId);
       if (!lines.length) throw new Error('No product rows were found. Use Product, Quantity, and Unit Cost columns.');
       setInwardItems(lines);
-      alert(`Imported ${lines.length} bill line(s). Match any product names that were not recognized.`);
+      const detectedGstLines = lines.filter(line => line.unitCostIncludesGst !== null).length;
+      alert(`Imported ${lines.length} bill line(s).${detectedGstLines ? ` GST inclusion was detected on ${detectedGstLines} line(s); please verify it against the bill.` : ''} Match any product names that were not recognized.`);
     } catch (error) {
       alert(`Could not read this bill spreadsheet: ${error.message || 'check the file format'}`);
     } finally {
@@ -375,6 +430,8 @@ export default function ExpenseSupplier({
     setEditingBillId('');
     setInwardItems([newInwardLine()]);
     setInwardDocument(null);
+    setInwardGstHint(null);
+    setInwardGstHint(null);
     setInwardInvoiceNumber('');
     setInwardDate(new Date().toISOString().split('T')[0]);
   };
@@ -834,7 +891,7 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Supplier bill file (PDF, Excel, or CSV)</label>
                 <input type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" onChange={event => handleBillFile(event.target.files?.[0])} className="input-field" />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-                  {isImportingBill ? 'Reading spreadsheet…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : ' · PDF attached'}` : 'Drop a bill here. Excel/CSV rows can prefill products, quantities, costs and identifiers.'}
+                  {isImportingBill ? 'Reading bill…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · no clear GST wording detected; choose for each line' : ''}` : 'Drop a bill here. Excel/CSV rows can prefill products, quantities, costs and identifiers. Text-based PDFs are checked for GST inclusion wording.'}
                 </div>
               </div>
 
@@ -849,7 +906,16 @@ export default function ExpenseSupplier({
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Product {index + 1} *</label>
                       <select value={line.productId} onChange={event => {
                         const selectedProduct = inventory.find(product => String(product.id) === event.target.value);
-                        updateInwardLine(line.id, { productId: event.target.value, unitCostIncludesGst: selectedProduct?.buyPriceIncludesGst !== false });
+                        const invoiceHint = line.unitCostIncludesGst !== null && line.unitCostIncludesGst !== undefined
+                          ? line.unitCostIncludesGst
+                          : inwardGstHint?.includesGst;
+                        updateInwardLine(line.id, {
+                          productId: event.target.value,
+                          unitCostIncludesGst: invoiceHint ?? (selectedProduct?.buyPriceIncludesGst !== false),
+                          gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
+                            ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
+                            : 'product setting'
+                        });
                       }} required className="input-field">
                         <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
                         {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
@@ -867,11 +933,15 @@ export default function ExpenseSupplier({
                         const rate = productGstRate(product);
                         const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
                         return <>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)', cursor: rate ? 'pointer' : 'not-allowed' }}>
-                            {rate > 0 ? <><input type="checkbox" checked={Boolean(line.unitCostIncludesGst)} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.checked })} />
-                            Unit cost includes GST ({rate}%)</> : <span>No GST applies to this product</span>}
-                          </label>
-                          {rate > 0 && Number(line.unitCost) > 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 2 }}>{line.unitCostIncludesGst ? 'GST is already in this price' : `GST added: ₹${cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} · Cost to stock: ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
+                          {rate > 0 ? <>
+                            <label style={{ display: 'block', marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)' }}>GST in this bill price? ({rate}%)</label>
+                            <select value={line.unitCostIncludesGst ? 'included' : 'extra'} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.value === 'included', gstInclusionSource: 'admin' })} className="input-field" aria-label={`GST inclusion for product ${index + 1}`}>
+                              <option value="included">Included in unit cost</option>
+                              <option value="extra">Add GST to unit cost</option>
+                            </select>
+                            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 3 }}>{line.gstInclusionSource === 'uploaded spreadsheet' || line.gstInclusionSource === 'uploaded PDF' || line.gstInclusionSource === 'uploaded bill' ? `Suggested from ${line.gstInclusionSource}; verify against invoice.` : line.gstInclusionSource === 'product setting' ? 'Prefilled from this product’s last purchase; change to match this invoice.' : 'Choose according to the supplier invoice.'}</div>
+                            {Number(line.unitCost) > 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 2 }}>{line.unitCostIncludesGst ? 'GST is already in this price' : `GST added: ₹${cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} · Cost to stock: ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
+                          </> : <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 4 }}>No GST applies to this product.</div>}
                         </>;
                       })()}
                     </div>
