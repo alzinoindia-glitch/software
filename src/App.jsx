@@ -122,6 +122,58 @@ export function parseRoute() {
 
 export default function App() {
   const initialRoute = parseRoute();
+  useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    let previousStyles = null;
+    let lockedScrollY = 0;
+
+    const syncPageLock = () => {
+      const hasOpenOverlay = [...document.querySelectorAll('.drawer-overlay, .modal-backdrop')].some((overlay) => {
+        const style = window.getComputedStyle(overlay);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      });
+
+      if (hasOpenOverlay && !previousStyles) {
+        lockedScrollY = window.scrollY;
+        previousStyles = {
+          bodyOverflow: body.style.overflow,
+          bodyPosition: body.style.position,
+          bodyTop: body.style.top,
+          bodyWidth: body.style.width,
+          htmlOverflow: html.style.overflow,
+        };
+        body.style.overflow = 'hidden';
+        body.style.position = 'fixed';
+        body.style.top = `-${lockedScrollY}px`;
+        body.style.width = '100%';
+        html.style.overflow = 'hidden';
+      } else if (!hasOpenOverlay && previousStyles) {
+        body.style.overflow = previousStyles.bodyOverflow;
+        body.style.position = previousStyles.bodyPosition;
+        body.style.top = previousStyles.bodyTop;
+        body.style.width = previousStyles.bodyWidth;
+        html.style.overflow = previousStyles.htmlOverflow;
+        previousStyles = null;
+        window.scrollTo(0, lockedScrollY);
+      }
+    };
+
+    syncPageLock();
+    const observer = new MutationObserver(syncPageLock);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    return () => {
+      observer.disconnect();
+      if (!previousStyles) return;
+      body.style.overflow = previousStyles.bodyOverflow;
+      body.style.position = previousStyles.bodyPosition;
+      body.style.top = previousStyles.bodyTop;
+      body.style.width = previousStyles.bodyWidth;
+      html.style.overflow = previousStyles.htmlOverflow;
+      window.scrollTo(0, lockedScrollY);
+    };
+  }, []);
+
   // Portal Mode ('customer' | 'admin' | 'cashier')
   const [portal, setPortal] = useState(() => initialRoute.portal);
   // Theme State
