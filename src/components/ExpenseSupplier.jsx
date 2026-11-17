@@ -15,6 +15,7 @@ import {
 import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
+import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 
 const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
@@ -395,6 +396,7 @@ export default function ExpenseSupplier({
     supplierId: supplier.id,
     supplierName: supplier.name,
   }))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const supplierBillCount = countUniqueSupplierBills(supplierBills.map(bill => ({ ...bill, invoiceNumber: `${bill.supplierId}:${bill.invoiceNumber || bill.id}` })));
   const supplierSales = useMemo(() => {
     const totals = new Map();
     invoices.forEach(invoice => (invoice.items || []).forEach(line => {
@@ -522,6 +524,7 @@ export default function ExpenseSupplier({
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}><input className="input-field" value={supplierSearch} onChange={event => setSupplierSearch(event.target.value)} placeholder="Search supplier name, phone, or city" style={{ maxWidth: 380, minWidth: 220 }} /><span style={{ alignSelf: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{visibleSuppliers.length} of {suppliers.length} suppliers</span></div>
           {visibleSuppliers.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: '0.7rem' }}>{visibleSuppliers.map(supplier => {
             const bills = supplier.purchaseBills || [];
+            const billCount = countUniqueSupplierBills(bills);
             const unitsReceived = bills.reduce((sum, bill) => sum + Number(bill.quantity || (bill.lines || []).reduce((qty, line) => qty + Number(line.quantity || 0), 0)), 0);
             const purchaseValue = bills.reduce((sum, bill) => sum + Number(bill.totalAmount || 0), 0);
             const sales = supplierSales.get(supplier.id) || { quantity: 0, products: new Map() };
@@ -531,10 +534,10 @@ export default function ExpenseSupplier({
             const toggleSupplierDetails = () => setExpandedSupplierId(current => current === supplier.id ? '' : supplier.id);
             return <article key={supplier.id} role="button" tabIndex={0} aria-expanded={isExpanded} onClick={toggleSupplierDetails} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSupplierDetails(); } }} style={{ padding: '0.85rem', border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--surface-primary)', cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}><div><strong>{supplier.name}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3 }}>{supplier.contactPerson || 'No contact'} · {supplier.phone || 'No phone'}{supplier.city ? ` · ${supplier.city}` : ''}</div></div><div style={{ display: 'flex', gap: 5, flexShrink: 0 }}><button type="button" className="btn-outline" onClick={event => { event.stopPropagation(); editSupplier(supplier); }} style={{ padding: '0.35rem 0.5rem', fontSize: '0.74rem' }}>Edit</button><button type="button" className="btn-primary" onClick={event => { event.stopPropagation(); openInwardForSupplier(supplier.id); }} style={{ padding: '0.35rem 0.55rem', fontSize: '0.74rem' }}><Plus size={13} /> Add bill</button><ChevronDown size={16} aria-hidden="true" style={{ alignSelf: 'center', transition: 'transform 0.18s', transform: isExpanded ? 'rotate(180deg)' : 'none' }} /></div></div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{bills.length}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, marginTop: 10, fontSize: '0.75rem' }}><span>Bills<strong style={{ display: 'block', fontSize: '1rem' }}>{billCount}</strong></span><span>Units received<strong style={{ display: 'block', fontSize: '1rem' }}>{unitsReceived}</strong></span><span>Linked stock<strong style={{ display: 'block', fontSize: '1rem' }}>{linkedStock}</strong></span><span>POS units sold<strong style={{ display: 'block', fontSize: '1rem' }}>{sales.quantity}</strong></span></div>
               <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Purchase value: <strong>₹{purchaseValue.toLocaleString('en-IN')}</strong> · Payable: <strong>₹{(Number(supplier.balancePayable) || 0).toLocaleString('en-IN')}</strong></div>
               {isExpanded && <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-color)', cursor: 'default' }} onClick={event => event.stopPropagation()}>
-                <strong style={{ fontSize: '0.78rem' }}>Supplier bills ({bills.length})</strong>
+                <strong style={{ fontSize: '0.78rem' }}>Supplier bills ({billCount}) · {bills.length} product entries</strong>
                 {bills.length ? <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>{[...bills].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(bill => {
                   const billLines = bill.lines?.length ? bill.lines : [{ productName: bill.productName || 'Stock item', quantity: bill.quantity, unitCost: bill.unitCost }];
                   return <div key={bill.id} style={{ padding: '0.55rem', borderRadius: 8, background: 'var(--surface-secondary, var(--surface-primary))', border: '1px solid var(--border-color)', fontSize: '0.72rem' }}>
@@ -572,7 +575,7 @@ export default function ExpenseSupplier({
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem' }}>{sup.city}</td>
                   <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{sup.gstin || '—'}</td>
-                  <td style={{ padding: '0.75rem 0.5rem' }}>{(sup.purchaseBills || []).length}</td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{countUniqueSupplierBills(sup.purchaseBills)}</td>
                   <td style={{ padding: '0.75rem 0.5rem', fontWeight: 700 }}>{supplierSales.get(sup.id)?.quantity || 0}</td>
                   <td style={{ padding: '0.75rem 0.5rem' }}><div style={{ display: 'flex', gap: 5 }}><button type="button" className="btn-outline" onClick={() => editSupplier(sup)} style={{ padding: '0.3rem 0.5rem' }}>Edit</button><button type="button" className="btn-outline" onClick={() => openInwardForSupplier(sup.id)} style={{ padding: '0.3rem 0.5rem' }}><Plus size={13} /> Add bill</button></div></td>
                 </tr>
@@ -581,7 +584,7 @@ export default function ExpenseSupplier({
           </table>
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: '0.75rem' }}><h3 style={{ margin: 0, fontSize: '1rem' }}>Received Products & Supplier Bills ({supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).length})</h3><select className="input-field" value={supplierBillFilter} onChange={event => setSupplierBillFilter(event.target.value)} style={{ width: 'auto', minWidth: 190 }}><option value="all">All suppliers</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: '0.75rem' }}><h3 style={{ margin: 0, fontSize: '1rem' }}>Received Products & Supplier Bills ({supplierBillFilter === 'all' ? supplierBillCount : countUniqueSupplierBills(supplierBills.filter(bill => bill.supplierId === supplierBillFilter))} bills · {supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).length} product entries)</h3><select className="input-field" value={supplierBillFilter} onChange={event => setSupplierBillFilter(event.target.value)} style={{ width: 'auto', minWidth: 190 }}><option value="all">All suppliers</option>{suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></div>
           {supplierBills.filter(bill => supplierBillFilter === 'all' || bill.supplierId === supplierBillFilter).length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
             <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}>
               <th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Bill / Invoice No.</th><th style={{ padding: '0.6rem' }}>Products Received</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Qty</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Bill Total</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Paid</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Due (Khata)</th><th style={{ padding: '0.6rem' }}>Actions</th>
@@ -738,8 +741,8 @@ export default function ExpenseSupplier({
                         const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
                         return <>
                           <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)', cursor: rate ? 'pointer' : 'not-allowed' }}>
-                            <input type="checkbox" checked={Boolean(line.unitCostIncludesGst)} disabled={!rate} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.checked })} />
-                            Unit cost includes GST{rate ? ` (${rate}%)` : ''}
+                            {rate > 0 ? <><input type="checkbox" checked={Boolean(line.unitCostIncludesGst)} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.checked })} />
+                            Unit cost includes GST ({rate}%)</> : <span>No GST applies to this product</span>}
                           </label>
                           {rate > 0 && Number(line.unitCost) > 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 2 }}>{line.unitCostIncludesGst ? 'GST is already in this price' : `GST added: ₹${cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} · Cost to stock: ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
                         </>;
