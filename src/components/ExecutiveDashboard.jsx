@@ -33,6 +33,7 @@ export default function ExecutiveDashboard({
   invoices = [],
   expenses = [],
   inventory = [],
+  suppliers = [],
   setInventory = null,
   customers = [],
   usedPurchases = [],
@@ -45,6 +46,7 @@ export default function ExecutiveDashboard({
   onOpenProductInventory = () => {}
 }) {
   const [agingFilter, setAgingFilter] = useState('all'); // 'all' | '30' | '60' | '90'
+  const [lowStockDisplayLimit, setLowStockDisplayLimit] = useState(5);
   const [showAddClaimModal, setShowAddClaimModal] = useState(false);
   const [newClaim, setNewClaim] = useState({
     type: 'Customer',
@@ -132,6 +134,20 @@ export default function ExecutiveDashboard({
   const lowStockItems = useMemo(() => {
     return inventory.filter(i => (Number(i.stock) || 0) <= (Number(i.lowStockThreshold) || 2));
   }, [inventory]);
+
+  const supplierNameById = useMemo(
+    () => new Map(suppliers.map(supplier => [String(supplier.id), supplier.name])),
+    [suppliers]
+  );
+
+  const getProductSupplierNames = item => {
+    const names = [
+      ...(item.supplierPurchases || []).map(purchase => supplierNameById.get(String(purchase.supplierId)) || purchase.supplierName),
+      ...(item.units || []).map(unit => supplierNameById.get(String(unit.supplierId)) || unit.supplierName),
+      supplierNameById.get(String(item.supplierId)) || item.supplierName,
+    ].map(name => String(name || '').trim()).filter(Boolean);
+    return [...new Set(names)];
+  };
 
   // 7. PURANA STOCK (Aging analysis: 30 / 60 / 90+ days without sale)
   const agedInventory = useMemo(
@@ -533,11 +549,12 @@ export default function ExecutiveDashboard({
                   <th style={{ textAlign: 'center' }}>Min Limit</th>
                   <th>Warehouse Location (Rack / Bin)</th>
                   <th style={{ textAlign: 'right' }}>Buy Rate</th>
+                  <th>Supplier</th>
                   <th style={{ textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {lowStockItems.map(item => (
+                {lowStockItems.slice(0, lowStockDisplayLimit).map(item => (
                   <tr key={item.id}>
                     <td 
                       onClick={() => onOpenProductInventory && onOpenProductInventory(item)}
@@ -574,6 +591,14 @@ export default function ExecutiveDashboard({
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>
                       ₹{Number(item.buyPrice).toLocaleString()}
                     </td>
+                    <td style={{ minWidth: 130 }}>
+                      {(() => {
+                        const supplierNames = getProductSupplierNames(item);
+                        return supplierNames.length > 0
+                          ? supplierNames.join(', ')
+                          : <span style={{ color: 'var(--text-secondary)' }}>—</span>;
+                      })()}
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
                         <button
@@ -598,6 +623,18 @@ export default function ExecutiveDashboard({
                 ))}
               </tbody>
             </table>
+            {lowStockDisplayLimit < lowStockItems.length && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '0.8rem 0 0.1rem' }}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setLowStockDisplayLimit(limit => limit + 10)}
+                  style={{ padding: '0.45rem 1rem' }}
+                >
+                  Show more ({lowStockItems.length - lowStockDisplayLimit} remaining)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

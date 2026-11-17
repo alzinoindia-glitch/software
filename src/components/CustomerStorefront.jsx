@@ -89,6 +89,11 @@ const getKnownProductImageFallback = product => {
 };
 import { sanitizePublicSpecifications } from '../utils/productSpecifications';
 
+// The public catalog must always be scoped to exactly one tenant. This
+// deployment ID comes from the product-images/<organization-id>/... object
+// paths; SaaS deployments can set VITE_PUBLIC_ORGANIZATION_ID at build time.
+const PUBLIC_ORGANIZATION_ID = import.meta.env.VITE_PUBLIC_ORGANIZATION_ID || '04d8b5ac-56a9-4f88-937c-85f36b2f88d7';
+
 const InstagramIcon = ({ size = 18, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
@@ -140,20 +145,27 @@ export default function CustomerStorefront({
     let refreshTimer;
     const loadCatalog = async () => {
       const revision = ++requestRevision;
-      let { data, error } = await client
-        .from('catalog_products')
-        .select('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, specifications, description')
-        .eq('is_published', true)
-        .eq('stock_status', 'Available in store')
-        .order('updated_at', { ascending: false });
+      const fetchAllPages = async columns => {
+        const rows = [];
+        const pageSize = 500;
+        for (let from = 0; ; from += pageSize) {
+          const { data, error } = await client
+            .from('catalog_products')
+            .select(columns)
+            .eq('organization_id', PUBLIC_ORGANIZATION_ID)
+            .eq('is_published', true)
+            .eq('stock_status', 'Available in store')
+            .order('id', { ascending: true })
+            .range(from, from + pageSize - 1);
+          if (error) return { data: null, error };
+          rows.push(...(data || []));
+          if (!data || data.length < pageSize) return { data: rows, error: null };
+        }
+      };
+      let { data, error } = await fetchAllPages('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text, specifications, description');
       // Keep existing storefront data available until the catalog migration is applied.
       if (error && /specifications|description|column/i.test(error.message || '')) {
-        ({ data, error } = await client
-          .from('catalog_products')
-          .select('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text')
-          .eq('is_published', true)
-          .eq('stock_status', 'Available in store')
-          .order('updated_at', { ascending: false }));
+        ({ data, error } = await fetchAllPages('organization_id, id, name, brand, category, sell_price, mrp, stock_status, image_url, offer_text'));
       }
       if (!active || revision !== requestRevision) return;
       if (error) {
@@ -276,16 +288,17 @@ export default function CustomerStorefront({
     const cloudProducts = isSupabaseConfigured()
       ? publicCatalog.map(item => {
         const specifications = sanitizePublicSpecifications(item.specifications) || {};
-        const category = normalizeProductCategory(item.category || 'New Mobiles');
+        const category = normalizeProductCategory(item.category || 'Universal');
         const isUsed = category === 'Used Mobiles';
         const isAppliance = category === 'Home Appliances';
-        const isAccessory = category === 'Mobile Accessories';
+        const isAccessory = /accessor/i.test(category);
+        const isMobileCategory = ['New Mobiles', 'Used Mobiles', 'Tablets'].includes(category);
         const price = getProductSellingPrice(item);
         return {
           id: item.id,
           name: item.name,
           category,
-          department: isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles'),
+          department: isAppliance ? 'appliances' : (isAccessory ? 'accessories' : (isMobileCategory ? 'mobiles' : 'other')),
           brand: item.brand || item.name.split(' ')[0],
           price,
           mrp: Number(item.mrp) || price,
@@ -308,7 +321,7 @@ export default function CustomerStorefront({
             getPublicProductFrontImageUrl(item.organization_id, item.id),
             getKnownProductImageFallback(item)
           ].filter(Boolean),
-          type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'))
+          type: isUsed ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : (isMobileCategory ? 'new' : 'other')))
         };
       })
       : [];
@@ -327,21 +340,14 @@ export default function CustomerStorefront({
         if (item.imeis && Array.isArray(item.imeis)) item.imeis.forEach(im => seenImeis.add(im));
         if (item.imei1) seenImeis.add(item.imei1);
 
-        const normalizedCategory = normalizeProductCategory(item.category);
+        const normalizedCategory = normalizeProductCategory(item.category || 'Universal');
         const isUsedMobile = isUsedMobileProduct(item);
 
-        const isAppliance = !isUsedMobile && (item.category === 'Home Appliances' || 
-                            (cleanName && (cleanName.toLowerCase().includes('tv') || 
-                                           cleanName.toLowerCase().includes('ac') || 
-                                           cleanName.toLowerCase().includes('cooler') || 
-                                           cleanName.toLowerCase().includes('washing machine') || 
-                                           cleanName.toLowerCase().includes('fridge'))));
+        const isAppliance = !isUsedMobile && normalizedCategory === 'Home Appliances';
+        const isAccessory = !isUsedMobile && /accessor/i.test(normalizedCategory);
+        const isMobileCategory = isUsedMobile || ['New Mobiles', 'Used Mobiles', 'Tablets'].includes(normalizedCategory);
 
-        const isAccessory = !isUsedMobile && (item.category === 'Mobile Accessories' && 
-                            !cleanName.toLowerCase().includes('galaxy') && 
-                            !cleanName.toLowerCase().includes('iphone'));
-
-        const department = isAppliance ? 'appliances' : (isAccessory ? 'accessories' : 'mobiles');
+        const department = isAppliance ? 'appliances' : (isAccessory ? 'accessories' : (isMobileCategory ? 'mobiles' : 'other'));
         const agingDays = getAgingDays(item);
         const hasOffer = item.offer && item.offer.pct > 0;
         const sellPrice = getProductSellingPrice(item);
@@ -361,12 +367,12 @@ export default function CustomerStorefront({
           }
         }
 
-        const itemType = isUsedMobile ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : 'new'));
+        const itemType = isUsedMobile ? 'refurbished' : (isAppliance ? 'appliance' : (isAccessory ? 'accessory' : (isMobileCategory ? 'new' : 'other')));
 
         list.push({
           id: item.id,
           name: cleanName,
-          category: isUsedMobile ? 'Used Mobiles' : (normalizedCategory || (isAppliance ? 'Home Appliances' : (isAccessory ? 'Mobile Accessories' : 'New Mobiles'))),
+          category: isUsedMobile ? 'Used Mobiles' : normalizedCategory,
           subCategory: item.subCategory || item.subcategory || item.sub_category || '',
           department,
           brand: item.brand || cleanName.split(' ')[0] || (isUsedMobile ? 'Refurbished' : 'Samsung'),
@@ -663,6 +669,18 @@ export default function CustomerStorefront({
     return counts;
   }, [liveProducts, categoriesList]);
 
+  // Only offer category filters that currently have published, in-stock items.
+  // Keep All Products available as the safe fallback, even when the catalog is empty.
+  const visibleCategoriesList = categoriesList.filter(category =>
+    category.id === 'all' || (categoryCounts[category.id] || 0) > 0
+  );
+
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !(categoryCounts[selectedCategory] > 0)) {
+      setSelectedCategory('all');
+    }
+  }, [selectedCategory, categoryCounts]);
+
   const handleWhatsAppCheckout = () => {
     const targetPhone = '919121212292'; // Destination: 9121212292
     let message = `Namaste ALZINO Bodhan! 👋\n\n`;
@@ -743,12 +761,13 @@ export default function CustomerStorefront({
   };
 
   return (
-    <div style={{
+    <div className="storefront-root" style={{
+      display: 'flex',
+      flexDirection: 'column',
       minHeight: '100vh',
       backgroundColor: '#F4F6F8',
       color: '#1A1C1E',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-      paddingBottom: '5.25rem'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
     }}>
 
       {/* ========================================================================= */}
@@ -779,7 +798,7 @@ export default function CustomerStorefront({
               onClick={() => { setSelectedCategory('all'); setSearchTerm(''); }}
               style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}
             >
-              <AlzinoLogo height={28} textColor="#0C5B43" swooshColor="#EAB308" />
+              <AlzinoLogo height={34} textColor="#0C5B43" swooshColor="#EAB308" />
             </div>
             <div className="storefront-mobile-contact-actions" aria-label="Contact ALZINO">
               <a
@@ -821,7 +840,7 @@ export default function CustomerStorefront({
               }}
               style={{
                 width: '100%',
-                padding: '0.75rem 1rem 0.75rem 2.6rem',
+                padding: '0.75rem 7.4rem 0.75rem 2.6rem',
                 backgroundColor: '#F3F4F6',
                 border: '1px solid #E5E7EB',
                 borderRadius: '10px',
@@ -857,22 +876,23 @@ export default function CustomerStorefront({
                 right: '8px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                background: '#0F251E',
-                border: 'none',
-                color: '#6EE7B7',
-                borderRadius: '8px',
-                padding: '4px 9px',
+                background: 'linear-gradient(135deg, #0C5B43, #087A59)',
+                border: '1px solid #087A59',
+                color: '#FFFFFF',
+                borderRadius: '9px',
+                padding: '0.48rem 0.72rem',
                 cursor: 'pointer',
-                fontSize: '0.72rem',
-                fontWeight: 700,
+                fontSize: '0.76rem',
+                fontWeight: 800,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                boxShadow: '0 2px 6px rgba(15, 37, 30, 0.2)'
+                gap: '0.38rem',
+                boxShadow: '0 2px 5px rgba(12, 91, 67, 0.22)',
+                whiteSpace: 'nowrap'
               }}
               title="Scan Product Box QR Code / Barcode"
             >
-              <Camera size={13} />
+              <Camera size={15} strokeWidth={2.4} />
               <span>Scan QR</span>
             </button>
           </div>
@@ -1283,7 +1303,7 @@ export default function CustomerStorefront({
       <section className="storefront-catalog-section" style={{ maxWidth: '1280px', margin: '1.5rem auto 3rem', padding: '1rem', backgroundColor: '#F1EFE5', borderRadius: '16px' }}>
         {/* Mobile category dropdown */}
         <select className="storefront-mobile-category-select" aria-label="Filter products by category" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} id="storefront-mobile-category">
-          {categoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}{categoryCounts[cat.id] !== undefined ? ' (' + categoryCounts[cat.id] + ')' : ''}</option>)}
+          {visibleCategoriesList.map((cat) => <option key={cat.id} value={cat.id}>{cat.label} ({categoryCounts[cat.id] || 0})</option>)}
         </select>
         {/* Category Filter Pills (Placed Above Product Listing) */}
         <div className="storefront-category-pills" style={{
@@ -1296,7 +1316,7 @@ export default function CustomerStorefront({
           WebkitOverflowScrolling: 'touch'
         }}>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {categoriesList.map(cat => {
+            {visibleCategoriesList.map(cat => {
               const isActive = selectedCategory === cat.id;
               const Icon = cat.icon;
               const count = categoryCounts[cat.id];
@@ -2124,7 +2144,7 @@ export default function CustomerStorefront({
             <button type="button" onClick={() => setIsMobileCategoriesOpen(false)} aria-label="Close categories" style={{ border: 0, borderRadius: 999, width: 36, height: 36, display: 'grid', placeItems: 'center', background: '#F3F4F6', color: '#374151' }}><X size={19} /></button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.55rem' }}>
-            {categoriesList.map(category => {
+            {visibleCategoriesList.map(category => {
               const Icon = category.icon;
               const isActive = selectedCategory === category.id;
               return <button
@@ -2192,8 +2212,9 @@ export default function CustomerStorefront({
             <a href={shopConfig.mapsUrl || 'https://share.google/qAioj2tx1S9nvzmwX'} target="_blank" rel="noopener noreferrer" aria-label="Locate ALZINO" title="Locate ALZINO">
               <MapPin size={19} color="#B45309" />
             </a>
-            <a href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review ALZINO" title="Review ALZINO">
+            <a className="storefront-review-link" href={shopConfig.reviewUrl || 'https://g.page/r/CWxRHXGDCdZ7EBM/review'} target="_blank" rel="noopener noreferrer" aria-label="Review Us" title="Review Us">
               <Star size={19} color="#D97706" fill="#F59E0B" />
+              <span>Review Us</span>
             </a>
           </nav>
         </div>

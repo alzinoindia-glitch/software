@@ -136,6 +136,7 @@ export default function BulkMobileVariantEntryModal({
   const [excelFileName, setExcelFileName] = useState('');
   const [excelErrors, setExcelErrors] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const fileInputRef = useRef(null);
 
   // Auto-generate units whenever colourVariants change in count or quantity
@@ -665,12 +666,143 @@ export default function BulkMobileVariantEntryModal({
     XLSX.writeFile(wb, 'ALZINO_Bulk_Products_Template.xlsx');
   };
 
-  const handleFileUpload = (e) => {
+  const updateExcelRow = (rowIndex, field, value) => {
+    setExcelRows(rows => rows.map((row, index) => index === rowIndex ? { ...row, [field]: value } : row));
+  };
+
+  const parsePdfToDraftRows = (lines, fileName) => {
+    const text = lines.join('\n');
+    const field = (pattern) => {
+      const match = text.match(pattern);
+      return match?.[1]?.trim() || '';
+    };
+    const money = value => Number(String(value || '').replace(/[^\d.]/g, '')) || 0;
+    const labeledProducts = lines.flatMap(line => {
+      const match = line.match(/(?:product(?:\s+name)?|item(?:\s+description)?|description|material)\s*[:\-]\s*(.+)/i);
+      return match ? [match[1].trim()] : [];
+    });
+    const candidateLines = lines.filter(line => {
+      if (/\b(sub\s?total|grand\s?total|tax\s?(?:amount|able)?|invoice\s?total|round\s?off|balance\s?due|total\s?(?:amount|qty|quantity))\b/i.test(line)) return false;
+      const hasItemMarker = /\b(?:qty|quantity|nos?\.?|pcs?\.?|units?)\b/i.test(line);
+      const hasTwoPrices = (line.match(/(?:₹|rs\.?\s*|inr\s*)\s*\d[\d,]*(?:\.\d{1,2})?/gi) || []).length >= 2;
+      return hasItemMarker || hasTwoPrices;
+    });
+    const productNames = [...new Set([...labeledProducts, ...candidateLines.map(line => line.replace(/(?:₹|rs\.?\s*|inr\s*)\s*\d[\d,]*(?:\.\d{1,2})?/gi, '').replace(/\b(?:qty|quantity|nos?\.?|pcs?\.?|units?)\b.*$/i, '').replace(/^\s*\d+[.)\-:]?\s*/, '').trim()).filter(name => name.length > 2 && /[a-z]/i.test(name))])];
+    const brandFromText = MOBILE_BRANDS.find(brand => text.toLowerCase().includes(String(brand).toLowerCase())) || '';
+    const category = field(/(?:category|product\s*type)\s*[:\-]\s*([^\n]+)/i);
+    const subCategory = field(/(?:sub\s*category|subcategory)\s*[:\-]\s*([^\n]+)/i);
+    const ram = field(/\bRAM\s*[:\-]\s*([^\n,;]+)/i);
+    const storage = field(/\b(?:storage|memory)\s*[:\-]\s*([^\n,;]+)/i);
+    const colour = field(/\bcolou?r\s*[:\-]\s*([^\n,;]+)/i);
+    const quantityValue = Number.parseInt(field(/\b(?:qty|quantity|units?)\s*[:\-]?\s*(\d+)/i), 10);
+    const quantity = Number.isFinite(quantityValue) ? Math.max(0, quantityValue) : 0;
+    const purchasePrice = money(field(/\b(?:purchase\s*(?:price|cost)|buy\s*cost|unit\s*cost|rate)\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,]+(?:\.\d{1,2})?)/i));
+    const sellPrice = money(field(/\b(?:selling\s*price|sell\s*price|sale\s*price)\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,]+(?:\.\d{1,2})?)/i));
+    const mrp = money(field(/\bMRP\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,]+(?:\.\d{1,2})?)/i));
+    const gstRate = Number.parseFloat(field(/\b(?:GST|tax\s*rate)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*%?/i)) || 0;
+    const hsn = field(/\bHSN\s*[:\-]?\s*(\d{4,8})/i);
+    const imeiMatches = text.match(/\b\d{15}\b/g) || [];
+    const serialNumbers = field(/\b(?:serial\s*(?:no|number)?|S\/N)\s*[:\-]?\s*([^\n]+)/i).split(/[\s,;]+/).filter(Boolean);
+    const rack = field(/\bRack\s*[:\-]?\s*([^\n,;]+)/i) || 'R-01';
+    const bin = field(/\bBin\s*[:\-]?\s*([^\n,;]+)/i) || 'B-01';
+    const warranty = field(/\bWarranty\s*[:\-]?\s*([^\n]+)/i);
+    const receivedDate = field(/\b(?:received|invoice)\s*date\s*[:\-]?\s*(\d{1,4}[./-]\d{1,2}[./-]\d{1,4})/i);
+    const models = productNames.length ? productNames : [field(/(?:product(?:\s*name)?|item(?:\s*name)?)\s*[:\-]\s*([^\n]+)/i)];
+
+    return models.map((model, index) => {
+      const imei1 = imeiMatches[index * 2] || (index === 0 ? field(/\bIMEI\s*1?\s*[:\-]?\s*(\d{14,16})/i) : '');
+      const imei2 = imeiMatches[index * 2 + 1] || (index === 0 ? field(/\bIMEI\s*2\s*[:\-]?\s*(\d{14,16})/i) : '');
+      const listedLine = candidateLines.find(line => line.toLowerCase().includes(model.toLowerCase()));
+      const linePrices = listedLine?.match(/(?:₹|rs\.?\s*|inr\s*)\s*([\d,]+(?:\.\d{1,2})?)/gi) || [];
+      const lineQuantity = Number.parseInt(listedLine?.match(/\b(\d+)\s*(?:qty|quantity|nos?\.?|pcs?\.?|units?)\b/i)?.[1], 10) || 0;
+      const rowQuantity = productNames.length > 1 ? lineQuantity : quantity;
+      return {
+        rowNo: index + 1,
+        category,
+        subCategory,
+        capacity: '',
+        brand: brandFromText,
+        model: String(model).trim(),
+        isMasterRow: false,
+        ram,
+        storage,
+        colour,
+        quantity: imei1 ? 1 : rowQuantity,
+        imei1,
+        imei2,
+        serialNumbers: imei1 ? [] : serialNumbers.slice(index, index + rowQuantity),
+        barcode: `ALZ-${String(Date.now()).slice(-6)}-${String(index + 1).padStart(2, '0')}`,
+        codeFormat: 'barcode',
+        hsn,
+        gstRate,
+        purchasePrice: purchasePrice || (linePrices.length > 1 ? money(linePrices[0]) : 0),
+        sellPrice,
+        mrp,
+        rack,
+        bin,
+        warranty,
+        receivedDate,
+        description: '',
+        source: 'pdf',
+        needsReview: true,
+        sourceFileName: fileName,
+      };
+    });
+  };
+
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setExcelFileName(file.name);
     setExcelErrors([]);
+    setExcelRows([]);
+
+    if (/\.pdf$/i.test(file.name)) {
+      setIsExtractingPdf(true);
+      try {
+        const [pdfjs, workerUrl] = await Promise.all([
+          import('pdfjs-dist/build/pdf.mjs'),
+          import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+        ]);
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        const document = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+        const pageLines = [];
+        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+          const page = await document.getPage(pageNumber);
+          const content = await page.getTextContent();
+          const textItems = content.items.filter(item => item.str?.trim()).map(item => ({
+            text: item.str.trim(),
+            x: item.transform?.[4] || 0,
+            y: item.transform?.[5] || 0,
+          })).sort((a, b) => b.y - a.y || a.x - b.x);
+          const lines = [];
+          textItems.forEach(item => {
+            let line = lines.find(candidate => Math.abs(candidate.y - item.y) < 2.5);
+            if (!line) { line = { y: item.y, parts: [] }; lines.push(line); }
+            line.parts.push(item);
+          });
+          pageLines.push(...lines.sort((a, b) => b.y - a.y).map(line => line.parts.sort((a, b) => a.x - b.x).map(part => part.text).join(' ').replace(/\s+/g, ' ').trim()));
+        }
+        const extractedText = pageLines.join('\n').trim();
+        if (!extractedText) {
+          setExcelRows([]);
+          setExcelErrors(['No selectable text was found. This PDF may be scanned or image-only. Enter the details in the manual entry tab, or use a text-based PDF.']);
+        } else {
+          const parsedRows = parsePdfToDraftRows(pageLines, file.name);
+          setExcelRows(parsedRows);
+          setExcelErrors([`Extracted text from ${document.numPages} PDF page(s). Review every draft row below; scanned/image-only PDFs need manual entry. Missing values are left blank.`]);
+        }
+      } catch (error) {
+        console.error('Failed to extract PDF text:', error);
+        setExcelRows([]);
+        setExcelErrors([`Could not read this PDF (${error.message || 'unsupported PDF'}). You can still add the products manually.`]);
+      } finally {
+        setIsExtractingPdf(false);
+        e.target.value = '';
+      }
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -713,9 +845,6 @@ export default function BulkMobileVariantEntryModal({
           const subCategory = String(row.Subcategory || row.SubCategory || row.subCategory || row.subcategory || '').trim();
           const rawBrand = row.Brand || row.brand || 'Universal';
           const brand = isMasterRow && /unspecified|verify|check box/i.test(String(rawBrand)) ? '' : rawBrand;
-          saveCustomCategory(category);
-          saveCustomBrand(String(brand).trim(), category);
-          saveCustomSubcategory(subCategory, category);
           const model = row.Model || row.model || row['Product Name / Model'] || row['Invoice Product Name'] || '';
           const suggestedPrice = Number.parseFloat(row.SellingPrice ?? row.SellPrice ?? row.price ?? row['Suggested Selling ₹']) || 0;
           const sellPrice = suggestedPrice;
@@ -762,6 +891,8 @@ export default function BulkMobileVariantEntryModal({
       } catch (err) {
         console.error('Failed to parse Excel file:', err);
         setExcelErrors(['Invalid file format. Please upload a valid .xlsx or .csv file.']);
+      } finally {
+        e.target.value = '';
       }
     };
     reader.readAsArrayBuffer(file);
@@ -774,6 +905,11 @@ export default function BulkMobileVariantEntryModal({
     }
     if (excelRows.some(row => row.category === 'Used Mobiles')) {
       alert('Used phones must be entered through the Used Phones section. Remove Used Mobiles rows from this import.');
+      return;
+    }
+    const incompletePdfRow = excelRows.find(row => row.source === 'pdf' && (!String(row.category || '').trim() || !String(row.model || '').trim() || Number(row.quantity) < 1));
+    if (incompletePdfRow) {
+      alert(`Complete the product name, category and quantity for PDF draft row ${incompletePdfRow.rowNo} before importing.`);
       return;
     }
     const incompletePhoneRow = excelRows.find(row =>
@@ -794,6 +930,12 @@ export default function BulkMobileVariantEntryModal({
         return;
       }
     }
+
+    excelRows.forEach(row => {
+      if (row.category) saveCustomCategory(row.category);
+      if (row.brand) saveCustomBrand(String(row.brand).trim(), row.category);
+      if (row.subCategory) saveCustomSubcategory(row.subCategory, row.category);
+    });
 
     setIsImporting(true);
 
@@ -2427,6 +2569,14 @@ export default function BulkMobileVariantEntryModal({
                 {/* Drag and Drop / Upload Box */}
                 <div
                   onClick={() => fileInputRef.current?.click()}
+                  onDragOver={event => { event.preventDefault(); event.currentTarget.style.borderColor = '#10B981'; }}
+                  onDragLeave={event => { event.currentTarget.style.borderColor = 'var(--border-color, #D1D5DB)'; }}
+                  onDrop={event => {
+                    event.preventDefault();
+                    event.currentTarget.style.borderColor = 'var(--border-color, #D1D5DB)';
+                    const droppedFile = event.dataTransfer.files?.[0];
+                    if (droppedFile) handleFileUpload({ target: { files: [droppedFile], value: '' } });
+                  }}
                   style={{
                     border: '2px dashed var(--border-color, #D1D5DB)',
                     borderRadius: '12px',
@@ -2443,7 +2593,7 @@ export default function BulkMobileVariantEntryModal({
                   <input
                     type="file"
                     ref={fileInputRef}
-                    accept=".xlsx, .xls, .csv"
+                    accept=".xlsx, .xls, .csv,.pdf,application/pdf"
                     onChange={handleFileUpload}
                     style={{ display: 'none' }}
                   />
@@ -2461,12 +2611,16 @@ export default function BulkMobileVariantEntryModal({
                     <Upload size={24} />
                   </div>
                   <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: '0.25rem' }}>
-                    {excelFileName ? `Selected: ${excelFileName}` : 'Click or Drag & Drop Excel (.xlsx, .xls) or .csv File'}
+                    {isExtractingPdf ? `Reading PDF: ${excelFileName}` : (excelFileName ? `Selected: ${excelFileName}` : 'Click or Drag & Drop PDF, Excel (.xlsx, .xls) or CSV File')}
                   </div>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Supports phones/tablets with IMEIs and other products with optional serial numbers
+                    Extracted details open as editable drafts. Review and confirm before inventory is changed; missing details can be entered manually. Scanned image-only PDFs may need manual entry.
                   </div>
                 </div>
+
+                {excelRows.some(row => row.source === 'pdf') && <div role="status" style={{ fontSize: '0.74rem', color: 'var(--status-amber)', marginBottom: '0.75rem' }}>
+                  PDF text was extracted into draft fields. Check each product, quantity, identifier, and price before selecting Confirm &amp; Import.
+                </div>}
 
                 {/* Validation warnings if any */}
                 {excelErrors.length > 0 && (
@@ -2506,28 +2660,47 @@ export default function BulkMobileVariantEntryModal({
                         <thead style={{ background: 'var(--surface-header, #1F2937)', color: '#FFF', position: 'sticky', top: 0 }}>
                           <tr>
                             <th style={{ padding: '0.5rem' }}>#</th>
-                            <th style={{ padding: '0.5rem' }}>Brand & Model</th>
-                            <th style={{ padding: '0.5rem' }}>Variant / specifications</th>
-                            <th style={{ padding: '0.5rem' }}>Colour</th>
+                            <th style={{ padding: '0.5rem' }}>Category / subcategory</th>
+                            <th style={{ padding: '0.5rem' }}>Brand & product name</th>
+                            <th style={{ padding: '0.5rem' }}>Specifications / colour</th>
                             <th style={{ padding: '0.5rem', textAlign: 'center' }}>Qty</th>
                             <th style={{ padding: '0.5rem' }}>IMEI 1 / Serial No.</th>
                             <th style={{ padding: '0.5rem' }}>Selling ₹</th>
                             <th style={{ padding: '0.5rem' }}>Cost ₹</th>
+                            <th style={{ padding: '0.5rem' }}>MRP / GST %</th>
                             <th style={{ padding: '0.5rem' }}>Shelf</th>
+                            <th style={{ padding: '0.5rem' }}>Review</th>
                           </tr>
                         </thead>
                         <tbody>
                           {excelRows.map((row, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid var(--border-color, #E5E7EB)', background: idx % 2 === 0 ? 'var(--bg-main, #FFF)' : 'var(--surface-primary, #F9FAFB)' }}>
                               <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{row.rowNo}</td>
-                              <td style={{ padding: '0.45rem', fontWeight: 700 }}>{row.brand} {row.model}</td>
-                              <td style={{ padding: '0.45rem' }}>{row.ram} / {row.storage}</td>
-                              <td style={{ padding: '0.45rem', fontWeight: 600 }}>{row.colour}</td>
-                              <td style={{ padding: '0.45rem', textAlign: 'center', fontWeight: 800 }}>{row.quantity}</td>
-                              <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{isImeiCategory(row.category) ? (row.imei1 || '—') : (row.serialNumbers.join(', ') || '—')}</td>
-                              <td style={{ padding: '0.45rem', fontWeight: 800, color: '#10B981' }}>₹{row.sellPrice.toLocaleString()}</td>
-                              <td style={{ padding: '0.45rem' }}>₹{row.purchasePrice.toLocaleString()}</td>
-                              <td style={{ padding: '0.45rem', fontFamily: 'var(--font-mono)' }}>{row.rack}/{row.bin}</td>
+                              <td style={{ padding: '0.35rem', minWidth: 150 }}>
+                                <input aria-label={`Row ${row.rowNo} category`} value={row.category} onChange={event => updateExcelRow(idx, 'category', event.target.value)} placeholder="Category" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} subcategory`} value={row.subCategory} onChange={event => updateExcelRow(idx, 'subCategory', event.target.value)} placeholder="Subcategory" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 160 }}>
+                                <input aria-label={`Row ${row.rowNo} brand`} value={row.brand} onChange={event => updateExcelRow(idx, 'brand', event.target.value)} placeholder="Brand" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} product name`} value={row.model} onChange={event => updateExcelRow(idx, 'model', event.target.value)} placeholder="Product name / model" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 140 }}>
+                                <input aria-label={`Row ${row.rowNo} RAM`} value={row.ram} onChange={event => updateExcelRow(idx, 'ram', event.target.value)} placeholder="RAM" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} storage`} value={row.storage} onChange={event => updateExcelRow(idx, 'storage', event.target.value)} placeholder="Storage" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                <input aria-label={`Row ${row.rowNo} colour`} value={row.colour} onChange={event => updateExcelRow(idx, 'colour', event.target.value)} placeholder="Colour" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 60 }}><input aria-label={`Row ${row.rowNo} quantity`} type="number" min="0" value={row.quantity} onChange={event => updateExcelRow(idx, 'quantity', Math.max(0, Number.parseInt(event.target.value, 10) || 0))} className="input-field" style={{ padding: '0.3rem', width: 62, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 150 }}>
+                                {isImeiCategory(row.category) ? <>
+                                  <input aria-label={`Row ${row.rowNo} IMEI 1`} value={row.imei1} onChange={event => updateExcelRow(idx, 'imei1', event.target.value)} placeholder="IMEI 1" className="input-field" style={{ padding: '0.3rem', marginBottom: 4, fontSize: '0.7rem' }} />
+                                  {requiresDualImei(row.category) && <input aria-label={`Row ${row.rowNo} IMEI 2`} value={row.imei2} onChange={event => updateExcelRow(idx, 'imei2', event.target.value)} placeholder="IMEI 2" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />}
+                                </> : <input aria-label={`Row ${row.rowNo} serial numbers`} value={(row.serialNumbers || []).join(', ')} onChange={event => updateExcelRow(idx, 'serialNumbers', event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean))} placeholder="Serial numbers (optional)" className="input-field" style={{ padding: '0.3rem', fontSize: '0.7rem' }} />}
+                              </td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} selling price`} type="number" min="0" value={row.sellPrice} onChange={event => updateExcelRow(idx, 'sellPrice', Number(event.target.value) || 0)} className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} buy cost`} type="number" min="0" value={row.purchasePrice} onChange={event => updateExcelRow(idx, 'purchasePrice', Number(event.target.value) || 0)} className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 86 }}><input aria-label={`Row ${row.rowNo} MRP`} type="number" min="0" value={row.mrp} onChange={event => updateExcelRow(idx, 'mrp', Number(event.target.value) || 0)} placeholder="MRP" className="input-field" style={{ padding: '0.3rem', width: 82, marginBottom: 4, fontSize: '0.7rem' }} /><input aria-label={`Row ${row.rowNo} GST percent`} type="number" min="0" value={row.gstRate} onChange={event => updateExcelRow(idx, 'gstRate', Number(event.target.value) || 0)} placeholder="GST %" className="input-field" style={{ padding: '0.3rem', width: 82, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem', minWidth: 100 }}><input aria-label={`Row ${row.rowNo} rack`} value={row.rack} onChange={event => updateExcelRow(idx, 'rack', event.target.value.toUpperCase())} placeholder="Rack" className="input-field" style={{ padding: '0.3rem', width: 78, marginBottom: 4, fontSize: '0.7rem' }} /><input aria-label={`Row ${row.rowNo} bin`} value={row.bin} onChange={event => updateExcelRow(idx, 'bin', event.target.value.toUpperCase())} placeholder="Bin" className="input-field" style={{ padding: '0.3rem', width: 78, fontSize: '0.7rem' }} /></td>
+                              <td style={{ padding: '0.35rem' }}><button type="button" className="btn-outline" onClick={() => setExcelRows(rows => rows.filter((_, rowIndex) => rowIndex !== idx))} style={{ padding: '0.3rem 0.45rem', color: 'var(--status-red)' }}>Remove</button></td>
                             </tr>
                           ))}
                         </tbody>

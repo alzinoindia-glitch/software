@@ -43,12 +43,32 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
+import { getSalePriceBreakdown } from '../utils/gstPricing';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
+import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
 
 const isMobileStockCategory = category => {
   const value = String(category || '').trim().toLowerCase();
   return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
 };
+
+const POS_CATEGORY_LABELS = {
+  'Mobile Accessories': 'Accessories',
+  'Home Appliances': 'Appliances',
+};
+
+function getPosCategoryBucket(item) {
+  if (isUsedMobileProduct(item)) return 'Used Mobiles';
+  const category = normalizeProductCategory(item.category);
+  if (BASE_CATEGORIES.some(baseCategory => productCategoriesMatch(category, baseCategory))) return category;
+  if (/accessor|cable|charg(er|ing)/i.test(category)) return 'Mobile Accessories';
+  if (/appliance|television|washing machine|refrigerator/i.test(category)) return 'Home Appliances';
+  if (/spare part/i.test(category)) return 'Spare Parts';
+  if (/tablet/i.test(category)) return 'Tablets';
+  if (/universal/i.test(category)) return 'Universal';
+  if (isMobileStockCategory(category)) return 'New Mobiles';
+  return 'Other';
+}
 
 export default function PosBilling({ 
   inventory, 
@@ -68,11 +88,13 @@ export default function PosBilling({
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('All');
   const [cart, setCart] = useState([]);
   const [catalogLimit, setCatalogLimit] = useState(80);
   
   // Billing Type: GST Invoice vs Non-GST Estimate
   const [billingType, setBillingType] = useState('gst'); // 'gst' | 'non-gst'
+  const [priceIncludesGst, setPriceIncludesGst] = useState(false);
 
   // Customer details
   const [customerName, setCustomerName] = useState('Counter Customer');
@@ -181,20 +203,28 @@ export default function PosBilling({
   const [posTaxFilter, setPosTaxFilter] = useState('all');
   const [showPosCameraScanner, setShowPosCameraScanner] = useState(false);
 
-  // Categories
+  // Keep the POS category picker limited to the standard stock groups.
   const categories = useMemo(() => {
-    const baseCats = ['All', 'Mobile Accessories', 'New Mobiles', 'Used Mobiles', 'Home Appliances', 'Universal'];
-    const set = new Set(baseCats);
-    inventory.forEach(i => {
-      if (i.category) set.add(i.category);
-    });
-    return Array.from(set);
+    const populated = new Set(inventory.map(getPosCategoryBucket));
+    return ['All', ...BASE_CATEGORIES.filter(category => populated.has(category)), ...(populated.has('Other') ? ['Other'] : [])];
   }, [inventory]);
+
+  const subcategories = useMemo(() => {
+    if (selectedCategory === 'All') return [];
+    const values = inventory
+      .filter(item => getPosCategoryBucket(item) === selectedCategory)
+      .map(item => selectedCategory === 'Other' ? (item.subCategory || item.category) : item.subCategory)
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+  }, [inventory, selectedCategory]);
 
   // Smart Multi-keyword filter inventory (matches name, brand, description, barcode, imeis)
   const filteredProducts = useMemo(() => {
     return inventory.filter(item => {
-      const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+      const matchesCategory = selectedCategory === 'All' || getPosCategoryBucket(item) === selectedCategory;
+      const productSubcategory = selectedCategory === 'Other' ? (item.subCategory || item.category) : item.subCategory;
+      const matchesSubcategory = selectedSubcategory === 'All' || String(productSubcategory || '').trim() === selectedSubcategory;
       const isItemGst = (item.gstRate && item.gstRate > 0) || item.isGst;
       const matchesTax = 
         posTaxFilter === 'all' ||
@@ -202,7 +232,7 @@ export default function PosBilling({
         (posTaxFilter === 'non-gst' && !isItemGst);
 
       const q = searchTerm.toLowerCase().trim();
-      if (!q) return matchesCategory && matchesTax;
+      if (!q) return matchesCategory && matchesSubcategory && matchesTax;
 
       const words = q.split(/\s+/).filter(Boolean);
       const haystack = [
@@ -220,13 +250,13 @@ export default function PosBilling({
         ...((item.units || []).flatMap(u => [u.imei1, u.imei2, u.serialNumber, u.barcode, u.color].filter(Boolean)))
       ].join(' ').toLowerCase();
 
-      return matchesCategory && matchesTax && words.every(word => haystack.includes(word));
+      return matchesCategory && matchesSubcategory && matchesTax && words.every(word => haystack.includes(word));
     });
-  }, [inventory, selectedCategory, posTaxFilter, searchTerm]);
+  }, [inventory, selectedCategory, selectedSubcategory, posTaxFilter, searchTerm]);
 
   useEffect(() => {
     setCatalogLimit(80);
-  }, [selectedCategory, posTaxFilter, searchTerm]);
+  }, [selectedCategory, selectedSubcategory, posTaxFilter, searchTerm]);
 
   const visibleProducts = useMemo(
     () => filteredProducts.slice(0, catalogLimit),
@@ -238,7 +268,10 @@ export default function PosBilling({
       return product.units.map(unit => ({
         id: unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode || '',
         imei: unit.imei1 || unit.imei2 || unit.serialNumber || '',
-        barcode: unit.barcode || ''
+        barcode: unit.barcode || '',
+        supplierId: unit.supplierId || '',
+        supplierName: unit.supplierName || '',
+        supplierBillId: unit.supplierBillId || ''
       })).filter(unit => unit.id);
     }
     return [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])].map(imei => ({ id: imei, imei, barcode: '' }));
@@ -346,6 +379,9 @@ export default function PosBilling({
             selectedImeis: initialImeis,
             allTrackedUnits: trackedUnits,
             selectedUnitIds: initialUnits.map(unit => unit.id),
+            supplierId: product.supplierId || '',
+            supplierName: product.supplierName || '',
+            supplierPurchases: product.supplierPurchases || [],
             color: product.color || '',
             ram: product.ram || '',
             storage: product.storage || '',
@@ -629,13 +665,16 @@ export default function PosBilling({
 
   // Calculations
   const isNonGst = billingType === 'non-gst';
-  const subtotalBeforeTax = cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
-  const totalTaxable = subtotalBeforeTax;
-  const totalGst = isNonGst ? 0 : cart.reduce((sum, item) => {
-    const itemTaxable = item.rate * item.qty;
-    return sum + itemTaxable * ((item.gstRate || 18) / 100);
-  }, 0);
-  const grandTotal = Math.max(0, subtotalBeforeTax + totalGst - Number(discount));
+  const saleLines = cart.map(item => ({
+    item,
+    totals: getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst)
+  }));
+  const totalTaxable = saleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
+  const subtotalBeforeTax = priceIncludesGst && !isNonGst
+    ? totalTaxable
+    : cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
+  const totalGst = isNonGst ? 0 : saleLines.reduce((sum, line) => sum + line.totals.gst, 0);
+  const grandTotal = Math.max(0, saleLines.reduce((sum, line) => sum + line.totals.gross, 0) - Number(discount));
   
   // Total line profit (for admin mode)
   const totalProfit = cart.reduce((sum, item) => {
@@ -814,7 +853,7 @@ export default function PosBilling({
       invoiceNo,
       date: today,
       isNonGst,
-      priceIncludesGst: false,
+      priceIncludesGst: !isNonGst && priceIncludesGst,
       invoiceType: isNonGst ? 'Cash Memo' : 'GST Tax Invoice',
       customerName: customerName.trim() || 'Counter Customer',
       customerPhone: customerPhone.trim(),
@@ -834,7 +873,9 @@ export default function PosBilling({
       payments: isAdvance ? [{ id: `PAY-${Date.now()}`, date: new Date().toISOString(), amount: actualPaid, mode: advancePaymentMethod, reference: advancePaymentReference.trim() }] : [],
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
-      items: cart.map(item => ({
+      items: cart.map(item => {
+        const tax = getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst);
+        return ({
         id: item.id,
         name: item.name,
         category: item.category,
@@ -844,14 +885,28 @@ export default function PosBilling({
         rate: item.rate,
         buyPrice: item.buyPrice,
         gstRate: isNonGst ? 0 : item.gstRate,
-        taxable: item.rate * item.qty,
-        total: item.rate * item.qty + (isNonGst ? 0 : item.rate * item.qty * ((item.gstRate || 18) / 100)),
+        taxable: tax.taxable,
+        gstAmount: tax.gst,
+        total: tax.gross,
         profit: (item.rate - item.buyPrice) * item.qty,
         warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
+        supplierAllocations: (() => {
+          const selectedUnits = (item.allTrackedUnits || []).filter(unit => (item.selectedUnitIds || []).includes(unit.id));
+          const bySupplier = new Map();
+          selectedUnits.forEach(unit => {
+            if (!unit.supplierId) return;
+            const current = bySupplier.get(unit.supplierId) || { supplierId: unit.supplierId, supplierName: unit.supplierName || '', supplierBillId: unit.supplierBillId || '', quantity: 0 };
+            current.quantity += 1;
+            bySupplier.set(unit.supplierId, current);
+          });
+          if (!bySupplier.size && item.supplierId) bySupplier.set(item.supplierId, { supplierId: item.supplierId, supplierName: item.supplierName || '', quantity: Number(item.qty || 0) });
+          return [...bySupplier.values()];
+        })(),
         rack: item.rack || 'R-01',
         bin: item.bin || 'B-01'
-      })),
+        });
+      }),
       taxableAmount: totalTaxable,
       cgstTotal,
       sgstTotal,
@@ -1243,24 +1298,34 @@ export default function PosBilling({
                     CASH MEMO (0%)
                   </button>
                 </div>
+                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="Choose this when the entered selling prices or MRP already include GST.">
+                  <input type="checkbox" checked={priceIncludesGst} onChange={event => setPriceIncludesGst(event.target.checked)} />
+                  Price already includes GST
+                </label>}
               </div>
 
-              {/* Minimalist Categories & Custom Item button */}
+              {/* Simple category and subcategory filters */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: '0.25rem', overflowX: 'auto', paddingBottom: '2px' }}>
-                  {categories.map(cat => {
-                    const isActive = selectedCategory === cat;
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`hud-pill ${isActive ? 'active' : ''}`}
-                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem' }}
-                      >
-                        {cat.replace('Mobile Accessories', 'Accessories').replace('Home Appliances', 'Appliances')}
-                      </button>
-                    );
-                  })}
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flex: '1 1 360px', minWidth: 0 }}>
+                  <select
+                    aria-label="Filter products by category"
+                    value={selectedCategory}
+                    onChange={event => { setSelectedCategory(event.target.value); setSelectedSubcategory('All'); }}
+                    className="input-field"
+                    style={{ flex: '1 1 180px', minWidth: 130, height: 34, padding: '0 0.6rem', fontSize: '0.76rem', fontWeight: 700 }}
+                  >
+                    {categories.map(category => <option key={category} value={category}>{category === 'All' ? 'All categories' : POS_CATEGORY_LABELS[category] || category}</option>)}
+                  </select>
+                  {subcategories.length > 0 && <select
+                    aria-label="Filter products by subcategory"
+                    value={selectedSubcategory}
+                    onChange={event => setSelectedSubcategory(event.target.value)}
+                    className="input-field"
+                    style={{ flex: '1 1 180px', minWidth: 130, height: 34, padding: '0 0.6rem', fontSize: '0.76rem', fontWeight: 700 }}
+                  >
+                    <option value="All">All subcategories</option>
+                    {subcategories.map(subcategory => <option key={subcategory} value={subcategory}>{subcategory}</option>)}
+                  </select>}
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
@@ -1694,14 +1759,14 @@ export default function PosBilling({
               fontSize: '0.78rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                <span>{isNonGst ? 'Subtotal:' : 'Subtotal (before GST):'}</span>
+                <span>{isNonGst ? 'Subtotal:' : 'Taxable value:'}</span>
                 <span className="font-mono">₹{subtotalBeforeTax.toFixed(2)}</span>
               </div>
 
               {!isNonGst ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>
-                    GST added:
+                    {priceIncludesGst ? 'GST included:' : 'GST added:'}
                     <button 
                       onClick={() => setIsInterstate(!isInterstate)}
                       style={{ marginLeft: '0.25rem', fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', border: 'none', background: 'none' }}
@@ -1709,7 +1774,7 @@ export default function PosBilling({
                       {isInterstate ? '[IGST]' : '[CGST+SGST]'}
                     </button>
                   </span>
-                  <span className="font-mono">+₹{totalGst.toFixed(2)}</span>
+                  <span className="font-mono">{priceIncludesGst ? '₹' : '+₹'}{totalGst.toFixed(2)}</span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>

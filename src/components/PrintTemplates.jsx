@@ -528,7 +528,7 @@ export default function PrintTemplates({
               >
                 {/* Tax Invoice Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #3B60C5', paddingBottom: '6mm', marginBottom: '6mm' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                     <AlzinoLogo height={40} textColor="#0F251E" swooshColor="#C99A20" style={{ flexShrink: 0 }} />
                     <div>
                       {shopConfig.name && shopConfig.name.trim().toUpperCase() !== 'ALZINO' && <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B60C5', letterSpacing: '-0.03em', lineHeight: 1.1 }}>{shopConfig.name}</div>}
@@ -619,7 +619,7 @@ export default function PrintTemplates({
                       const taxVal = item.taxable || (printData.priceIncludesGst === false
                         ? item.rate * item.qty
                         : (item.total / (1 + (item.gstRate / 100))));
-                      const cgstVal = (item.total - taxVal) / 2;
+                      const cgstVal = (item.gstAmount ?? (item.total - taxVal)) / 2;
                       const sgstVal = cgstVal;
 
                       return (

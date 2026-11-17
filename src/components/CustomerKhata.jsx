@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 import { 
   Users, 
   Search, 
@@ -30,10 +31,14 @@ import {
   Check,
   Layers,
   LayoutGrid,
-  List
+  List,
+  Copy
 } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
+
+const getRepairRecordId = job => String(job?.recordId || job?.id || [job?.jobId, job?.customerMobile || job?.customerPhone, job?.date, job?.deviceModel].join('|'));
+const invoiceMatchesRepair = (invoice, repair) => invoice.repairJobRef === getRepairRecordId(repair) || invoice.repairJobRef === repair.jobId;
 
 export default function CustomerKhata({ 
   initialView = 'customers',
@@ -53,6 +58,8 @@ export default function CustomerKhata({
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState(initialView === 'khata' ? 'due' : 'all'); // all | both | sales | repairs | due
   const [viewLayout, setViewLayout] = useState('table'); // table | cards
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState(() => new Set());
+  const [customerCopyStatus, setCustomerCopyStatus] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showKhataModal, setShowKhataModal] = useState(false);
   const [khataEntityType, setKhataEntityType] = useState('customer');
@@ -67,6 +74,11 @@ export default function CustomerKhata({
   const [supplierPaymentAmount, setSupplierPaymentAmount] = useState('');
   const [supplierPaymentMode, setSupplierPaymentMode] = useState('Bank Transfer');
   const [supplierPaymentNote, setSupplierPaymentNote] = useState('');
+  const [editingSupplierPayment, setEditingSupplierPayment] = useState(null);
+  const [editSupplierPaymentAmount, setEditSupplierPaymentAmount] = useState('');
+  const [editSupplierPaymentMode, setEditSupplierPaymentMode] = useState('Bank Transfer');
+  const [editSupplierPaymentNote, setEditSupplierPaymentNote] = useState('');
+  const [editSupplierPaymentDate, setEditSupplierPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   
   // Payment Modal state
   const [selectedCustomerForPayment, setSelectedCustomerForPayment] = useState(null);
@@ -184,7 +196,7 @@ export default function CustomerKhata({
       if (!rec.phone && (rep.customerMobile || rep.customerPhone)) rec.phone = rep.customerMobile || rep.customerPhone;
       
       // Avoid duplicate repairs in list
-      if (!rec.repairs.some(r => r.id === rep.id)) {
+      if (!rec.repairs.some(r => getRepairRecordId(r) === getRepairRecordId(rep))) {
         rec.repairs.push(rep);
       }
     });
@@ -285,10 +297,16 @@ export default function CustomerKhata({
     // Filter by type
     if (typeFilter === 'both') {
       list = list.filter(c => c.type === 'both');
+    } else if (typeFilter === 'sales-only') {
+      list = list.filter(c => c.hasPurchases && !c.hasRepairs);
+    } else if (typeFilter === 'repairs-only') {
+      list = list.filter(c => c.hasRepairs && !c.hasPurchases);
     } else if (typeFilter === 'sales') {
       list = list.filter(c => c.hasPurchases);
     } else if (typeFilter === 'repairs') {
       list = list.filter(c => c.hasRepairs);
+    } else if (typeFilter === 'registered') {
+      list = list.filter(c => !c.hasPurchases && !c.hasRepairs);
     } else if (typeFilter === 'due') {
       list = list.filter(c => c.balanceDue > 0);
     }
@@ -314,11 +332,60 @@ export default function CustomerKhata({
     });
   }, [unifiedCustomers, searchTerm, typeFilter]);
 
+  const allFilteredCustomersSelected = filteredCustomers.length > 0 && filteredCustomers.every(customer => selectedCustomerIds.has(String(customer.id)));
+  const toggleCustomerSelection = customerId => {
+    const id = String(customerId);
+    setSelectedCustomerIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setCustomerCopyStatus('');
+  };
+  const toggleAllFilteredCustomers = () => {
+    setSelectedCustomerIds(current => {
+      const next = new Set(current);
+      if (allFilteredCustomersSelected) filteredCustomers.forEach(customer => next.delete(String(customer.id)));
+      else filteredCustomers.forEach(customer => next.add(String(customer.id)));
+      return next;
+    });
+    setCustomerCopyStatus('');
+  };
+  const copySelectedCustomerContacts = async () => {
+    const selectedCustomers = unifiedCustomers.filter(customer => selectedCustomerIds.has(String(customer.id)));
+    if (!selectedCustomers.length) return;
+    const text = [['Name', 'Mobile'], ...selectedCustomers.map(customer => [customer.name || '', customer.phone || ''])]
+      .map(row => row.map(value => String(value).replace(/[\t\r\n]+/g, ' ')).join('\t'))
+      .join('\n');
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else throw new Error('Clipboard API unavailable');
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      textarea.remove();
+      if (!copied) {
+        alert('Could not copy contacts. Check clipboard permission and try again.');
+        return;
+      }
+    }
+    setCustomerCopyStatus(`Copied ${selectedCustomers.length} contacts`);
+  };
+
   // KPI Totals
   const countTotal = unifiedCustomers.length;
   const countBoth = unifiedCustomers.filter(c => c.type === 'both').length;
   const countSales = unifiedCustomers.filter(c => c.hasPurchases).length;
   const countRepairs = unifiedCustomers.filter(c => c.hasRepairs).length;
+  const countSalesOnly = unifiedCustomers.filter(c => c.hasPurchases && !c.hasRepairs).length;
+  const countRepairsOnly = unifiedCustomers.filter(c => c.hasRepairs && !c.hasPurchases).length;
+  const countRegistered = unifiedCustomers.filter(c => !c.hasPurchases && !c.hasRepairs).length;
   const countDue = unifiedCustomers.filter(c => c.balanceDue > 0).length;
   const totalReceivables = unifiedCustomers.reduce((sum, c) => sum + (c.balanceDue || 0), 0);
 
@@ -348,7 +415,7 @@ export default function CustomerKhata({
     // Repairs
     cust.repairs.forEach(rep => {
       // Check if already represented in invoices
-      const alreadyInvoiced = cust.invoices.some(inv => inv.repairJobRef === rep.id);
+      const alreadyInvoiced = cust.invoices.some(inv => invoiceMatchesRepair(inv, rep));
       if (!alreadyInvoiced) {
         const cost = Number(rep.finalPrice || rep.finalCost || rep.estimatedCost) || 0;
         const advance = Number(rep.advancePaid) || 0;
@@ -465,7 +532,7 @@ export default function CustomerKhata({
       const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
       const matches = (selectedPhone && jobPhone === selectedPhone)
         || (!jobPhone && (job.customerName || '').trim().toLowerCase() === selectedCustomerForPayment.name.trim().toLowerCase());
-      const alreadyInvoiced = invoices.some(invoice => invoice.repairJobRef === job.id);
+      const alreadyInvoiced = invoices.some(invoice => invoiceMatchesRepair(invoice, job));
       const jobDue = Math.max(0, (Number(job.finalPrice || job.finalCost || job.estimatedCost) || 0) - (Number(job.advancePaid) || 0));
       if (!matches || alreadyInvoiced || job.status === 'Delivered' || unapplied <= 0 || jobDue <= 0) return job;
       const applied = Math.min(jobDue, unapplied);
@@ -526,7 +593,7 @@ export default function CustomerKhata({
 
   const customerDueStatus = (customer) => dueStatus([
     ...(customer.invoices || []).map(invoice => ({ ...invoice, balanceDue: Number(invoice.balanceDue ?? invoice.khataDue) || 0 })),
-    ...(customer.repairs || []).filter(job => job.status !== 'Delivered' && !invoices.some(invoice => invoice.repairJobRef === job.id)).map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })),
+    ...(customer.repairs || []).filter(job => job.status !== 'Delivered' && !invoices.some(invoice => invoiceMatchesRepair(invoice, job))).map(job => ({ ...job, balanceDue: Math.max(0, Number(job.finalPrice || job.finalCost || job.estimatedCost) - Number(job.advancePaid || 0)) })),
     ...(customer.khataEntries || [])
   ]);
 
@@ -549,6 +616,7 @@ export default function CustomerKhata({
     setSuppliers(prev => prev.map(supplier => {
       if (supplier.id !== selectedSupplierForPayment.id) return supplier;
       let unappliedPayment = amount;
+      const allocations = [];
       const purchaseBills = [...(supplier.purchaseBills || [])].map(bill => ({ ...bill }));
       for (let index = purchaseBills.length - 1; index >= 0 && unappliedPayment > 0; index -= 1) {
         const bill = purchaseBills[index];
@@ -556,6 +624,7 @@ export default function CustomerKhata({
         const applied = Math.min(due, unappliedPayment);
         bill.paidAmount = (Number(bill.paidAmount) || 0) + applied;
         bill.balanceDue = Math.max(0, due - applied);
+        if (applied) allocations.push({ type: 'bill', id: bill.id, amount: applied });
         unappliedPayment -= applied;
       }
       const khataEntries = [...(supplier.khataEntries || [])].map(entry => ({ ...entry }));
@@ -565,6 +634,7 @@ export default function CustomerKhata({
         const applied = Math.min(entryDue, unappliedPayment);
         entry.paidAmount = (Number(entry.paidAmount) || 0) + applied;
         entry.balanceDue = entryDue - applied;
+        if (applied) allocations.push({ type: 'khata', id: entry.id, amount: applied });
         unappliedPayment -= applied;
       }
       return {
@@ -578,12 +648,94 @@ export default function CustomerKhata({
           amount,
           mode: supplierPaymentMode,
           note: supplierPaymentNote.trim(),
+          allocations,
         }, ...(supplier.payments || [])],
       };
     }));
     setSelectedSupplierForPayment(null);
     setSupplierPaymentAmount('');
     setSupplierPaymentNote('');
+  };
+
+  const openSupplierPaymentEdit = (supplier, payment) => {
+    setEditingSupplierPayment({ supplierId: supplier.id, paymentId: payment.id });
+    setEditSupplierPaymentAmount(String(payment.amount || ''));
+    setEditSupplierPaymentMode(payment.mode || 'Bank Transfer');
+    setEditSupplierPaymentNote(payment.note || '');
+    setEditSupplierPaymentDate(String(payment.date || new Date().toISOString().slice(0, 10)).slice(0, 10));
+  };
+
+  const saveSupplierPaymentEdit = event => {
+    event.preventDefault();
+    if (!editingSupplierPayment) return;
+    const currentSupplier = suppliers.find(supplier => String(supplier.id) === String(editingSupplierPayment.supplierId));
+    const currentPayment = currentSupplier?.payments?.find(payment => payment.id === editingSupplierPayment.paymentId);
+    const amount = Number(editSupplierPaymentAmount);
+    if (!currentSupplier || !currentPayment || !Number.isFinite(amount) || amount <= 0) return;
+    const delta = amount - Number(currentPayment.amount || 0);
+    if (delta > (Number(currentSupplier.balancePayable) || 0) + 0.01) {
+      alert(`The edited payment cannot exceed the current payable balance plus the original payment (${(Number(currentSupplier.balancePayable || 0) + Number(currentPayment.amount || 0)).toLocaleString('en-IN')}).`);
+      return;
+    }
+    setSuppliers(previous => previous.map(supplier => {
+      if (String(supplier.id) !== String(editingSupplierPayment.supplierId)) return supplier;
+      let remaining = Math.abs(delta);
+      const purchaseBills = (supplier.purchaseBills || []).map(bill => ({ ...bill }));
+      const khataEntries = (supplier.khataEntries || []).map(entry => ({ ...entry }));
+      const allocations = [];
+      const billOrder = delta > 0 ? [...purchaseBills.keys()].reverse() : [...purchaseBills.keys()];
+      for (const index of billOrder) {
+        if (!remaining) break;
+        const bill = purchaseBills[index];
+        if (delta > 0) {
+          const due = Math.max(0, Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0);
+          const applied = Math.min(due, remaining);
+          bill.paidAmount = Number(bill.paidAmount || 0) + applied;
+          bill.balanceDue = due - applied;
+          if (applied) allocations.push({ type: 'bill', id: bill.id, amount: applied });
+          remaining -= applied;
+        } else {
+          const paid = Number(bill.paidAmount || 0);
+          const reversed = Math.min(paid, remaining);
+          bill.paidAmount = paid - reversed;
+          bill.balanceDue = Math.max(0, Number(bill.totalAmount || 0) - bill.paidAmount);
+          if (reversed) allocations.push({ type: 'bill', id: bill.id, amount: -reversed });
+          remaining -= reversed;
+        }
+      }
+      const entryOrder = delta > 0 ? [...khataEntries.keys()].reverse() : [...khataEntries.keys()];
+      for (const index of entryOrder) {
+        if (!remaining) break;
+        const entry = khataEntries[index];
+        if (delta > 0) {
+          const due = Math.max(0, Number(entry.balanceDue ?? Number(entry.amount || 0) - Number(entry.paidAmount || 0)) || 0);
+          const applied = Math.min(due, remaining);
+          entry.paidAmount = Number(entry.paidAmount || 0) + applied;
+          entry.balanceDue = due - applied;
+          if (applied) allocations.push({ type: 'khata', id: entry.id, amount: applied });
+          remaining -= applied;
+        } else {
+          const paid = Number(entry.paidAmount || 0);
+          const reversed = Math.min(paid, remaining);
+          entry.paidAmount = paid - reversed;
+          entry.balanceDue = Math.max(0, Number(entry.amount || 0) - entry.paidAmount);
+          if (reversed) allocations.push({ type: 'khata', id: entry.id, amount: -reversed });
+          remaining -= reversed;
+        }
+      }
+      if (remaining > 0.01) return supplier;
+      return {
+        ...supplier,
+        balancePayable: Math.max(0, (Number(supplier.balancePayable) || 0) - delta),
+        purchaseBills,
+        khataEntries,
+        payments: (supplier.payments || []).map(payment => payment.id === currentPayment.id ? {
+          ...payment, amount, mode: editSupplierPaymentMode, note: editSupplierPaymentNote.trim(), date: editSupplierPaymentDate,
+          allocations: allocations.length ? allocations : payment.allocations || []
+        } : payment),
+      };
+    }));
+    setEditingSupplierPayment(null);
   };
 
   // WhatsApp Message Composer Helper
@@ -605,8 +757,14 @@ export default function CustomerKhata({
     const totalSupplierDue = suppliers.reduce((sum, supplier) => sum + (Number(supplier.balancePayable) || 0), 0);
     const supplierBills = suppliers.flatMap(supplier => (supplier.purchaseBills || []).map(bill => ({ ...bill, supplierName: supplier.name, supplierId: supplier.id })))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    const supplierPayments = suppliers.flatMap(supplier => (supplier.payments || []).map(payment => ({ ...payment, supplierName: supplier.name })))
+    const uniqueSupplierBillCount = countUniqueSupplierBills(supplierBills.map(bill => ({ ...bill, invoiceNumber: `${bill.supplierId}:${bill.invoiceNumber || bill.id}` })));
+    const supplierPayments = suppliers.flatMap(supplier => (supplier.payments || []).map(payment => ({ ...payment, supplierId: supplier.id, supplierName: supplier.name })))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const supplierActivity = [
+      ...supplierBills.map(bill => ({ ...bill, kind: 'Bill', detail: `${bill.invoiceNumber || 'Supplier bill'} · ${bill.productName || ''}`, debit: bill.totalAmount, credit: 0 })),
+      ...suppliers.flatMap(supplier => (supplier.khataEntries || []).map(entry => ({ ...entry, supplierId: supplier.id, supplierName: supplier.name, kind: 'Manual Khata', detail: `${entry.description}${entry.reference ? ` · ${entry.reference}` : ''}`, debit: entry.amount, credit: 0 }))),
+      ...supplierPayments.map(payment => ({ ...payment, kind: 'Payment', detail: `${payment.mode}${payment.note ? ` · ${payment.note}` : ''}`, debit: 0, credit: payment.amount, paymentRecord: payment }))
+    ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     return (
       <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         <div className="illoca-card" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -616,7 +774,7 @@ export default function CustomerKhata({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.65rem' }}>
           <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SUPPLIERS</div><strong style={{ fontSize: '1.25rem' }}>{suppliers.length}</strong></div>
           <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>OUTSTANDING PAYABLE</div><strong style={{ fontSize: '1.25rem', color: 'var(--status-amber)' }}>₹{totalSupplierDue.toLocaleString()}</strong></div>
-          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>RECORDED BILLS</div><strong style={{ fontSize: '1.25rem' }}>{supplierBills.length}</strong></div>
+          <div className="illoca-card" style={{ padding: '0.85rem 1rem' }}><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>RECORDED BILLS</div><strong style={{ fontSize: '1.25rem' }}>{uniqueSupplierBillCount}</strong></div>
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}>
           <div style={{ position: 'relative', maxWidth: '520px', marginBottom: '0.75rem' }}><Search size={15} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} /><input className="input-field" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search supplier, phone, or GSTIN..." style={{ paddingLeft: '2rem' }} /></div>
@@ -626,11 +784,12 @@ export default function CustomerKhata({
           {!filteredPortalSuppliers.length && <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier balances match your search.</div>}
         </div>
         <div className="illoca-card" style={{ padding: '1rem', overflowX: 'auto' }}><h3 style={{ margin: '0 0 0.7rem', fontSize: '1rem' }}>Supplier Account Activity</h3>
-          {supplierBills.length || supplierPayments.length || suppliers.some(supplier => supplier.khataEntries?.length) ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Entry</th><th style={{ padding: '0.6rem' }}>Reference / Details</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Debit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Credit</th></tr></thead><tbody>
-            {[...supplierBills.map(bill => ({ ...bill, kind: 'Bill', detail: `${bill.invoiceNumber || 'Supplier bill'} · ${bill.productName || ''}`, debit: bill.totalAmount, credit: 0 })), ...suppliers.flatMap(supplier => (supplier.khataEntries || []).map(entry => ({ ...entry, supplierName: supplier.name, kind: 'Manual Khata', detail: `${entry.description}${entry.reference ? ` · ${entry.reference}` : ''}`, debit: entry.amount, credit: 0 }))), ...supplierPayments.map(payment => ({ ...payment, kind: 'Payment', detail: `${payment.mode}${payment.note ? ` · ${payment.note}` : ''}`, debit: 0, credit: payment.amount }))].sort((a,b) => String(b.date || '').localeCompare(String(a.date || ''))).map(row => <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.65rem' }}>{row.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{row.supplierName}</td><td style={{ padding: '0.65rem' }}>{row.kind}</td><td style={{ padding: '0.65rem' }}>{row.detail}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.debit ? `₹${Number(row.debit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right', color: 'var(--status-green)' }}>{row.credit ? `₹${Number(row.credit).toLocaleString()}` : '—'}</td></tr>)}
+          {supplierActivity.length ? <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}><thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '2px solid var(--border-color)' }}><th style={{ padding: '0.6rem' }}>Date</th><th style={{ padding: '0.6rem' }}>Supplier</th><th style={{ padding: '0.6rem' }}>Entry</th><th style={{ padding: '0.6rem' }}>Reference / Details</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Debit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Credit</th><th style={{ padding: '0.6rem', textAlign: 'right' }}>Action</th></tr></thead><tbody>
+            {supplierActivity.map(row => <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}><td style={{ padding: '0.65rem' }}>{row.date || '—'}</td><td style={{ padding: '0.65rem', fontWeight: 600 }}>{row.supplierName}</td><td style={{ padding: '0.65rem' }}>{row.kind}</td><td style={{ padding: '0.65rem' }}>{row.detail}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.debit ? `₹${Number(row.debit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right', color: 'var(--status-green)' }}>{row.credit ? `₹${Number(row.credit).toLocaleString()}` : '—'}</td><td style={{ padding: '0.65rem', textAlign: 'right' }}>{row.kind === 'Payment' && <button type="button" className="btn-outline" onClick={() => { const supplier = suppliers.find(item => String(item.id) === String(row.supplierId)); if (supplier && row.paymentRecord) openSupplierPaymentEdit(supplier, row.paymentRecord); }} style={{ padding: '0.3rem 0.5rem' }}>Edit</button>}</td></tr>)}
           </tbody></table> : <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier bills or payments are recorded yet.</div>}
         </div>
         {selectedSupplierForPayment && <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1000 }}><form onSubmit={handlePaySupplierKhata} className="illoca-card animate-fade-in" style={{ maxWidth: '440px', width: '100%', padding: '1.4rem', background: 'var(--surface-primary)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Pay Supplier Khata</h3><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>✕</button></div><p style={{ marginTop: 0 }}>{selectedSupplierForPayment.name} · Due ₹{(Number(selectedSupplierForPayment.balancePayable) || 0).toLocaleString()}</p><label className="input-label">Payment Amount ₹<input type="number" min="0.01" max={Number(selectedSupplierForPayment.balancePayable) || 0} step="0.01" required className="input-field" value={supplierPaymentAmount} onChange={e => setSupplierPaymentAmount(e.target.value)} /></label><label className="input-label">Paid Via<select className="input-field" value={supplierPaymentMode} onChange={e => setSupplierPaymentMode(e.target.value)}><option>Bank Transfer</option><option>Cash</option><option>UPI</option><option>Cheque</option></select></label><label className="input-label">Reference / Note<input className="input-field" value={supplierPaymentNote} onChange={e => setSupplierPaymentNote(e.target.value)} placeholder="Optional transaction reference" /></label><div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={() => setSelectedSupplierForPayment(null)}>Cancel</button><button type="submit" className="btn-primary">Save Payment</button></div></form></div>}
+        {editingSupplierPayment && <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1001 }}><form onSubmit={saveSupplierPaymentEdit} className="illoca-card animate-fade-in" style={{ maxWidth: 460, width: '100%', padding: '1.4rem', background: 'var(--surface-primary)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h3 style={{ margin: 0 }}>Edit Supplier Payment</h3><button type="button" className="btn-outline" onClick={() => setEditingSupplierPayment(null)}>✕</button></div><label className="input-label">Payment Date<input type="date" required className="input-field" value={editSupplierPaymentDate} onChange={event => setEditSupplierPaymentDate(event.target.value)} /></label><label className="input-label">Amount ₹<input type="number" min="0.01" step="0.01" required className="input-field" value={editSupplierPaymentAmount} onChange={event => setEditSupplierPaymentAmount(event.target.value)} /></label><label className="input-label">Paid Via<select className="input-field" value={editSupplierPaymentMode} onChange={event => setEditSupplierPaymentMode(event.target.value)}><option>Bank Transfer</option><option>Cash</option><option>UPI</option><option>Cheque</option></select></label><label className="input-label">Reference / Note<input className="input-field" value={editSupplierPaymentNote} onChange={event => setEditSupplierPaymentNote(event.target.value)} /></label><div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}><button type="button" className="btn-outline" onClick={() => setEditingSupplierPayment(null)}>Cancel</button><button type="submit" className="btn-primary">Save Payment Changes</button></div></form></div>}
         {showKhataModal && <KhataEntryModal customers={unifiedCustomers} suppliers={suppliers} entityType={khataEntityType} setEntityType={setKhataEntityType} entityId={khataEntityId} setEntityId={setKhataEntityId} amount={khataAmount} setAmount={setKhataAmount} date={khataDate} setDate={setKhataDate} dueDate={khataDueDate} setDueDate={setKhataDueDate} description={khataDescription} setDescription={setKhataDescription} reference={khataReference} setReference={setKhataReference} onSubmit={saveManualKhata} onClose={() => setShowKhataModal(false)} />}
       </div>
     );
@@ -723,45 +882,56 @@ export default function CustomerKhata({
 
         {/* Sales Invoices Only */}
         <div 
-          onClick={() => setTypeFilter('sales')}
+          onClick={() => setTypeFilter('sales-only')}
           style={{ 
-            background: typeFilter === 'sales' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', 
+            background: typeFilter === 'sales-only' ? 'var(--surface-card-hover)' : 'var(--surface-primary)',
             padding: '0.65rem 0.85rem', 
             borderRadius: 'var(--radius-sm)', 
-            border: `1px solid ${typeFilter === 'sales' ? 'var(--status-blue)' : 'var(--border-color)'}`,
+            border: `1px solid ${typeFilter === 'sales-only' ? 'var(--status-blue)' : 'var(--border-color)'}`,
             cursor: 'pointer',
             transition: 'var(--transition-smooth)'
           }}
         >
           <div style={{ fontSize: '0.68rem', color: 'var(--status-blue)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
-            <span>🛒 Sales Counter Clients</span>
+            <span>🛒 Sales Only</span>
             <ShoppingBag size={12} color="var(--status-blue)" />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--status-blue)' }}>
-            {countSales}
+            {countSalesOnly}
           </div>
         </div>
 
         {/* Repair Jobs Only */}
         <div 
-          onClick={() => setTypeFilter('repairs')}
+          onClick={() => setTypeFilter('repairs-only')}
           style={{ 
-            background: typeFilter === 'repairs' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', 
+            background: typeFilter === 'repairs-only' ? 'var(--surface-card-hover)' : 'var(--surface-primary)',
             padding: '0.65rem 0.85rem', 
             borderRadius: 'var(--radius-sm)', 
-            border: `1px solid ${typeFilter === 'repairs' ? 'var(--status-amber)' : 'var(--border-color)'}`,
+            border: `1px solid ${typeFilter === 'repairs-only' ? 'var(--status-amber)' : 'var(--border-color)'}`,
             cursor: 'pointer',
             transition: 'var(--transition-smooth)'
           }}
         >
           <div style={{ fontSize: '0.68rem', color: 'var(--status-amber)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
-            <span>🔧 Repair Lab Clients</span>
+            <span>🔧 Repairs Only</span>
             <Wrench size={12} color="var(--status-amber)" />
           </div>
           <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--status-amber)' }}>
-            {countRepairs}
+            {countRepairsOnly}
           </div>
         </div>
+
+        {initialView !== 'khata' && <div
+          onClick={() => setTypeFilter('registered')}
+          style={{ background: typeFilter === 'registered' ? 'var(--surface-card-hover)' : 'var(--surface-primary)', padding: '0.65rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+        >
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 700 }}>
+            <span>Registered only</span>
+            <Users size={12} color="var(--text-secondary)" />
+          </div>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: '0.15rem', color: 'var(--text-primary)' }}>{countRegistered}</div>
+        </div>}
 
         {/* Outstanding Receivables */}
         {initialView === 'khata' && <div
@@ -807,6 +977,7 @@ export default function CustomerKhata({
             { id: 'both', label: `⭐ Both (${countBoth})` },
             { id: 'sales', label: `🛒 Sales (${countSales})` },
             { id: 'repairs', label: `🔧 Repairs (${countRepairs})` },
+            ...(initialView !== 'khata' ? [{ id: 'registered', label: `Registered (${countRegistered})` }] : []),
             ...(initialView === 'khata' ? [{ id: 'due', label: `⚠️ Due (${countDue})` }] : [])
           ].map(f => (
             <button
@@ -829,8 +1000,24 @@ export default function CustomerKhata({
           ))}
         </div>
 
-        {/* Search & View Switcher */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 320px', maxWidth: '440px', justifyContent: 'flex-end' }}>
+        {/* Bulk Contact Selection, Search & View Switcher */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flex: '1 1 520px', maxWidth: '100%', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {initialView !== 'khata' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+              <button type="button" onClick={toggleAllFilteredCustomers} className="btn-outline" style={{ padding: '0.35rem 0.55rem', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                {allFilteredCustomersSelected ? 'Deselect shown' : `Select all shown (${filteredCustomers.length})`}
+              </button>
+              {selectedCustomerIds.size > 0 && <>
+                <button type="button" onClick={copySelectedCustomerContacts} className="btn-primary" style={{ padding: '0.35rem 0.55rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}>
+                  <Copy size={13} /> Copy contacts ({selectedCustomerIds.size})
+                </button>
+                <button type="button" onClick={() => { setSelectedCustomerIds(new Set()); setCustomerCopyStatus(''); }} className="btn-outline" style={{ padding: '0.35rem 0.55rem', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                  Clear
+                </button>
+              </>}
+              {customerCopyStatus && <span role="status" style={{ fontSize: '0.7rem', color: 'var(--status-green)', whiteSpace: 'nowrap' }}>{customerCopyStatus}</span>}
+            </div>
+          )}
           <div style={{ position: 'relative', width: '100%' }}>
             <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
@@ -916,6 +1103,9 @@ export default function CustomerKhata({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-secondary)' }}>
+                {initialView !== 'khata' && <th style={{ padding: '0.65rem 0.55rem', width: 36 }}>
+                  <input type="checkbox" checked={allFilteredCustomersSelected} onChange={toggleAllFilteredCustomers} aria-label="Select all shown customers" />
+                </th>}
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Customer ID & Type</th>
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>Name & Location</th>
                 <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>WhatsApp / Mobile</th>
@@ -940,6 +1130,14 @@ export default function CustomerKhata({
                     onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-card-hover)'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
+                    {initialView !== 'khata' && <td style={{ padding: '0.65rem 0.55rem', verticalAlign: 'top' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomerIds.has(String(cust.id))}
+                        onChange={() => toggleCustomerSelection(cust.id)}
+                        aria-label={`Select ${cust.name} contact`}
+                      />
+                    </td>}
                     {/* ID & TYPE BADGE */}
                     <td style={{ padding: '0.65rem 0.75rem', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -1270,6 +1468,12 @@ export default function CustomerKhata({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      {initialView !== 'khata' && <input
+                        type="checkbox"
+                        checked={selectedCustomerIds.has(String(cust.id))}
+                        onChange={() => toggleCustomerSelection(cust.id)}
+                        aria-label={`Select ${cust.name} contact`}
+                      />}
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                         {cust.id}
                       </span>

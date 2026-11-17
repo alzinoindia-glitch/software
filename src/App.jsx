@@ -17,6 +17,7 @@ const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModa
 const PrintTemplates = lazy(() => import('./components/PrintTemplates'));
 import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
+import { getAuthenticatorIdentity } from './utils/authenticatorSession';
 const CustomerStorefront = lazy(() => import('./components/CustomerStorefront'));
 const ProductScanDetailsModal = lazy(() => import('./components/ProductScanDetailsModal'));
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from './utils/productTerms';
@@ -28,6 +29,7 @@ import {
   subscribeRealtimeSync,
   resolveCloudConflict,
   syncPublishedCatalog,
+  retryPendingCloudWrites,
 } from './utils/cloudSyncService';
 import {
   defaultShopConfig,
@@ -129,6 +131,7 @@ export default function App() {
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
   const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier');
   const [cloudHydrated, setCloudHydrated] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState({});
   const [productPolicyCleanupReady, setProductPolicyCleanupReady] = useState(false);
   const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
   const [activeTab, setActiveTab] = useState(() => initialRoute.tab !== 'storefront' ? initialRoute.tab : 'dashboard');
@@ -204,7 +207,7 @@ export default function App() {
   const [printMode, setPrintMode] = useState(''); // thermal | a4 | voucher | repair | barcodes
 
   // Synchronize Tab and URL Path
-  const handleSelectTab = (tabId) => {
+  const handleSelectTab = useCallback((tabId) => {
     const normTab = tabId;
     setActiveTab(normTab);
     if (portal === 'admin') {
@@ -214,7 +217,7 @@ export default function App() {
       const url = normTab === 'pos' ? '/cashier' : `/cashier/${normTab}`;
       window.history.pushState(null, '', url);
     }
-  };
+  }, [portal]);
 
   const handleNavigatePortal = (targetPath) => {
     const cleanPath = targetPath.replace(/\\/g, '/');
@@ -248,13 +251,20 @@ export default function App() {
       const r = parseRoute();
       setPortal(r.portal);
       if (r.portal === 'admin') {
-        setIsAdminAuthModalOpen(true);
+        // Back/forward between admin sections must not reopen the login gate
+        // when the current tab still has a valid admin session. The login
+        // modal clears session storage when it opens, so opening it on every
+        // popstate made ordinary mobile navigation look like a logout.
+        const hasAdminSession = getAuthenticatorIdentity()?.portal === 'admin';
+        setIsAdminAuthModalOpen(!hasAdminSession);
         setIsCashierAuthOpen(false);
         setRole('admin');
         setActiveTab(r.tab || 'dashboard');
       } else if (r.portal === 'cashier') {
+        const hasCashierSession = getAuthenticatorIdentity()?.portal === 'cashier';
         setCashierTargetPath(window.location.pathname);
-        setIsCashierAuthOpen(true);
+        setIsCashierAuthOpen(!hasCashierSession);
+        setIsAdminAuthModalOpen(false);
         setRole('cashier');
         setActiveTab(r.tab || 'pos');
       } else {
@@ -515,6 +525,28 @@ export default function App() {
     return () => window.removeEventListener('alzino-cloud-auth-expired', handleExpiredSession);
   }, [role]);
 
+  useEffect(() => {
+    const handleSyncStatus = event => {
+      const { key, status, message, at } = event.detail || {};
+      if (!key) return;
+      setCloudSyncStatus(current => {
+        const next = { ...current };
+        if (status === 'saved') delete next[key];
+        else if (['error', 'paused', 'conflict'].includes(status)) next[key] = { status, message, at };
+        return next;
+      });
+    };
+    const retryWhenConnected = () => retryPendingCloudWrites();
+    window.addEventListener('alzino-cloud-sync-status', handleSyncStatus);
+    window.addEventListener('online', retryWhenConnected);
+    window.addEventListener('alzino-cloud-auth-ready', retryWhenConnected);
+    return () => {
+      window.removeEventListener('alzino-cloud-sync-status', handleSyncStatus);
+      window.removeEventListener('online', retryWhenConnected);
+      window.removeEventListener('alzino-cloud-auth-ready', retryWhenConnected);
+    };
+  }, []);
+
   // Apply theme class to <body>
   useEffect(() => {
     document.body.className = theme === 'cream' ? 'theme-cream' : 'theme-dark';
@@ -533,22 +565,22 @@ export default function App() {
       } else if (e.key === 'F1') {
         if (role === 'admin') {
           e.preventDefault();
-          setActiveTab('dashboard');
+          handleSelectTab('dashboard');
         }
       } else if (e.key === 'F2') {
         e.preventDefault();
-        setActiveTab('pos');
+        handleSelectTab('pos');
       } else if (e.key === 'F3') {
         e.preventDefault();
-        setActiveTab('inventory');
+        handleSelectTab('inventory');
       } else if (e.key === 'F4') {
         if (role === 'admin') {
           e.preventDefault();
-          setActiveTab('used-phones');
+          handleSelectTab('used-phones');
         }
       } else if (e.key === 'F5') {
         e.preventDefault();
-        setActiveTab('repairs');
+        handleSelectTab('repairs');
       } else if (e.key === 'F12') {
         e.preventDefault();
         if (role === 'admin') {
@@ -566,7 +598,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [role]);
+  }, [role, handleSelectTab]);
 
   // Theme Toggle
   const toggleTheme = () => {
@@ -661,12 +693,37 @@ export default function App() {
             onNavigatePortal={handleNavigatePortal}
           />
 
+          {Object.keys(cloudSyncStatus).length > 0 && (
+            <section
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
+                flexWrap: 'wrap', padding: '0.65rem 1rem', margin: '0.65rem 1.25rem 0',
+                border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+                background: Object.values(cloudSyncStatus).some(item => item.status === 'conflict') ? 'rgba(211, 63, 60, 0.1)' : 'rgba(234, 179, 8, 0.12)',
+                color: 'var(--text-primary)', fontSize: '0.9rem'
+              }}
+            >
+              <span>
+                <strong>{Object.values(cloudSyncStatus).some(item => item.status === 'conflict') ? 'Sync needs a choice.' : 'Cloud sync is pending.'}</strong>{' '}
+                {Object.values(cloudSyncStatus).map(item => item.message).filter(Boolean).slice(-1)[0] || 'Your latest changes are saved on this device.'}
+              </span>
+              {!Object.values(cloudSyncStatus).some(item => item.status === 'conflict') && (
+                <button type="button" className="btn-secondary" onClick={retryPendingCloudWrites}>
+                  Sync now
+                </button>
+              )}
+            </section>
+          )}
+
           {/* Main Tab Content */}
           <main style={{ flex: 1, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
         {activeTab === 'dashboard' && role === 'admin' && (
           <ExecutiveDashboard
             invoices={invoices}
             inventory={inventory}
+            suppliers={suppliers}
             setInventory={setInventory}
             customers={customers}
             usedPurchases={usedPurchases}
@@ -737,6 +794,8 @@ export default function App() {
           <InventoryManager
             inventory={inventory}
             setInventory={setInventory}
+            suppliers={suppliers}
+            setSuppliers={setSuppliers}
             role={role}
             shopConfig={shopConfig}
             onSelectBarcode={handleSelectBarcodeFromInventory}
@@ -755,6 +814,7 @@ export default function App() {
             customers={customers}
             setCustomers={setCustomers}
             shopConfig={shopConfig}
+            role={role}
             onPrintInvoice={handlePrintInvoice}
             onNavigateTab={handleSelectTab}
           />
@@ -807,6 +867,7 @@ export default function App() {
             setSuppliers={setSuppliers}
             inventory={inventory}
             setInventory={setInventory}
+            invoices={invoices}
             role={role}
           />
         )}

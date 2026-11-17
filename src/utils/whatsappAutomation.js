@@ -103,31 +103,40 @@ export function generateWhatsAppRepairText(job, shopConfig = {}, statusType = 'r
     const totalText = job.billedAt ? `₹${Number(job.billedAt).toLocaleString('en-IN')}` : (job.costInformedAfterChecking ? 'Informed after checking' : `₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}`);
     const balanceText = job.balanceDue !== undefined ? `₹${Number(job.balanceDue || 0).toLocaleString('en-IN')}` : (job.costInformedAfterChecking ? 'Informed after checking' : `₹${Number((job.estimatedCost || 0) - (job.advancePaid || 0)).toLocaleString('en-IN')}`);
 
-    return `✅ *DEVICE READY FOR PICKUP • ${shopName.toUpperCase()} REPAIR LAB*\n\n` +
-      `Hello ${job.customerName},\n` +
-      `Your device *${job.deviceModel}* is fully repaired and tested!\n\n` +
-      `🔧 *Job Token:* ${job.jobId}\n` +
-      `💵 *Total Amount:* ${totalText}\n` +
-      `💳 *Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n` +
-      `👉 *Balance to Pay:* ${balanceText}\n\n` +
-      `📍 Please collect your device from ${shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}.\n` +
-      `📞 Questions? Call us at ${shopPhone}.`;
+    return `*${shopName.toUpperCase()} | REPAIR COMPLETION NOTICE*\n` +
+      `Repair Service Receipt\n` +
+      `${shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}\n` +
+      `Phone: ${shopPhone}\n` +
+      `--------------------------------\n` +
+      `*Job Token:* ${job.jobId}\n` +
+      `*Customer:* ${job.customerName || 'Customer'}\n` +
+      `*Device:* ${job.deviceModel || 'Device'}\n` +
+      `*Status:* Ready for collection\n` +
+      `*Total Amount:* ${totalText}\n` +
+      `*Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n` +
+      `*Balance Due:* ${balanceText}\n` +
+      `--------------------------------\n` +
+      `Please collect your device from our service counter. Contact us if you have any questions.`;
   }
 
   const estCostText = job.costInformedAfterChecking 
     ? 'Informed after checking' 
     : `₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}`;
 
-  return `🔬 *DEVICE RECEIVED FOR SERVICE • ${shopName.toUpperCase()} REPAIR LAB*\n\n` +
-    `Hello ${job.customerName},\n` +
-    `We have received your device *${job.deviceModel}* at our precision restoration lab.\n\n` +
-    `📋 *Job Token:* ${job.jobId}\n` +
-    `📅 *Date:* ${job.date}\n` +
-    `⚠️ *Reported Issues:* ${(job.issues || []).join(', ')}\n` +
-    `💰 *Estimated Cost:* ${estCostText}\n` +
-    `💳 *Advance Paid:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n\n` +
-    `We use 100% genuine spares. We will notify you via WhatsApp as soon as your device is ready!\n` +
-    `📞 Support: ${shopPhone}`;
+  return `*${shopName.toUpperCase()} | REPAIR SERVICE RECEIPT*\n` +
+    `Device Intake / Job Token\n` +
+    `${shopConfig.address || 'Old Bus Stand, Bodhan, Nizamabad, Telangana – 503185'}\n` +
+    `Phone: ${shopPhone}\n` +
+    `--------------------------------\n` +
+    `*Job Token:* ${job.jobId}\n` +
+    `*Date Received:* ${job.date || '—'}\n` +
+    `*Customer:* ${job.customerName || 'Customer'}\n` +
+    `*Device:* ${job.deviceModel || 'Device'}\n` +
+    `*Reported Issue:* ${(job.issues || []).join(', ') || 'To be inspected'}\n` +
+    `*Estimated Cost:* ${estCostText}\n` +
+    `*Advance Received:* ₹${Number(job.advancePaid || 0).toLocaleString('en-IN')}\n` +
+    `--------------------------------\n` +
+    `Keep this job token for service updates and device collection. We will contact you when the device is ready.`;
 }
 
 export function openWhatsAppRepairUpdate(job, shopConfig = {}, statusType = 'received') {

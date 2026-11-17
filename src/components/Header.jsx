@@ -45,6 +45,7 @@ export default function Header({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [customerPortalOpen, setCustomerPortalOpen] = useState(['customers', 'suppliers', 'khata'].includes(activeTab));
+  const [portalNavigationOpen, setPortalNavigationOpen] = useState(false);
   const [copiedPortalPath, setCopiedPortalPath] = useState('');
   const [copyPortalError, setCopyPortalError] = useState(false);
 
@@ -549,9 +550,11 @@ export default function Header({
               flexDirection: 'column',
               gap: '0.35rem'
             }}>
-              <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(241, 239, 229, 0.6)', textTransform: 'uppercase' }}>
-                Portals & URL Navigation
-              </div>
+              <button type="button" onClick={() => setPortalNavigationOpen(open => !open)} aria-expanded={portalNavigationOpen} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0.15rem 0', border: 0, background: 'transparent', color: 'rgba(241, 239, 229, 0.72)', cursor: 'pointer', textAlign: 'left' }}>
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase' }}>Portals & URL Navigation</span>
+                <ChevronRight size={14} aria-hidden="true" style={{ transform: portalNavigationOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 160ms ease' }} />
+              </button>
+              {portalNavigationOpen && <>
               {[
                 { path: '/', icon: '🌐', label: 'Customer Storefront (alzino.shop)', color: '#34D399' },
                 { path: '/cashier', icon: '💳', label: 'Cashier Counter (/cashier)', color: '#FEF08A' },
@@ -607,6 +610,7 @@ export default function Header({
               <span role="status" aria-live="polite" style={{ minHeight: '0.9rem', fontSize: '0.65rem', color: copyPortalError ? '#FCA5A5' : '#34D399' }}>
                 {copiedPortalPath ? (copyPortalError ? 'Could not copy link' : 'URL copied to clipboard') : ''}
               </span>
+              </>}
             </div>
 
             {/* Menu Footer with Role Switcher Dropdown */}

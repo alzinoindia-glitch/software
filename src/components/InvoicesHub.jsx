@@ -22,7 +22,8 @@ import {
   ChevronDown,
   Eye,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  RotateCcw
 } from 'lucide-react';
 
 const isMobileStockCategory = category => {
@@ -35,12 +36,13 @@ export default function InvoicesHub({
   setInvoices = () => {}, 
   customers = [],
   setCustomers = () => {},
+  role = 'cashier',
   shopConfig = {}, 
   onPrintInvoice = () => {},
   onNavigateTab = () => {}
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'pos' | 'refurb' | 'repair' | 'gst' | 'non-gst'
+  const [typeFilter, setTypeFilter] = useState('all'); // invoice register filters
   const [dateFilter, setDateFilter] = useState('all'); // 'all' | 'today' | 'month'
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -114,6 +116,7 @@ export default function InvoicesHub({
       if (typeFilter === 'pos' && (inv.isRefurbishedResale || inv.isRepairInvoice)) return false;
       if (typeFilter === 'gst' && inv.isNonGst) return false;
       if (typeFilter === 'non-gst' && !inv.isNonGst) return false;
+      if (typeFilter === 'returns' && !(inv.returnTransactions || []).some(entry => entry.status !== 'voided')) return false;
 
       // Search term
       const q = searchTerm.toLowerCase().trim();
@@ -131,7 +134,8 @@ export default function InvoicesHub({
         inv.splitDetails ? `split cash ${inv.splitDetails.cashAmount || ''} upi ${inv.splitDetails.upiAmount || ''} ${inv.splitDetails.upiTxnRef || ''}` : '',
         inv.notes || '',
         inv.warrantyNotes || '',
-        ...(inv.items || []).map(it => `${it.name} ${it.imeis ? it.imeis.join(' ') : ''} ${it.warranty || ''}`)
+        ...(inv.items || []).map(it => `${it.name} ${it.imeis ? it.imeis.join(' ') : ''} ${it.warranty || ''}`),
+        ...(inv.returnTransactions || []).filter(entry => entry.status !== 'voided').map(entry => `${entry.type} return replacement ${entry.originalProductName || ''} ${entry.replacements?.map(line => line.productName).join(' ') || entry.replacement?.productName || ''}`)
       ].join(' ').toLowerCase();
 
       return words.every(w => haystack.includes(w));
@@ -148,6 +152,7 @@ export default function InvoicesHub({
   const posCount = invoices.filter(i => !i.isRefurbishedResale && !i.isRepairInvoice).length;
   const refurbCount = invoices.filter(i => i.isRefurbishedResale || (i.items && i.items.some(it => it.category === 'Used Mobiles'))).length;
   const repairCount = invoices.filter(i => i.isRepairInvoice || i.repairJobRef || (i.items && i.items.some(it => it.category === 'Repair Services'))).length;
+  const returnsCount = invoices.filter(invoice => (invoice.returnTransactions || []).some(entry => entry.status !== 'voided')).length;
 
   // Open Edit Modal
   const handleOpenEdit = (inv) => {
@@ -162,21 +167,22 @@ export default function InvoicesHub({
     const isNonGstInv = invoiceToEdit.isNonGst;
     const subtotal = invoiceToEdit.items.reduce((s, it) => s + (Number(it.rate) * Number(it.qty)), 0);
     const disc = Number(invoiceToEdit.discount) || 0;
-    const grand = Math.max(0, Math.round(subtotal - disc));
-    
-    const taxable = isNonGstInv ? subtotal : invoiceToEdit.items.reduce((sum, item) => {
-      const itTot = Number(item.rate) * Number(item.qty);
-      const rate = item.gstRate || 18;
-      return sum + (itTot / (1 + (rate / 100)));
+    const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
+    const taxBeforeDiscount = isNonGstInv ? 0 : invoiceToEdit.items.reduce((sum, item) => {
+      const lineAmount = Number(item.rate) * Number(item.qty);
+      const rate = Number(item.gstRate ?? 18);
+      return sum + (usesExclusivePrices ? lineAmount * rate / 100 : lineAmount - lineAmount / (1 + rate / 100));
     }, 0);
-
-    const gst = isNonGstInv ? 0 : (subtotal - taxable);
+    const taxable = isNonGstInv ? subtotal : usesExclusivePrices ? subtotal : subtotal - taxBeforeDiscount;
+    const grand = Math.max(0, Math.round(subtotal + (usesExclusivePrices ? taxBeforeDiscount : 0) - disc));
+    const gst = taxBeforeDiscount;
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
-    const previousDue = getInvoiceBalance(invoiceToEdit);
-    const existingPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
-    const paid = Math.min(grand, existingPaid);
+    const originalInvoice = invoices.find(invoice => invoice.invoiceNo === invoiceToEdit.invoiceNo) || invoiceToEdit;
+    const previousDue = getInvoiceBalance(originalInvoice);
+    const existingPaid = Number(invoiceToEdit.paidAmount ?? (originalInvoice.paymentMode === 'Khata' ? 0 : originalInvoice.grandTotal)) || 0;
+    const paid = Math.min(grand, Math.max(0, existingPaid));
     const khata = invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
       ? 0
       : Math.max(0, grand - paid);
@@ -185,7 +191,15 @@ export default function InvoicesHub({
       ...invoiceToEdit,
       items: invoiceToEdit.items.map(it => ({
         ...it,
-        total: Number(it.rate) * Number(it.qty),
+        total: Number(it.rate) * Number(it.qty) + (usesExclusivePrices && !isNonGstInv
+          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
+          : 0),
+        taxable: isNonGstInv || usesExclusivePrices
+          ? Number(it.rate) * Number(it.qty)
+          : (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100),
+        gstAmount: isNonGstInv ? 0 : (usesExclusivePrices
+          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
+          : Number(it.rate) * Number(it.qty) - (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100)),
         profit: (Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)
       })),
       taxableAmount: taxable,
@@ -211,6 +225,7 @@ export default function InvoicesHub({
           return {
             ...c,
             balanceDue: updatedCustomerDue,
+            totalSpent: Math.max(0, Number(c.totalSpent || 0) + grand - (Number(originalInvoice.grandTotal) || 0)),
             name: updatedInvoice.customerName || c.name,
             address: updatedInvoice.customerAddress || c.address,
             gstin: updatedInvoice.customerGstin || c.gstin
@@ -602,6 +617,7 @@ export default function InvoicesHub({
             { id: 'pos', label: 'POS Product Sales' },
             { id: 'refurb', label: 'Refurbished Mobiles' },
             { id: 'repair', label: 'Repair Services' },
+            { id: 'returns', label: `Returns / Replacements (${returnsCount})` },
             { id: 'gst', label: 'GST Tax Invoices' },
             { id: 'non-gst', label: 'Cash Memos / Non-GST' },
           ].map(tab => {
@@ -693,6 +709,7 @@ export default function InvoicesHub({
                 {filteredInvoices.map((inv) => {
                   const isRefurb = inv.isRefurbishedResale || (inv.items && inv.items.some(it => it.category === 'Used Mobiles'));
                   const isRepair = inv.isRepairInvoice || inv.repairJobRef || (inv.items && inv.items.some(it => it.category === 'Repair Services'));
+                  const returnTransactions = (inv.returnTransactions || []).filter(entry => entry.status !== 'voided');
 
                   return (
                     <tr key={inv.invoiceNo} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -725,6 +742,7 @@ export default function InvoicesHub({
                             {inv.isNonGst ? 'Non-GST' : 'GST 18%'}
                           </span>
                         </div>
+                        {returnTransactions.length > 0 && <button type="button" onClick={() => setTypeFilter('returns')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '0.1rem 0.35rem', border: '1px solid var(--status-amber)', borderRadius: 4, background: 'var(--status-amber-bg)', color: 'var(--status-amber)', fontSize: '0.64rem', fontWeight: 800, cursor: 'pointer' }} title="Show invoices with returns or replacements"><RotateCcw size={10} /> {returnTransactions.length} Return / Replacement</button>}
                       </td>
 
                       {/* Date */}
@@ -776,6 +794,11 @@ export default function InvoicesHub({
                             Note: {inv.notes}
                           </div>
                         )}
+                        {returnTransactions.map(entry => <div key={entry.id} style={{ marginTop: '0.3rem', padding: '0.3rem 0.4rem', borderRadius: 4, background: 'var(--status-amber-bg)', color: 'var(--status-amber)', fontSize: '0.68rem', fontWeight: 700 }}>
+                          {entry.type === 'refund' ? 'Refund' : 'Replacement'} · {entry.originalProductName || 'Returned item'} × {entry.quantity}
+                          {entry.type === 'replacement' && (entry.replacements?.length || entry.replacement?.productName) ? ` → ${(entry.replacements || [entry.replacement]).map(line => line?.productName).filter(Boolean).join(', ')}` : ''}
+                          {entry.status === 'completed' ? ' · Completed' : ''}
+                        </div>)}
                       </td>
 
                       {/* Grand Total */}
@@ -894,14 +917,14 @@ export default function InvoicesHub({
                           </button>
 
                           {/* EDIT DATA BUTTON */}
-                          <button
+                          {role === 'admin' && <button
                             onClick={() => handleOpenEdit(inv)}
                             className="btn-secondary"
                             style={{ padding: '0.28rem 0.45rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center' }}
-                            title="Edit customer name, phone, item price, or warranty"
+                            title="Admin: correct invoice details, payment received, or customer balance"
                           >
                             <Edit2 size={12} color="var(--accent-primary)" />
-                          </button>
+                          </button>}
 
                           {/* WHATSAPP CONFIRMATION */}
                           {inv.customerPhone && (
@@ -1144,6 +1167,21 @@ export default function InvoicesHub({
                   <option value="Card">Card</option>
                   <option value="Khata">Khata (Credit)</option>
                 </select>
+
+                <label style={{ fontSize: '0.74rem', fontWeight: 600, display: 'block', marginTop: '0.4rem', marginBottom: '0.25rem' }}>
+                  Amount Received (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={Math.max(0, Number(invoiceToEdit.grandTotal) || 0)}
+                  value={invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal || 0)}
+                  onChange={event => setInvoiceToEdit({ ...invoiceToEdit, paidAmount: Math.max(0, Number(event.target.value) || 0) })}
+                  className="input-field"
+                />
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  Outstanding customer khata: ₹{Math.max(0, (Number(invoiceToEdit.grandTotal) || 0) - (Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0)).toLocaleString('en-IN')}
+                </div>
 
                 <label style={{ fontSize: '0.74rem', fontWeight: 600, display: 'block', marginTop: '0.4rem', marginBottom: '0.25rem' }}>
                   Discount (₹)

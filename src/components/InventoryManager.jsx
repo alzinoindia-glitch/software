@@ -7,6 +7,8 @@ import {
   Trash2, 
   Barcode, 
   Smartphone,
+  Truck,
+  FileCheck,
   Copy,
   Check,
   MapPin,
@@ -18,9 +20,6 @@ import {
   X,
   Zap,
   ArrowUpRight,
-  Headphones,
-  Tv,
-  Wrench,
   Printer,
   Sparkles,
   Camera,
@@ -64,6 +63,8 @@ import {
   saveCustomSubcategory
 } from '../utils/customTaxonomy';
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
+import { getSupplierBillDocument } from '../utils/supplierBillStore';
+import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -122,6 +123,8 @@ const readStoredImeiFields = item => {
 export default function InventoryManager({ 
   inventory, 
   setInventory, 
+  suppliers = [],
+  setSuppliers,
   role, 
   onSelectBarcode,
   onPrintBarcodeSheet,
@@ -137,9 +140,11 @@ export default function InventoryManager({
   // Fast Filters
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [subcategoryFilter, setSubcategoryFilter] = useState('All');
   const [brandFilter, setBrandFilter] = useState('All');
   const [stockFilter, setStockFilter] = useState('all'); // 'all' | 'in-stock' | 'low' | 'out'
   const [sortBy, setSortBy] = useState('default');
+  const [inventoryDisplayLimit, setInventoryDisplayLimit] = useState(60);
 
   // Synchronize when opened from Low Stock Alert Board or external trigger
   useEffect(() => {
@@ -158,6 +163,9 @@ export default function InventoryManager({
   const [showModal, setShowModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [activeImeiViewerItem, setActiveImeiViewerItem] = useState(null);
+  const [supplierHistoryItem, setSupplierHistoryItem] = useState(null);
+  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [newSupplierDetails, setNewSupplierDetails] = useState({ name: '', contactPerson: '', phone: '', city: '', gstin: '' });
   const [editingItem, setEditingItem] = useState(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [isCustomBrand, setIsCustomBrand] = useState(false);
@@ -200,6 +208,7 @@ export default function InventoryManager({
     hsn: '851712',
     gstRate: 18,
     buyPrice: '',
+    buyPriceIncludesGst: true,
     sellPrice: '',
     mrp: '',
     stock: 1,
@@ -215,17 +224,8 @@ export default function InventoryManager({
     termsAndConditions: [],
     receivedDate: new Date().toISOString().split('T')[0],
     isPublished: true,
+    supplierId: '',
   });
-
-  const categoryIcons = {
-    'All': null,
-    'New Mobiles': Smartphone,
-    'Used Mobiles': Smartphone,
-    'Mobile Accessories': Headphones,
-    'Home Appliances': Tv,
-    'Spare Parts': Wrench,
-    'Universal': Package
-  };
 
   const [taxonomyVer, setTaxonomyVer] = useState(0);
 
@@ -250,8 +250,58 @@ export default function InventoryManager({
   }, [availableCategories, editingItem]);
 
   const categories = useMemo(() => {
-    return ['All', ...availableCategories];
-  }, [availableCategories]);
+    const hasProducts = category => inventory.some(item => {
+      const isUsedItem = isUsedMobileProduct(item);
+      const normalized = normalizeProductCategory(category);
+      return (normalized === 'Used Mobiles' && isUsedItem) ||
+        (productCategoriesMatch(item.category, category) && !(normalized === 'New Mobiles' && isUsedItem));
+    });
+    return ['All', ...availableCategories.filter(hasProducts)];
+  }, [availableCategories, inventory]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = new Map([['All', inventory.length]]);
+    availableCategories.forEach(category => {
+      const normalized = normalizeProductCategory(category);
+      counts.set(category, inventory.filter(item => {
+        const isUsedItem = isUsedMobileProduct(item);
+        return (normalized === 'Used Mobiles' && isUsedItem) ||
+          (productCategoriesMatch(item.category, category) && !(normalized === 'New Mobiles' && isUsedItem));
+      }).length);
+    });
+    return counts;
+  }, [availableCategories, inventory]);
+
+  const activeSubcategories = useMemo(() => {
+    if (categoryFilter === 'All') return [];
+    return [...new Set(inventory.filter(item => {
+      const isUsedItem = isUsedMobileProduct(item);
+      return categoryFilter === 'Used Mobiles' ? isUsedItem : productCategoriesMatch(item.category, categoryFilter) && !(categoryFilter === 'New Mobiles' && isUsedItem);
+    }).map(item => String(item.subCategory || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, [inventory, categoryFilter]);
+
+  const activeSubcategoryCounts = useMemo(() => {
+    const counts = new Map();
+    if (categoryFilter === 'All') return counts;
+    inventory.forEach(item => {
+      const isUsedItem = isUsedMobileProduct(item);
+      const isInCategory = categoryFilter === 'Used Mobiles'
+        ? isUsedItem
+        : productCategoriesMatch(item.category, categoryFilter) && !(categoryFilter === 'New Mobiles' && isUsedItem);
+      const subcategory = String(item.subCategory || '').trim();
+      if (isInCategory && subcategory) counts.set(subcategory, (counts.get(subcategory) || 0) + 1);
+    });
+    return counts;
+  }, [inventory, categoryFilter]);
+
+  useEffect(() => {
+    if (!categories.includes(categoryFilter)) {
+      setCategoryFilter('All');
+      setSubcategoryFilter('All');
+    } else if (subcategoryFilter !== 'All' && !activeSubcategories.includes(subcategoryFilter)) {
+      setSubcategoryFilter('All');
+    }
+  }, [categories, categoryFilter, subcategoryFilter, activeSubcategories]);
 
   // Product Auto-Suggestions for rapid data entry
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
@@ -374,11 +424,57 @@ export default function InventoryManager({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const openSupplierBillDocument = async attachment => {
+    try {
+      const file = await getSupplierBillDocument(attachment?.id);
+      if (!file) return alert('This supplier bill file is not available in this browser.');
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      alert(`Could not open supplier bill: ${error.message || 'unknown error'}`);
+    }
+  };
+
   const handleSendToPos = (item) => {
     if (item.stock <= 0) return;
     if (onQuickBill) {
       onQuickBill(item);
     }
+  };
+
+  const handleAddSupplierFromProduct = event => {
+    event.preventDefault();
+    if (role !== 'admin') return alert('Only an admin can add supplier records.');
+    if (!setSuppliers) return alert('Supplier records cannot be saved from this screen.');
+    const details = newSupplierDetails;
+    const phoneDigits = String(details.phone || '').replace(/\D/g, '').slice(-10);
+    if (!details.name.trim() || phoneDigits.length !== 10) {
+      alert('Enter the supplier name and a valid 10-digit phone number.');
+      return;
+    }
+    const existing = suppliers.find(supplier => String(supplier.phone || '').replace(/\D/g, '').slice(-10) === phoneDigits);
+    if (existing) {
+      setFormData(previous => ({ ...previous, supplierId: existing.id }));
+      setShowAddSupplierModal(false);
+      setNewSupplierDetails({ name: '', contactPerson: '', phone: '', city: '', gstin: '' });
+      alert(`${existing.name} already exists and has been selected for this product.`);
+      return;
+    }
+    const supplier = {
+      id: `SUPP-${Date.now()}`,
+      name: details.name.trim(),
+      contactPerson: details.contactPerson.trim(),
+      phone: details.phone.trim(),
+      city: details.city.trim(),
+      gstin: details.gstin.trim(),
+      balancePayable: 0,
+      purchaseBills: []
+    };
+    setSuppliers(previous => [supplier, ...previous]);
+    setFormData(previous => ({ ...previous, supplierId: supplier.id }));
+    setShowAddSupplierModal(false);
+    setNewSupplierDetails({ name: '', contactPerson: '', phone: '', city: '', gstin: '' });
   };
 
   // Live Counts
@@ -401,13 +497,15 @@ export default function InventoryManager({
 
   // Fast Filter
   const filteredProducts = useMemo(() => {
+    const normalizedFilter = normalizeProductCategory(categoryFilter);
+    const words = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
     return inventory.filter(item => {
       const isUsedItem = isUsedMobileProduct(item);
-      const normalizedFilter = normalizeProductCategory(categoryFilter);
       const matchesCategory = categoryFilter === 'All' ||
         (normalizedFilter === 'Used Mobiles' && isUsedItem) ||
         (productCategoriesMatch(item.category, categoryFilter) &&
           !(normalizedFilter === 'New Mobiles' && isUsedItem));
+      const matchesSubcategory = subcategoryFilter === 'All' || String(item.subCategory || '').trim() === subcategoryFilter;
       const matchesBrand = brandFilter === 'All' || item.brand === brandFilter;
 
       const stock = Number(item.stock) || 0;
@@ -422,10 +520,8 @@ export default function InventoryManager({
         (stockFilter === 'low' && isLow) ||
         (stockFilter === 'out' && isOut);
 
-      const q = searchTerm.toLowerCase().trim();
-      if (!q) return matchesCategory && matchesBrand && matchesStock;
+      if (!words.length) return matchesCategory && matchesSubcategory && matchesBrand && matchesStock;
 
-      const words = q.split(/\s+/).filter(Boolean);
       const unitCodes = (item.units || []).flatMap(u => [u.barcode, u.imei1, u.imei2, u.color]).filter(Boolean);
       const allBarcodes = (item.barcodes || []).filter(Boolean);
       const haystack = [
@@ -447,7 +543,7 @@ export default function InventoryManager({
         ...allBarcodes
       ].join(' ').toLowerCase();
 
-      return matchesCategory && matchesBrand && matchesStock && words.every(word => haystack.includes(word));
+      return matchesCategory && matchesSubcategory && matchesBrand && matchesStock && words.every(word => haystack.includes(word));
     }).sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'stock-asc') return a.stock - b.stock;
@@ -457,7 +553,13 @@ export default function InventoryManager({
       if (sortBy === 'margin') return (b.sellPrice - b.buyPrice) - (a.sellPrice - a.buyPrice);
       return 0;
     });
-  }, [inventory, categoryFilter, brandFilter, stockFilter, searchTerm, sortBy]);
+  }, [inventory, categoryFilter, subcategoryFilter, brandFilter, stockFilter, searchTerm, sortBy]);
+
+  const displayedProducts = useMemo(() => filteredProducts.slice(0, inventoryDisplayLimit), [filteredProducts, inventoryDisplayLimit]);
+
+  useEffect(() => {
+    setInventoryDisplayLimit(60);
+  }, [categoryFilter, subcategoryFilter, brandFilter, stockFilter, searchTerm, sortBy, viewMode]);
 
   const openAddModal = () => {
     setEditingItem(null);
@@ -485,6 +587,7 @@ export default function InventoryManager({
       hsn: '851712',
       gstRate: 18,
       buyPrice: '',
+      buyPriceIncludesGst: true,
       sellPrice: '',
       mrp: '',
       stock: 1,
@@ -500,6 +603,7 @@ export default function InventoryManager({
       termsAndConditions: [],
       receivedDate: new Date().toISOString().split('T')[0],
       isPublished: true,
+      supplierId: '',
     });
     setCustomTermInput('');
     setFormImages({ front: null, back: null });
@@ -537,7 +641,8 @@ export default function InventoryManager({
       isGst: isItemGst,
       hsn: item.hsn || '851712',
       gstRate: item.gstRate !== undefined ? item.gstRate : 18,
-      buyPrice: item.buyPrice,
+      buyPrice: item.buyCostEntered !== undefined ? String(item.buyCostEntered) : item.buyPrice,
+      buyPriceIncludesGst: item.buyPriceIncludesGst !== false,
       sellPrice: item.sellPrice,
       mrp: item.mrp ? String(item.mrp) : '',
       stock: item.stock,
@@ -557,6 +662,7 @@ export default function InventoryManager({
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
       receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
       isPublished: item.isPublished !== false,
+      supplierId: item.supplierId || '',
     });
     setCustomTermInput('');
     setFormImages({ front: item.frontImage || item.image || null, back: item.backImage || null });
@@ -743,6 +849,13 @@ export default function InventoryManager({
         : [...new Set(enteredImeis)])
       : [];
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
+    const enteredBuyPrice = Math.max(0, parseFloat(formData.buyPrice) || 0);
+    const buyPriceIncludesGst = Boolean(formData.buyPriceIncludesGst);
+    const buyCostBreakdown = getPurchaseCostBreakdown(enteredBuyPrice, finalGstRate, buyPriceIncludesGst);
+    const buyCostBase = buyCostBreakdown.taxable;
+    const buyCostGst = buyCostBreakdown.gst;
+    const finalBuyPrice = buyCostBreakdown.gross;
+    const assignedSupplier = suppliers.find(supplier => supplier.id === formData.supplierId);
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
 
@@ -801,6 +914,8 @@ export default function InventoryManager({
             subCategory: formData.subCategory.trim(),
             capacity: formData.capacity,
             brand: formData.brand,
+            supplierId: assignedSupplier?.id || '',
+            supplierName: assignedSupplier?.name || '',
             name: formData.name,
             model: formData.model || item.model,
             ram: formData.ram,
@@ -810,7 +925,11 @@ export default function InventoryManager({
             isGst: formData.isGst,
             hsn: formData.hsn,
             gstRate: finalGstRate,
-            buyPrice: parseFloat(formData.buyPrice) || 0,
+            buyPrice: finalBuyPrice,
+            buyCostEntered: enteredBuyPrice,
+            buyCostBase,
+            buyCostGst,
+            buyPriceIncludesGst,
             sellPrice: parseFloat(formData.sellPrice) || 0,
             mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
             stock: calculatedStock,
@@ -844,6 +963,8 @@ export default function InventoryManager({
         subCategory: formData.subCategory.trim(),
         capacity: formData.capacity,
         brand: formData.brand,
+        supplierId: assignedSupplier?.id || '',
+        supplierName: assignedSupplier?.name || '',
         name: formData.name,
         model: formData.model,
         ram: formData.ram,
@@ -853,7 +974,11 @@ export default function InventoryManager({
         isGst: formData.isGst,
         hsn: formData.hsn,
         gstRate: finalGstRate,
-        buyPrice: parseFloat(formData.buyPrice) || 0,
+        buyPrice: finalBuyPrice,
+        buyCostEntered: enteredBuyPrice,
+        buyCostBase,
+        buyCostGst,
+        buyPriceIncludesGst,
         sellPrice: parseFloat(formData.sellPrice) || 0,
         mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
         stock: calculatedStock,
@@ -1163,23 +1288,15 @@ export default function InventoryManager({
           </button>
         </div>
 
-        {/* Categories Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', overflowX: 'auto', paddingBottom: '2px' }}>
-          {categories.map(cat => {
-            const isActive = categoryFilter === cat;
-            const Icon = categoryIcons[cat];
-            return (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(cat)}
-                className={`hud-pill ${isActive ? 'active' : ''}`}
-                style={{ fontSize: '0.72rem', padding: '0.22rem 0.55rem' }}
-              >
-                {Icon && <Icon size={12} />}
-                <span>{cat.replace('Mobile Accessories', 'Accessories').replace('Home Appliances', 'Appliances')}</span>
-              </button>
-            );
-          })}
+        {/* Product categories and populated subcategories */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', paddingBottom: '2px' }}>
+          <select aria-label="Filter by category" value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setSubcategoryFilter('All'); setBrandFilter('All'); }} className="hud-pill" style={{ height: 30, minWidth: 170, padding: '0 0.55rem', fontSize: '0.75rem' }}>
+          {categories.map(category => <option key={category} value={category}>{category === 'All' ? `All Categories (${categoryCounts.get('All') || 0})` : `${category.replace('Mobile Accessories', 'Accessories').replace('Home Appliances', 'Appliances')} (${categoryCounts.get(category) || 0})`}</option>)}
+          </select>
+          {activeSubcategories.length > 0 && <select aria-label="Filter by subcategory" value={subcategoryFilter} onChange={event => setSubcategoryFilter(event.target.value)} className="hud-pill" style={{ height: 30, minWidth: 160, padding: '0 0.55rem', fontSize: '0.75rem' }}>
+            <option value="All">All {categoryFilter} subcategories</option>
+            {activeSubcategories.map(subcategory => <option key={subcategory} value={subcategory}>{subcategory} ({activeSubcategoryCounts.get(subcategory) || 0})</option>)}
+          </select>}
 
           {availableBrands.length > 0 && (
             <select
@@ -1210,6 +1327,10 @@ export default function InventoryManager({
           </select>
         </div>
       </div>
+
+      {viewMode !== 'models' && <div role="status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+        <span>Showing {Math.min(displayedProducts.length, filteredProducts.length)} of {filteredProducts.length} matching products. Search checks all stock.</span>
+      </div>}
 
       {/* MAIN VIEWPORT */}
       {viewMode === 'models' ? (
@@ -1283,7 +1404,7 @@ export default function InventoryManager({
           gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
           gap: '0.85rem'
         }}>
-          {filteredProducts.map(item => {
+          {displayedProducts.map(item => {
             const stock = Number(item.stock) || 0;
             const threshold = Number(item.lowStockThreshold) || 2;
             const identifierCount = getTrackedIdentifierCount(item);
@@ -1294,6 +1415,13 @@ export default function InventoryManager({
             const hasValidMrp = mrp > 0 && mrp > sellingPrice;
             const savings = hasValidMrp ? mrp - sellingPrice : 0;
             const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
+            const latestSupplierPurchase = [...(item.supplierPurchases || [])]
+              .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+            const supplierPrice = Number(latestSupplierPurchase?.unitCost || item.buyCostEntered || item.buyPrice) || 0;
+            const supplierName = latestSupplierPurchase?.supplierName
+              || suppliers.find(supplier => supplier.id === latestSupplierPurchase?.supplierId)?.name
+              || item.supplierName
+              || suppliers.find(supplier => supplier.id === item.supplierId)?.name;
             const isCopied = copiedId === item.id;
             const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
 
@@ -1449,6 +1577,12 @@ export default function InventoryManager({
                   )}
                 </div>
 
+                {(item.supplierId || item.supplierPurchases?.length > 0) && (
+                  <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}>
+                    <Truck size={12} /> {item.supplierPurchases?.length ? `Supplier history (${item.supplierPurchases.length})` : 'Supplier details'}
+                  </button>
+                )}
+
                 {/* Location Badge + ID Pill */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
                   {/* Rack / Bin Badge */}
@@ -1538,6 +1672,13 @@ export default function InventoryManager({
                     </span>
                   )}
                 </div>
+
+                {role === 'admin' && supplierPrice > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    <span style={{ fontWeight: 700 }}>Supplier price</span>
+                    <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>₹{supplierPrice.toLocaleString()}{supplierName ? ` · ${supplierName}` : ''}</span>
+                  </div>
+                )}
 
                 {/* ACTION DOCK: Instant Tactile Interaction */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
@@ -1665,12 +1806,13 @@ export default function InventoryManager({
                 <th style={{ padding: '0.65rem 0.85rem' }}>STOCK</th>
                 <th style={{ padding: '0.65rem 0.85rem' }}>SHELF</th>
                 <th style={{ padding: '0.65rem 0.85rem' }}>PRICE</th>
+                {role === 'admin' && <th style={{ padding: '0.65rem 0.85rem' }}>SUPPLIER PRICE</th>}
                 <th style={{ padding: '0.65rem 0.85rem' }}>ID</th>
                 <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map(item => {
+              {displayedProducts.map(item => {
                 const stock = Number(item.stock) || 0;
                 const threshold = Number(item.lowStockThreshold) || 2;
                 const identifierCount = getTrackedIdentifierCount(item);
@@ -1678,6 +1820,13 @@ export default function InventoryManager({
                 const isOut = stock <= 0;
                 const isCopied = copiedId === item.id;
                 const codeToCopy = getFirstTrackedIdentifier(item) || item.barcode || item.id;
+                const latestSupplierPurchase = [...(item.supplierPurchases || [])]
+                  .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+                const supplierPrice = Number(latestSupplierPurchase?.unitCost || item.buyCostEntered || item.buyPrice) || 0;
+                const supplierName = latestSupplierPurchase?.supplierName
+                  || suppliers.find(supplier => supplier.id === latestSupplierPurchase?.supplierId)?.name
+                  || item.supplierName
+                  || suppliers.find(supplier => supplier.id === item.supplierId)?.name;
 
                 return (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -1768,6 +1917,17 @@ export default function InventoryManager({
                       </div>
                     </td>
 
+                    {role === 'admin' && (
+                      <td style={{ padding: '0.65rem 0.85rem', whiteSpace: 'nowrap' }}>
+                        {supplierPrice > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.12rem' }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>₹{supplierPrice.toLocaleString()}</span>
+                            {supplierName && <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>{supplierName}</span>}
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                    )}
+
                     <td style={{ padding: '0.65rem 0.85rem' }}>
                       <button
                         onClick={() => handleCopy(codeToCopy, item.id)}
@@ -1790,6 +1950,7 @@ export default function InventoryManager({
 
                     <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                        {(item.supplierId || item.supplierPurchases?.length > 0) && <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" title="Supplier details and history" style={{ padding: '0.28rem 0.45rem' }}><Truck size={13} /></button>}
                         <button
                           onClick={() => handleSendToPos(item)}
                           disabled={isOut}
@@ -1853,6 +2014,8 @@ export default function InventoryManager({
           </table>
         </div>
       )}
+
+      {viewMode !== 'models' && displayedProducts.length < filteredProducts.length && <div style={{ display: 'flex', justifyContent: 'center', padding: '0.75rem 0' }}><button type="button" className="btn-outline" onClick={() => setInventoryDisplayLimit(limit => limit + 60)} style={{ padding: '0.55rem 1.2rem' }}>Load next 60 products</button></div>}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteConfirmItem && (
@@ -2043,6 +2206,17 @@ export default function InventoryManager({
                     </>
                   );
                 })()}
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Supplier</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <select value={formData.supplierId || ''} onChange={event => setFormData(previous => ({ ...previous, supplierId: event.target.value }))} className="input-field" style={{ flex: 1 }}>
+                    <option value="">No supplier selected</option>
+                    {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.city ? ` · ${supplier.city}` : ''}</option>)}
+                  </select>
+                  {role === 'admin' && <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(true)} style={{ whiteSpace: 'nowrap', padding: '0.5rem 0.65rem', fontSize: '0.76rem' }}><Plus size={14} /> Add Supplier</button>}
+                </div>
               </div>
 
               {/* Phones and tablets use RAM and storage specifications. */}
@@ -2440,7 +2614,7 @@ export default function InventoryManager({
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>MRP ₹</label>
                 <input
                   type="number"
-                  placeholder="Box MRP"
+                  placeholder="Box MRP (GST included)"
                   value={formData.mrp}
                   onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
                   className="input-field"
@@ -2457,6 +2631,20 @@ export default function InventoryManager({
                   required
                   className="input-field"
                 />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', fontSize: '0.72rem', fontWeight: 650, cursor: formData.isGst ? 'pointer' : 'not-allowed', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.buyPriceIncludesGst)}
+                    disabled={!formData.isGst}
+                    onChange={event => setFormData({ ...formData, buyPriceIncludesGst: event.target.checked })}
+                  />
+                  Entered buy cost already includes GST
+                </label>
+                <div style={{ marginTop: '0.15rem', fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                  {formData.isGst
+                    ? (formData.buyPriceIncludesGst ? 'GST is included in the entered cost.' : `GST at ${Number(formData.gstRate) || 18}% will be added to the entered cost.`)
+                    : 'Non-GST item: no GST is added to the buy cost.'}
+                </div>
               </div>
 
               <div>
@@ -3049,6 +3237,28 @@ export default function InventoryManager({
         </div>
       )}
 
+      {showAddSupplierModal && showModal && role === 'admin' && (
+        <div className="drawer-overlay" onClick={() => setShowAddSupplierModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 1300 }}>
+          <form onSubmit={handleAddSupplierFromProduct} onClick={event => event.stopPropagation()} className="illoca-card animate-fade-in" style={{ maxWidth: '460px', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.65rem' }}>
+              <div><h3 style={{ margin: 0, fontSize: '1rem' }}>Add Supplier</h3><span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>This supplier will be selected for the product.</span></div>
+              <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)} aria-label="Close"><X size={15} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+              <label style={{ gridColumn: '1 / -1', fontSize: '0.72rem', fontWeight: 700 }}>Business name *<input required className="input-field" value={newSupplierDetails.name} onChange={event => setNewSupplierDetails(previous => ({ ...previous, name: event.target.value }))} placeholder="Supplier business name" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Contact person<input className="input-field" value={newSupplierDetails.contactPerson} onChange={event => setNewSupplierDetails(previous => ({ ...previous, contactPerson: event.target.value }))} placeholder="Optional" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>Phone number *<input required inputMode="tel" className="input-field" value={newSupplierDetails.phone} onChange={event => setNewSupplierDetails(previous => ({ ...previous, phone: event.target.value }))} placeholder="10 digits" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>City<input className="input-field" value={newSupplierDetails.city} onChange={event => setNewSupplierDetails(previous => ({ ...previous, city: event.target.value }))} placeholder="City / hub" /></label>
+              <label style={{ fontSize: '0.72rem', fontWeight: 700 }}>GSTIN<input className="input-field" value={newSupplierDetails.gstin} onChange={event => setNewSupplierDetails(previous => ({ ...previous, gstin: event.target.value }))} placeholder="Optional" /></label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+              <button type="button" className="btn-outline" onClick={() => setShowAddSupplierModal(false)}>Cancel</button>
+              <button type="submit" className="btn-primary"><Plus size={14} /> Add & Select Supplier</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* STOCK TRANSFER MODAL */}
       {showTransferModal && transferItem && (
         <div className="modal-backdrop no-print" style={{ zIndex: 1100 }}>
@@ -3417,6 +3627,41 @@ export default function InventoryManager({
       )}
 
       {/* Quick IMEI Inspector Modal */}
+      {supplierHistoryItem && (
+        <div className="drawer-overlay" onClick={() => setSupplierHistoryItem(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 10000 }}>
+          <div className="illoca-card animate-fade-in" onClick={event => event.stopPropagation()} style={{ width: 'min(680px, 100%)', maxHeight: '80vh', overflow: 'auto', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.7rem', marginBottom: '0.8rem' }}>
+              <div><h3 style={{ margin: 0, fontSize: '1rem' }}>Supplier history</h3><div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{supplierHistoryItem.name}</div></div>
+              <button type="button" className="btn-outline" onClick={() => setSupplierHistoryItem(null)} aria-label="Close supplier history"><X size={16} /></button>
+            </div>
+            <div style={{ display: 'grid', gap: '0.6rem' }}>
+              {supplierHistoryItem.supplierId && (() => {
+                const assignedSupplier = suppliers.find(entry => entry.id === supplierHistoryItem.supplierId);
+                return <div className="illoca-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.8rem', fontSize: '0.78rem' }}>
+                  <strong>{assignedSupplier?.name || supplierHistoryItem.supplierName || 'Assigned supplier'}</strong>
+                  <span>{assignedSupplier?.phone || '—'}{assignedSupplier?.city ? ` · ${assignedSupplier.city}` : ''}</span>
+                  {assignedSupplier?.contactPerson && <span>Contact: {assignedSupplier.contactPerson}</span>}
+                  {assignedSupplier?.gstin && <span>GSTIN: {assignedSupplier.gstin}</span>}
+                  <span style={{ gridColumn: '1 / -1', color: 'var(--text-secondary)' }}>Supplier assigned to this product</span>
+                </div>;
+              })()}
+              {(supplierHistoryItem.supplierPurchases || []).map((purchase, index) => {
+                const supplier = suppliers.find(entry => entry.id === purchase.supplierId);
+                const bill = supplier?.purchaseBills?.find(entry => entry.id === purchase.billId);
+                const billLine = bill?.lines?.find(line => line.productId === supplierHistoryItem.id);
+                return <div key={`${purchase.billId}-${index}`} className="illoca-card" style={{ padding: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 0.8rem', fontSize: '0.78rem' }}>
+                  <strong>{supplier?.name || purchase.supplierName || 'Supplier'}</strong><span>{supplier?.phone || '—'}{supplier?.city ? ` · ${supplier.city}` : ''}</span>
+                  <span>Bill: {purchase.invoiceNumber || bill?.invoiceNumber || '—'}</span><span>Date: {purchase.date || bill?.date || '—'}</span>
+                  <span>Received: {billLine?.quantity || purchase.quantity || '—'} pcs</span>
+                  {role === 'admin' && <span>Unit cost: ₹{Number(billLine?.unitCost || purchase.unitCost || 0).toLocaleString()}</span>}
+                  {bill?.attachment && <button type="button" className="btn-outline" onClick={() => openSupplierBillDocument(bill.attachment)} style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '0.3rem 0.55rem' }}><FileCheck size={13} /> Open bill file</button>}
+                </div>;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeImeiViewerItem && (
         <div className="modal-backdrop no-print" style={{ zIndex: 1250, padding: '1rem' }}>
           <div className="modal-dialog" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>

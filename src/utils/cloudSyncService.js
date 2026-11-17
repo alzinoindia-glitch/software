@@ -28,8 +28,27 @@ const lastCloudPayloads = new Map();
 const versionByScope = new Map();
 const pendingCloudWrites = new Map();
 const conflictedDomains = new Set();
+const retryTimers = {};
 const scopeKey = (orgId, key) => `${orgId}:${KEY_TO_DOMAIN[key]}`;
 const serializePayload = payload => JSON.stringify(payload ?? []);
+const pendingMarkerKey = key => `ALZINO_ERP_SYNC_PENDING_${KEY_TO_DOMAIN[key]}`;
+const setPendingMarker = (key, baseVersion) => {
+  try {
+    localStorage.setItem(pendingMarkerKey(key), JSON.stringify({
+      baseVersion: baseVersion != null && Number.isFinite(Number(baseVersion)) ? Number(baseVersion) : null,
+      queuedAt: new Date().toISOString()
+    }));
+  } catch {}
+};
+const clearPendingMarker = key => {
+  try { localStorage.removeItem(pendingMarkerKey(key)); } catch {}
+};
+const emitCloudSyncStatus = (key, status, message = '') => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('alzino-cloud-sync-status', {
+    detail: { key, status, message, at: new Date().toISOString() }
+  }));
+};
 // A default UPI QR is already stored on its account record. Older settings
 // duplicated the same (potentially large) base64 image at the shop-config
 // root as well. Keep compatibility for legacy configs without that account,
@@ -287,6 +306,60 @@ export const syncPublishedCatalog = (inventory = []) => {
 
 const authRequired = () => ({ success: false, reason: 'Sign in with an authorized shop account to sync data.' });
 
+const applyCloudSnapshotOrRestorePending = (orgId, key, cloudPayload, cloudVersion, setter) => {
+  let marker;
+  let localPayload;
+  try {
+    marker = JSON.parse(localStorage.getItem(pendingMarkerKey(key)) || 'null');
+    localPayload = JSON.parse(localStorage.getItem(`ALZINO_ERP_${key}`) || 'null');
+  } catch {
+    clearPendingMarker(key);
+  }
+  if (!marker || localPayload == null) {
+    clearPendingMarker(key);
+    setter?.(cloudPayload);
+    return cloudPayload;
+  }
+
+  const pendingData = compactCloudPayload(key, localPayload);
+  const serializedPending = serializePayload(pendingData);
+  const serializedCloud = serializePayload(cloudPayload);
+  if (serializedPending === serializedCloud) {
+    clearPendingMarker(key);
+    setter?.(cloudPayload);
+    return cloudPayload;
+  }
+
+  const hasMatchingBase = marker.baseVersion != null && Number(marker.baseVersion) === Number(cloudVersion);
+  if (hasMatchingBase) {
+    pendingCloudWrites.set(key, {
+      serialized: serializedPending,
+      data: pendingData,
+      baseVersion: Number(cloudVersion),
+      attempts: 0
+    });
+    setPendingMarker(key, cloudVersion);
+    emitCloudSyncStatus(key, 'error', `Recovered an unsynced ${key} update. Retrying automatically.`);
+    setter?.(localPayload);
+    return localPayload;
+  }
+
+  const conflictKey = `ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`;
+  try { localStorage.setItem(conflictKey, JSON.stringify({ payload: pendingData, savedAt: new Date().toISOString() })); } catch {}
+  clearPendingMarker(key);
+  conflictedDomains.add(key);
+  versionByScope.set(scopeKey(orgId, key), Number(cloudVersion || 0));
+  lastCloudPayloads.set(scopeKey(orgId, key), serializedCloud);
+  emitCloudSyncStatus(key, 'conflict', `An unsynced ${key} update conflicts with newer cloud data. Choose which version to keep.`);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('alzino-cloud-sync-conflict', {
+      detail: { key, localPayload: pendingData, cloudPayload, conflictKey }
+    }));
+  }
+  setter?.(localPayload);
+  return localPayload;
+};
+
 export const pushCollectionToCloud = (key, data) => {
   if (!isSupabaseConfigured() || !KEY_TO_DOMAIN[key]) return;
   if (conflictedDomains.has(key)) return;
@@ -303,9 +376,13 @@ export const pushCollectionToCloud = (key, data) => {
   const pending = {
     serialized,
     data: cloudData,
-    baseVersion: previousPending?.baseVersion ?? (knownScope ? versionByScope.get(knownScope) : undefined)
+    baseVersion: previousPending?.baseVersion ?? (knownScope ? versionByScope.get(knownScope) : undefined),
+    attempts: previousPending?.attempts || 0
   };
   pendingCloudWrites.set(key, pending);
+  setPendingMarker(key, pending.baseVersion);
+  emitCloudSyncStatus(key, 'queued');
+  if (retryTimers[key]) clearTimeout(retryTimers[key]);
 
   debounceTimers[key] = setTimeout(async () => {
     const currentPending = pendingCloudWrites.get(key);
@@ -314,7 +391,11 @@ export const pushCollectionToCloud = (key, data) => {
       const client = getSupabaseClient();
       const orgId = await getActiveOrgId(client);
       if (!orgId) {
-        if (pendingCloudWrites.get(key)?.serialized === serialized) pendingCloudWrites.delete(key);
+        emitCloudSyncStatus(key, 'paused', 'Waiting for authorized cloud access. Your changes are saved on this device.');
+        return;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        emitCloudSyncStatus(key, 'paused', 'You are offline. Your changes are saved on this device and will sync when online.');
         return;
       }
       const scope = scopeKey(orgId, key);
@@ -322,6 +403,8 @@ export const pushCollectionToCloud = (key, data) => {
       // back to Supabase so one update doesn't create an echo loop.
       if (lastCloudPayloads.get(scope) === serialized) {
         pendingCloudWrites.delete(key);
+        clearPendingMarker(key);
+        emitCloudSyncStatus(key, 'saved');
         return;
       }
       const identity = getAuthenticatorIdentity();
@@ -338,11 +421,21 @@ export const pushCollectionToCloud = (key, data) => {
           expectedVersion = Number(current.version || 1);
           versionByScope.set(scope, expectedVersion);
           lastCloudPayloads.set(scope, serializePayload(current.payload));
-          if (lastCloudPayloads.get(scope) === serialized) return;
+          if (lastCloudPayloads.get(scope) === serialized) {
+            pendingCloudWrites.delete(key);
+            clearPendingMarker(key);
+            emitCloudSyncStatus(key, 'saved');
+            return;
+          }
         } else {
           expectedVersion = 0;
           versionByScope.set(scope, 0);
         }
+      }
+      const latestPending = pendingCloudWrites.get(key);
+      if (latestPending?.serialized === serialized && latestPending.baseVersion == null) {
+        latestPending.baseVersion = expectedVersion;
+        setPendingMarker(key, expectedVersion);
       }
 
       let savedVersion;
@@ -393,6 +486,8 @@ export const pushCollectionToCloud = (key, data) => {
         lastCloudPayloads.set(scope, serializePayload(latestPayload));
         conflictedDomains.add(key);
         pendingCloudWrites.delete(key);
+        clearPendingMarker(key);
+        emitCloudSyncStatus(key, 'conflict', `Cloud data changed on another device in ${key}. Review the conflict before syncing again.`);
         window.dispatchEvent(new CustomEvent('alzino-cloud-sync-conflict', {
           detail: { key, localPayload: latestLocal, cloudPayload: latestPayload, conflictKey }
         }));
@@ -401,14 +496,42 @@ export const pushCollectionToCloud = (key, data) => {
       versionByScope.set(scope, Number(savedVersion));
       lastCloudPayloads.set(scope, serialized);
       const newerPending = pendingCloudWrites.get(key);
-      if (newerPending?.serialized === serialized) pendingCloudWrites.delete(key);
-      else if (newerPending) newerPending.baseVersion = Number(savedVersion);
+      if (newerPending?.serialized === serialized) {
+        pendingCloudWrites.delete(key);
+        clearPendingMarker(key);
+      }
+      else if (newerPending) {
+        newerPending.baseVersion = Number(savedVersion);
+        setPendingMarker(key, savedVersion);
+      }
       try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
+      emitCloudSyncStatus(key, 'saved');
     } catch (err) {
       console.warn(`[CloudSync] Could not save ${key}:`, err);
-      if (pendingCloudWrites.get(key)?.serialized === serialized) pendingCloudWrites.delete(key);
+      const failedPending = pendingCloudWrites.get(key);
+      if (failedPending?.serialized === serialized) {
+        failedPending.attempts = (failedPending.attempts || 0) + 1;
+        setPendingMarker(key, failedPending.baseVersion);
+        const message = err?.message || 'Cloud save failed. Your changes remain on this device.';
+        emitCloudSyncStatus(key, 'error', `${message} Retrying automatically.`);
+        const delay = Math.min(60_000, 1_000 * (2 ** Math.min(failedPending.attempts - 1, 6)));
+        if (retryTimers[key]) clearTimeout(retryTimers[key]);
+        retryTimers[key] = setTimeout(() => {
+          retryTimers[key] = null;
+          const stillPending = pendingCloudWrites.get(key);
+          if (stillPending?.serialized === serialized) pushCollectionToCloud(key, stillPending.data);
+        }, delay);
+      }
     }
   }, 500);
+};
+
+export const retryPendingCloudWrites = () => {
+  pendingCloudWrites.forEach((pending, key) => {
+    if (retryTimers[key]) clearTimeout(retryTimers[key]);
+    retryTimers[key] = null;
+    pushCollectionToCloud(key, pending.data);
+  });
 };
 
 export const resolveCloudConflict = (key) => conflictedDomains.delete(key);
@@ -436,8 +559,8 @@ export const pullAllFromCloud = async (setters = {}) => {
     const scope = scopeKey(orgId, key);
     lastCloudPayloads.set(scope, serializePayload(row.payload));
     versionByScope.set(scope, Number(row.version || 1));
-    setters[key](row.payload);
-    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(row.payload)); } catch {}
+    const recoveredPayload = applyCloudSnapshotOrRestorePending(orgId, key, row.payload, Number(row.version || 1), setters[key]);
+    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(recoveredPayload)); } catch {}
     count++;
   });
   for (const key of SYNC_KEYS) {
@@ -447,13 +570,15 @@ export const pullAllFromCloud = async (setters = {}) => {
     // An absent row means "empty" only on devices that previously received
     // that domain from this shop. Preserve first-device local data so it can
     // still be deliberately seeded to a new, empty shop cloud.
-    if (getKnownCloudDomains(orgId).has(key)) {
+    let hasPendingMarker = false;
+    try { hasPendingMarker = Boolean(localStorage.getItem(pendingMarkerKey(key))); } catch {}
+    if (getKnownCloudDomains(orgId).has(key) || hasPendingMarker) {
       pendingCloudWrites.delete(key);
       if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
       conflictedDomains.delete(key);
-      setters[key]?.([]);
-      try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
-      try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
+      const recoveredPayload = applyCloudSnapshotOrRestorePending(orgId, key, [], 0, setters[key]);
+      try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(recoveredPayload)); } catch {}
+      if (!conflictedDomains.has(key)) try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
     }
   }
   return { success: true, count, source: STORE_STATE_TABLE };
@@ -586,6 +711,7 @@ export const subscribeRealtimeSync = (setters = {}) => {
         if (payload.eventType === 'DELETE') {
           rememberCloudDomain(orgId, key);
           pendingCloudWrites.delete(key);
+          clearPendingMarker(key);
           if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
           conflictedDomains.delete(key);
           versionByScope.set(scope, 0);
@@ -644,6 +770,7 @@ export const wipeAllDataFromCloud = async () => {
   for (const key of SYNC_KEYS) {
     if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
     pendingCloudWrites.delete(key);
+    clearPendingMarker(key);
     conflictedDomains.delete(key);
   }
   const { error: stateError } = await client.from(STORE_STATE_TABLE).delete().eq('organization_id', orgId);

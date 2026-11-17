@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
 import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxonomy';
+import { getUpiQrUrl } from '../utils/barcode';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -49,6 +50,26 @@ export default function RepairLab({
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('All');
+
+  // Backfill a stable identity for historical repair cards. Older records only
+  // had a human-facing job number, which was not unique and caused actions on
+  // one card to update or delete every card with the same number.
+  useEffect(() => {
+    setRepairJobs(previous => {
+      const seen = new Set();
+      let changed = false;
+      const next = previous.map(job => {
+        let recordId = String(job.recordId || '').trim();
+        if (!recordId || seen.has(recordId)) {
+          recordId = `REPAIR-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+          changed = true;
+        }
+        seen.add(recordId);
+        return job.recordId === recordId ? job : { ...job, recordId };
+      });
+      return changed ? next : previous;
+    });
+  }, [setRepairJobs]);
 
   // Success toast
   const [toastMessage, setToastMessage] = useState(null);
@@ -123,10 +144,15 @@ export default function RepairLab({
     const adv = parseFloat(advancePaid) || 0;
     const balance = costInformedAfterChecking ? 0 : Math.max(0, est - adv);
 
-    const jobId = `ALZ-REP-${String(repairJobs.length + 1024)}`;
+    const highestJobNumber = repairJobs.reduce((highest, job) => {
+      const match = String(job.jobId || '').match(/^ALZ-REP-(\d+)$/i);
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 1023);
+    const jobId = `ALZ-REP-${highestJobNumber + 1}`;
     const today = new Date().toISOString().split('T')[0];
 
     const newJob = {
+      recordId: `REPAIR-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
       jobId,
       date: today,
       customerName: customerName.trim(),
@@ -213,7 +239,7 @@ export default function RepairLab({
       if (!isNaN(newCost) && newCost >= 0) {
         const newBalance = Math.max(0, newCost - (job.advancePaid || 0));
         setRepairJobs(prev => prev.map(j => {
-          if (j.jobId === job.jobId) {
+          if (j.recordId === job.recordId) {
             return {
               ...j,
               estimatedCost: newCost,
@@ -239,6 +265,7 @@ export default function RepairLab({
   const [repairWarranty, setRepairWarranty] = useState('30 Days Display & Touch Warranty (No physical damage)');
   const [repairBillingType, setRepairBillingType] = useState('non-gst'); // 'non-gst' or 'gst'
   const [repairPaymentMode, setRepairPaymentMode] = useState('Cash');
+  const [repairPaymentRef, setRepairPaymentRef] = useState('');
   const [repairDiscount, setRepairDiscount] = useState(0);
   const [repairNotes, setRepairNotes] = useState(
     'Device tested and confirmed working. 30 days warranty on replaced components only. Physical or liquid damage voids warranty.'
@@ -260,6 +287,23 @@ export default function RepairLab({
   const [newPartName, setNewPartName] = useState('');
   const [newPartCost, setNewPartCost] = useState('');
   const [selectedInventoryPartId, setSelectedInventoryPartId] = useState('');
+  const [inventoryPartSearch, setInventoryPartSearch] = useState('');
+  const matchingInventoryParts = useMemo(() => {
+    const query = inventoryPartSearch.trim().toLowerCase();
+    return inventory.filter(item => {
+      if (!(Number(item.stock) > 0)) return false;
+      if (!query) return true;
+      return [item.name, item.brand, item.category, item.barcode, item.serialNumber]
+        .some(value => String(value || '').toLowerCase().includes(query));
+    }).slice(0, 100);
+  }, [inventory, inventoryPartSearch]);
+  const repairUpiAccount = useMemo(() => {
+    const accounts = Array.isArray(shopConfig.upiAccounts) ? shopConfig.upiAccounts.filter(account => account?.upiId) : [];
+    return accounts.find(account => account.isDefault) || accounts[0] || {
+      upiId: shopConfig.upiId || 'alzino.bodhan@okhdfcbank',
+      accountName: shopConfig.name || 'ALZINO'
+    };
+  }, [shopConfig]);
 
   // QC Checklist Modal state
   const [qcJob, setQcJob] = useState(null);
@@ -302,7 +346,7 @@ export default function RepairLab({
     const isAllPassed = passedCount === defaultQcItems.length;
 
     setRepairJobs(prev => prev.map(j => {
-      if (j.jobId === qcJob.jobId) {
+      if (j.recordId === qcJob.recordId) {
         return {
           ...j,
           qcChecklist: qcChecks,
@@ -325,12 +369,14 @@ export default function RepairLab({
     setRepairWarranty('30 Days Display & Touch Warranty (No physical damage)');
     setRepairBillingType('non-gst');
     setRepairPaymentMode('Cash');
+    setRepairPaymentRef('');
     setRepairDiscount(0);
     setRepairNotes('Device tested and confirmed working. Keep bill for warranty claims.');
     setConsumedParts(job.consumedParts || []);
     setNewPartName('');
     setNewPartCost('');
     setSelectedInventoryPartId('');
+    setInventoryPartSearch('');
     setBillModalOpen(true);
   };
 
@@ -351,6 +397,7 @@ export default function RepairLab({
     setNewPartName('');
     setNewPartCost('');
     setSelectedInventoryPartId('');
+    setInventoryPartSearch('');
   };
 
   const handleRemoveConsumedPart = (partId) => {
@@ -366,7 +413,6 @@ export default function RepairLab({
       alert("Please enter a valid final service amount.");
       return;
     }
-
     const discountAmt = Math.max(0, Number(repairDiscount) || 0);
     const grandTotalPrice = Math.max(0, Math.round(finalPrice - discountAmt));
 
@@ -377,8 +423,15 @@ export default function RepairLab({
 
     const advance = Number(jobToBill.advancePaid) || 0;
     const netBalanceToCollect = Math.max(0, grandTotalPrice - advance);
-    const actualPaid = repairPaymentMode === 'Khata' ? advance : grandTotalPrice;
-    const khataDue = repairPaymentMode === 'Khata' ? netBalanceToCollect : 0;
+    const effectivePaymentMode = netBalanceToCollect === 0 && repairPaymentMode !== 'Khata'
+      ? 'Advance Paid at Intake'
+      : repairPaymentMode;
+    if (effectivePaymentMode === 'UPI / PhonePe / GPay' && !repairPaymentRef.trim()) {
+      alert('Enter the UPI UTR / transaction reference after confirming the payment was received.');
+      return;
+    }
+    const actualPaid = effectivePaymentMode === 'Khata' ? advance : grandTotalPrice;
+    const khataDue = effectivePaymentMode === 'Khata' ? netBalanceToCollect : 0;
 
     // Calculate spare parts cost vs profit
     const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
@@ -396,13 +449,17 @@ export default function RepairLab({
       date: today,
       isNonGst,
       isRepairInvoice: true,
-      repairJobRef: jobToBill.jobId,
+      repairJobRef: jobToBill.recordId || jobToBill.jobId,
+      repairJobId: jobToBill.jobId,
       invoiceType: isNonGst ? 'Repair Service Cash Memo' : 'GST Tax Invoice (Service & Maintenance)',
       customerName: jobToBill.customerName,
       customerPhone: jobToBill.customerMobile,
       customerAddress: 'Bodhan, Telangana',
       customerGstin: '',
-      paymentMode: repairPaymentMode,
+      paymentMode: effectivePaymentMode,
+      paymentRef: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairPaymentRef.trim() : '',
+      paymentStatus: effectivePaymentMode === 'Khata' ? 'KHATA_DUE' : 'PAID',
+      paymentConfirmedAt: new Date().toISOString(),
       warrantyNotes: repairWarranty,
       notes: `${repairNotes.trim()} [Intake Job: ${jobToBill.jobId} | Advance paid: ₹${advance}${partsText}]`,
       items: [
@@ -430,7 +487,7 @@ export default function RepairLab({
       discount: discountAmt,
       grandTotal: grandTotalPrice,
       advancePaid: advance,
-      balanceCollectedNow: repairPaymentMode === 'Khata' ? 0 : netBalanceToCollect,
+      balanceCollectedNow: effectivePaymentMode === 'Khata' ? 0 : netBalanceToCollect,
       netBalanceToCollect: netBalanceToCollect,
       paidAmount: actualPaid,
       khataDue,
@@ -457,7 +514,7 @@ export default function RepairLab({
 
     // 3. Update repair job status to Delivered & record invoiceNo & consumed parts
     setRepairJobs(prev => prev.map(job => {
-      if (job.jobId === jobToBill.jobId) {
+      if (job.recordId === jobToBill.recordId) {
         return {
           ...job,
           status: 'Delivered',
@@ -507,10 +564,9 @@ export default function RepairLab({
     onPrintInvoice(newInvoice, printFormat);
   };
 
-  const updateStatus = (jobId, newStatus) => {
-    const targetJob = repairJobs.find(j => j.jobId === jobId);
+  const updateStatus = (targetJob, newStatus) => {
     setRepairJobs(prev => prev.map(job => {
-      if (job.jobId === jobId) {
+      if (job.recordId === targetJob.recordId) {
         let newBalance = job.balanceDue;
         if (newStatus === 'Delivered' && job.balanceDue > 0) {
           const collect = confirm(`Collect remaining balance ₹${job.balanceDue} for ${job.deviceModel}?`);
@@ -644,14 +700,14 @@ export default function RepairLab({
 
       {/* Repair Cards Pipeline */}
       <div className="repair-jobs-grid">
-        {filteredJobs.map(job => {
+        {filteredJobs.map((job, jobIndex) => {
           const isReady = job.status === 'Ready for Delivery';
           const isDelivered = job.status === 'Delivered';
           const isBilled = Boolean(job.invoiceNo);
 
           return (
             <div 
-              key={job.jobId} 
+              key={job.recordId || `${job.jobId}-${jobIndex}`}
               className="illoca-card" 
               style={{ 
                 padding: '1.1rem',
@@ -687,7 +743,7 @@ export default function RepairLab({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <select
                     value={job.status}
-                    onChange={(e) => updateStatus(job.jobId, e.target.value)}
+                    onChange={(e) => updateStatus(job, e.target.value)}
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: '0.75rem',
@@ -708,7 +764,8 @@ export default function RepairLab({
                   </select>
                   <button type="button" onClick={() => {
                     if (!window.confirm(`Delete repair card ${job.jobId}? Any invoice already created will remain in Invoices.`)) return;
-                    setRepairJobs(prev => prev.filter(row => row.jobId !== job.jobId));
+                    if (!window.confirm(`Confirm permanent deletion of repair record ${job.jobId}? The record will be removed from this device and synced to the store database. This cannot be undone.`)) return;
+                    setRepairJobs(prev => prev.filter(row => row.recordId !== job.recordId));
                   }} className="btn-outline" title="Delete repair card" aria-label={`Delete repair card ${job.jobId}`} style={{ padding: '0.3rem', color: 'var(--status-red)', borderColor: 'var(--status-red)' }}>
                     <Trash2 size={14} />
                   </button>
@@ -1075,27 +1132,43 @@ export default function RepairLab({
                   className="input-field"
                   style={{ fontSize: '0.78rem' }}
                 />
-                <select
-                  value={selectedInventoryPartId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedInventoryPartId(id);
-                    if (id) {
-                      const invItem = inventory.find(i => i.id === id);
-                      if (invItem) {
-                        setNewPartName(invItem.name);
-                        setNewPartCost(String(invItem.buyPrice || invItem.costPrice || 0));
+                <div style={{ display: 'grid', gap: '0.25rem', minWidth: 0 }}>
+                  <input
+                    type="search"
+                    value={inventoryPartSearch}
+                    onChange={event => {
+                      setInventoryPartSearch(event.target.value);
+                      setSelectedInventoryPartId('');
+                    }}
+                    placeholder="Search store stock by name or brand..."
+                    aria-label="Search store stock for repair parts"
+                    className="input-field"
+                    style={{ fontSize: '0.76rem' }}
+                  />
+                  <select
+                    value={selectedInventoryPartId}
+                    onChange={(event) => {
+                      const id = event.target.value;
+                      setSelectedInventoryPartId(id);
+                      if (id) {
+                        const invItem = inventory.find(item => item.id === id);
+                        if (invItem) {
+                          setNewPartName(invItem.name);
+                          setNewPartCost(String(invItem.buyPrice || invItem.costPrice || 0));
+                          setInventoryPartSearch(invItem.name);
+                        }
                       }
-                    }
-                  }}
-                  className="input-field"
-                  style={{ fontSize: '0.76rem' }}
-                >
-                  <option value="">Or Pick from Store Stock...</option>
-                  {inventory.filter(i => i.stock > 0).map(i => (
-                    <option key={i.id} value={i.id}>{i.name} ({i.stock} left - ₹{i.buyPrice || i.price})</option>
-                  ))}
-                </select>
+                    }}
+                    className="input-field"
+                    style={{ fontSize: '0.76rem' }}
+                    aria-label="Select matching store stock item"
+                  >
+                    <option value="">{matchingInventoryParts.length ? 'Select matching stock item...' : 'No matching in-stock products'}</option>
+                    {matchingInventoryParts.map(item => (
+                      <option key={item.id} value={item.id}>{item.name} ({item.stock} left - ₹{item.buyPrice || item.price})</option>
+                    ))}
+                  </select>
+                </div>
                 <input
                   type="number"
                   placeholder="Cost ₹"
@@ -1177,15 +1250,23 @@ export default function RepairLab({
                   className="input-field"
                 >
                   <option value="non-gst">Service Cash Memo (Non-GST)</option>
-                  <option value="gst">GST Tax Invoice (18% SAC 998713)</option>
+                  <option value="gst">GST Tax Invoice (18% SAC 998713, included in charge)</option>
                 </select>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                  {repairBillingType === 'gst'
+                    ? 'The entered service charge is treated as GST-inclusive. The GST portion is shown in the invoice; it is not added again.'
+                    : 'No GST is added to this service cash memo.'}
+                </div>
 
                 <label style={{ fontSize: '0.74rem', fontWeight: 600, display: 'block', marginTop: '0.45rem', marginBottom: '0.25rem' }}>
                   Payment Mode
                 </label>
                 <select
                   value={repairPaymentMode}
-                  onChange={(e) => setRepairPaymentMode(e.target.value)}
+                  onChange={(e) => {
+                    setRepairPaymentMode(e.target.value);
+                    if (e.target.value !== 'UPI / PhonePe / GPay') setRepairPaymentRef('');
+                  }}
                   className="input-field"
                 >
                   <option value="Cash">Cash</option>
@@ -1193,6 +1274,47 @@ export default function RepairLab({
                   <option value="Card">Debit / Credit Card</option>
                   <option value="Khata">Khata (Customer Credit)</option>
                 </select>
+
+                {repairPaymentMode === 'UPI / PhonePe / GPay' && (() => {
+                  const totalAfterDiscount = Math.max(0, Math.round((Number(finalServicePrice) || 0) - (Number(repairDiscount) || 0)));
+                  const amountToCollect = Math.max(0, totalAfterDiscount - (Number(jobToBill?.advancePaid) || 0));
+                  const paymentQrUrl = getUpiQrUrl(
+                    repairUpiAccount.upiId,
+                    repairUpiAccount.accountName || shopConfig.name || 'ALZINO',
+                    amountToCollect,
+                    `${repairBillingType === 'gst' ? 'GST' : 'CASH'}-${jobToBill?.jobId || 'REPAIR'}`
+                  );
+                  return (
+                    <div style={{ marginTop: '0.5rem', padding: '0.65rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-card)' }}>
+                      {amountToCollect > 0 ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <img src={paymentQrUrl} alt={`UPI payment QR for ₹${amountToCollect}`} width="112" height="112" style={{ width: 112, height: 112, objectFit: 'contain', background: '#fff', borderRadius: 6 }} />
+                            <div style={{ fontSize: '0.72rem', minWidth: 0 }}>
+                              <strong>Collect ₹{amountToCollect.toLocaleString('en-IN')} by UPI</strong>
+                              <div style={{ color: 'var(--text-secondary)', marginTop: '0.2rem', overflowWrap: 'anywhere' }}>UPI ID: {repairUpiAccount.upiId}</div>
+                              <div style={{ color: 'var(--text-muted)', marginTop: '0.2rem' }}>{repairBillingType === 'gst' ? 'GST invoice' : 'Non-GST cash memo'} payment QR</div>
+                            </div>
+                        </div>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginTop: '0.45rem', marginBottom: '0.2rem' }}>
+                            UPI UTR / Transaction Reference *
+                          </label>
+                          <input
+                            type="text"
+                            value={repairPaymentRef}
+                            onChange={event => setRepairPaymentRef(event.target.value)}
+                            placeholder="Enter reference after confirming payment"
+                            className="input-field"
+                            style={{ fontSize: '0.76rem', fontFamily: 'var(--font-mono)' }}
+                          />
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>Verify that payment reached the shop account before creating the invoice.</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>No balance is due; the intake advance covers this bill.</div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <label style={{ fontSize: '0.74rem', fontWeight: 600, display: 'block', marginTop: '0.45rem', marginBottom: '0.25rem' }}>
                   Discount on Bill (₹)
