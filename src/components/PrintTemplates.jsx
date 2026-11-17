@@ -619,7 +619,7 @@ export default function PrintTemplates({
                       const taxVal = item.taxable || (printData.priceIncludesGst === false
                         ? item.rate * item.qty
                         : (item.total / (1 + (item.gstRate / 100))));
-                      const cgstVal = (item.total - taxVal) / 2;
+                      const cgstVal = (item.gstAmount ?? (item.total - taxVal)) / 2;
                       const sgstVal = cgstVal;
 
                       return (

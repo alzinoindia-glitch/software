@@ -64,6 +64,7 @@ import {
 } from '../utils/customTaxonomy';
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { getSupplierBillDocument } from '../utils/supplierBillStore';
+import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -850,13 +851,10 @@ export default function InventoryManager({
     const finalGstRate = formData.isGst ? (parseFloat(formData.gstRate) || 18) : 0;
     const enteredBuyPrice = Math.max(0, parseFloat(formData.buyPrice) || 0);
     const buyPriceIncludesGst = Boolean(formData.buyPriceIncludesGst);
-    const buyCostBase = finalGstRate > 0 && buyPriceIncludesGst
-      ? enteredBuyPrice / (1 + finalGstRate / 100)
-      : enteredBuyPrice;
-    const buyCostGst = finalGstRate > 0
-      ? (buyPriceIncludesGst ? enteredBuyPrice - buyCostBase : enteredBuyPrice * finalGstRate / 100)
-      : 0;
-    const finalBuyPrice = enteredBuyPrice + (finalGstRate > 0 && !buyPriceIncludesGst ? buyCostGst : 0);
+    const buyCostBreakdown = getPurchaseCostBreakdown(enteredBuyPrice, finalGstRate, buyPriceIncludesGst);
+    const buyCostBase = buyCostBreakdown.taxable;
+    const buyCostGst = buyCostBreakdown.gst;
+    const finalBuyPrice = buyCostBreakdown.gross;
     const assignedSupplier = suppliers.find(supplier => supplier.id === formData.supplierId);
     const rackVal = formData.rack.trim().toUpperCase() || 'R-01';
     const binVal = formData.bin.trim().toUpperCase() || 'B-01';
@@ -2616,7 +2614,7 @@ export default function InventoryManager({
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>MRP ₹</label>
                 <input
                   type="number"
-                  placeholder="Box MRP"
+                  placeholder="Box MRP (GST included)"
                   value={formData.mrp}
                   onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
                   className="input-field"
@@ -2640,7 +2638,7 @@ export default function InventoryManager({
                     disabled={!formData.isGst}
                     onChange={event => setFormData({ ...formData, buyPriceIncludesGst: event.target.checked })}
                   />
-                  Buy cost already includes GST
+                  Entered buy cost already includes GST
                 </label>
                 <div style={{ marginTop: '0.15rem', fontSize: '0.66rem', color: 'var(--text-muted)' }}>
                   {formData.isGst

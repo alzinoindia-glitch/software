@@ -43,6 +43,7 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
+import { getSalePriceBreakdown } from '../utils/gstPricing';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
 
@@ -93,6 +94,7 @@ export default function PosBilling({
   
   // Billing Type: GST Invoice vs Non-GST Estimate
   const [billingType, setBillingType] = useState('gst'); // 'gst' | 'non-gst'
+  const [priceIncludesGst, setPriceIncludesGst] = useState(false);
 
   // Customer details
   const [customerName, setCustomerName] = useState('Counter Customer');
@@ -663,13 +665,16 @@ export default function PosBilling({
 
   // Calculations
   const isNonGst = billingType === 'non-gst';
-  const subtotalBeforeTax = cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
-  const totalTaxable = subtotalBeforeTax;
-  const totalGst = isNonGst ? 0 : cart.reduce((sum, item) => {
-    const itemTaxable = item.rate * item.qty;
-    return sum + itemTaxable * ((item.gstRate || 18) / 100);
-  }, 0);
-  const grandTotal = Math.max(0, subtotalBeforeTax + totalGst - Number(discount));
+  const saleLines = cart.map(item => ({
+    item,
+    totals: getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst)
+  }));
+  const totalTaxable = saleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
+  const subtotalBeforeTax = priceIncludesGst && !isNonGst
+    ? totalTaxable
+    : cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
+  const totalGst = isNonGst ? 0 : saleLines.reduce((sum, line) => sum + line.totals.gst, 0);
+  const grandTotal = Math.max(0, saleLines.reduce((sum, line) => sum + line.totals.gross, 0) - Number(discount));
   
   // Total line profit (for admin mode)
   const totalProfit = cart.reduce((sum, item) => {
@@ -848,7 +853,7 @@ export default function PosBilling({
       invoiceNo,
       date: today,
       isNonGst,
-      priceIncludesGst: false,
+      priceIncludesGst: !isNonGst && priceIncludesGst,
       invoiceType: isNonGst ? 'Cash Memo' : 'GST Tax Invoice',
       customerName: customerName.trim() || 'Counter Customer',
       customerPhone: customerPhone.trim(),
@@ -868,7 +873,9 @@ export default function PosBilling({
       payments: isAdvance ? [{ id: `PAY-${Date.now()}`, date: new Date().toISOString(), amount: actualPaid, mode: advancePaymentMethod, reference: advancePaymentReference.trim() }] : [],
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
-      items: cart.map(item => ({
+      items: cart.map(item => {
+        const tax = getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst);
+        return ({
         id: item.id,
         name: item.name,
         category: item.category,
@@ -878,8 +885,9 @@ export default function PosBilling({
         rate: item.rate,
         buyPrice: item.buyPrice,
         gstRate: isNonGst ? 0 : item.gstRate,
-        taxable: item.rate * item.qty,
-        total: item.rate * item.qty + (isNonGst ? 0 : item.rate * item.qty * ((item.gstRate || 18) / 100)),
+        taxable: tax.taxable,
+        gstAmount: tax.gst,
+        total: tax.gross,
         profit: (item.rate - item.buyPrice) * item.qty,
         warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
@@ -897,7 +905,8 @@ export default function PosBilling({
         })(),
         rack: item.rack || 'R-01',
         bin: item.bin || 'B-01'
-      })),
+        });
+      }),
       taxableAmount: totalTaxable,
       cgstTotal,
       sgstTotal,
@@ -1289,6 +1298,10 @@ export default function PosBilling({
                     CASH MEMO (0%)
                   </button>
                 </div>
+                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="Choose this when the entered selling prices or MRP already include GST.">
+                  <input type="checkbox" checked={priceIncludesGst} onChange={event => setPriceIncludesGst(event.target.checked)} />
+                  Price already includes GST
+                </label>}
               </div>
 
               {/* Simple category and subcategory filters */}
@@ -1746,14 +1759,14 @@ export default function PosBilling({
               fontSize: '0.78rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                <span>{isNonGst ? 'Subtotal:' : 'Subtotal (before GST):'}</span>
+                <span>{isNonGst ? 'Subtotal:' : 'Taxable value:'}</span>
                 <span className="font-mono">₹{subtotalBeforeTax.toFixed(2)}</span>
               </div>
 
               {!isNonGst ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>
-                    GST added:
+                    {priceIncludesGst ? 'GST included:' : 'GST added:'}
                     <button 
                       onClick={() => setIsInterstate(!isInterstate)}
                       style={{ marginLeft: '0.25rem', fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', border: 'none', background: 'none' }}
@@ -1761,7 +1774,7 @@ export default function PosBilling({
                       {isInterstate ? '[IGST]' : '[CGST+SGST]'}
                     </button>
                   </span>
-                  <span className="font-mono">+₹{totalGst.toFixed(2)}</span>
+                  <span className="font-mono">{priceIncludesGst ? '₹' : '+₹'}{totalGst.toFixed(2)}</span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>

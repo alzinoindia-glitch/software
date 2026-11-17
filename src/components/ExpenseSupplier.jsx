@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
+import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, identifiers: [], imei1Values: [], imei2Values: [] });
+const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
   const keys = Object.keys(row || {});
@@ -159,7 +161,7 @@ export default function ExpenseSupplier({
       productId: bill.productId, productName: bill.productName, quantity: bill.quantity, unitCost: bill.unitCost,
       identifiers: bill.identifiers || [], imei1Values: bill.imei1Values || [], imei2Values: bill.imei2Values || []
     }]).map(line => ({
-      ...newInwardLine(), productId: line.productId || '', quantity: String(line.quantity || 1), unitCost: String(line.unitCost || ''),
+      ...newInwardLine(), productId: line.productId || '', quantity: String(line.quantity || 1), unitCost: String(line.unitCostEntered ?? line.unitCost ?? ''), unitCostIncludesGst: line.unitCostIncludesGst !== false,
       identifiers: [...(line.identifiers || [])], imei1Values: [...(line.imei1Values || [])], imei2Values: [...(line.imei2Values || [])], importedName: line.productName || ''
     }));
     setEditingBillId(bill.id);
@@ -237,17 +239,28 @@ export default function ExpenseSupplier({
     if (editingBillId && (!existingBill || role !== 'admin')) return;
     const invoiceNumber = inwardInvoiceNumber.trim() || existingBill?.invoiceNumber || `SUP-${Date.now().toString().slice(-6)}`;
     const billId = editingBillId || `BILL-${Date.now()}`;
-    const billLines = validLines.map(line => ({
+    const billLines = validLines.map(line => {
+      const gstRate = productGstRate(line.product);
+      const cost = getPurchaseCostBreakdown(line.unitCost, gstRate, line.unitCostIncludesGst);
+      return {
       productId: line.productId,
       productName: line.product.name,
       brand: line.product.brand || '',
       quantity: line.quantity,
-      unitCost: line.unitCost,
-      totalAmount: line.quantity * line.unitCost,
+      unitCost: cost.gross,
+      unitCostEntered: line.unitCost,
+      unitCostIncludesGst: Boolean(line.unitCostIncludesGst),
+      gstRate,
+      taxableUnitCost: cost.taxable,
+      gstUnitAmount: cost.gst,
+      totalAmount: Math.round((cost.gross * line.quantity + Number.EPSILON) * 100) / 100,
+      taxableAmount: Math.round((cost.taxable * line.quantity + Number.EPSILON) * 100) / 100,
+      gstAmount: Math.round((cost.gst * line.quantity + Number.EPSILON) * 100) / 100,
       identifiers: [...new Set([...(line.identifiers || []), ...(line.imei1Values || []), ...(line.imei2Values || [])])],
       imei1Values: [...new Set(line.imei1Values || [])],
       imei2Values: [...new Set(line.imei2Values || [])]
-    }));
+      };
+    });
     const billTotal = billLines.reduce((sum, line) => sum + line.totalAmount, 0);
     const supplier = suppliers.find(s => s.id === selectedSupplierId);
     if (existingBill && billTotal + 0.01 < Number(existingBill.paidAmount || 0)) {
@@ -326,19 +339,26 @@ export default function ExpenseSupplier({
         };
       }));
       const totalReceived = received.reduce((sum, line) => sum + line.totalAmount, 0);
+      const latestReceived = received[received.length - 1];
       const oldIdentifiers = oldLines.filter(line => String(line.productId) === String(item.id)).flatMap(line => [...(line.identifiers || []), ...(line.imei1Values || []), ...(line.imei2Values || [])]);
       const newIdentifiers = received.flatMap(line => imeiTracked ? [...(line.imei1Values || []), ...(line.imei2Values || [])] : (line.identifiers || []));
       const oldUnitBarcodes = (item.units || []).filter(unit => unit.supplierBillId === billId).map(unit => unit.barcode).filter(Boolean);
       return {
         ...item,
         stock: Math.max(0, (Number(item.stock) || 0) - previousQty + addedQty),
-        ...(addedQty ? { buyPrice: totalReceived / addedQty } : {}),
+        ...(addedQty ? {
+          buyPrice: totalReceived / addedQty,
+          buyCostEntered: latestReceived.unitCostEntered,
+          buyCostBase: latestReceived.taxableUnitCost,
+          buyCostGst: latestReceived.gstUnitAmount,
+          buyPriceIncludesGst: latestReceived.unitCostIncludesGst
+        } : {}),
         imeis: imeiTracked ? [...(item.imeis || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers] : (item.imeis || []),
         serialNumbers: imeiTracked ? (item.serialNumbers || []) : [...(item.serialNumbers || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers],
         barcodes: [...(item.barcodes || []).filter(value => !oldUnitBarcodes.includes(value)), ...addedUnits.map(unit => unit.barcode)],
         barcode: item.barcode && !oldUnitBarcodes.includes(item.barcode) ? item.barcode : (addedUnits[0]?.barcode || ''),
         units: [...existingUnits, ...addedUnits],
-        supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: addedQty, unitCost: totalReceived / addedQty }] : [])]
+        supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: addedQty, unitCost: totalReceived / addedQty, unitCostEntered: latestReceived.unitCostEntered, unitCostIncludesGst: latestReceived.unitCostIncludesGst, gstRate: latestReceived.gstRate }] : [])]
       };
     }));
 
@@ -697,7 +717,10 @@ export default function ExpenseSupplier({
                   <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) repeat(2, minmax(80px, 0.8fr)) auto', gap: '0.5rem', alignItems: 'end' }}>
                     <div>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Product {index + 1} *</label>
-                      <select value={line.productId} onChange={event => updateInwardLine(line.id, { productId: event.target.value })} required className="input-field">
+                      <select value={line.productId} onChange={event => {
+                        const selectedProduct = inventory.find(product => String(product.id) === event.target.value);
+                        updateInwardLine(line.id, { productId: event.target.value, unitCostIncludesGst: selectedProduct?.buyPriceIncludesGst !== false });
+                      }} required className="input-field">
                         <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
                         {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
                       </select>
@@ -709,6 +732,18 @@ export default function ExpenseSupplier({
                     <div>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Unit cost ₹ *</label>
                       <input type="number" min="0.01" step="0.01" value={line.unitCost} onChange={event => updateInwardLine(line.id, { unitCost: event.target.value })} required className="input-field" />
+                      {(() => {
+                        const product = inventory.find(item => String(item.id) === String(line.productId));
+                        const rate = productGstRate(product);
+                        const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
+                        return <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)', cursor: rate ? 'pointer' : 'not-allowed' }}>
+                            <input type="checkbox" checked={Boolean(line.unitCostIncludesGst)} disabled={!rate} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.checked })} />
+                            Unit cost includes GST{rate ? ` (${rate}%)` : ''}
+                          </label>
+                          {rate > 0 && Number(line.unitCost) > 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 2 }}>{line.unitCostIncludesGst ? 'GST is already in this price' : `GST added: ₹${cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} · Cost to stock: ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
+                        </>;
+                      })()}
                     </div>
                     <button type="button" className="btn-outline" title="Remove product" disabled={inwardItems.length === 1} onClick={() => setInwardItems(previous => previous.filter(item => item.id !== line.id))} style={{ color: 'var(--status-red)', padding: '0.45rem' }}><Trash2 size={14} /></button>
                     {(line.identifiers?.length > 0 || line.imei1Values?.length > 0 || line.imei2Values?.length > 0) && <div style={{ gridColumn: '1 / -1', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{line.identifiers.length + line.imei1Values.length + line.imei2Values.length} identifier(s) imported from bill; identifiers can also be added from inventory edit.</div>}

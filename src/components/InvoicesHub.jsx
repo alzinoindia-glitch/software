@@ -167,15 +167,15 @@ export default function InvoicesHub({
     const isNonGstInv = invoiceToEdit.isNonGst;
     const subtotal = invoiceToEdit.items.reduce((s, it) => s + (Number(it.rate) * Number(it.qty)), 0);
     const disc = Number(invoiceToEdit.discount) || 0;
-    const grand = Math.max(0, Math.round(subtotal - disc));
-    
-    const taxable = isNonGstInv ? subtotal : invoiceToEdit.items.reduce((sum, item) => {
-      const itTot = Number(item.rate) * Number(item.qty);
-      const rate = item.gstRate || 18;
-      return sum + (itTot / (1 + (rate / 100)));
+    const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
+    const taxBeforeDiscount = isNonGstInv ? 0 : invoiceToEdit.items.reduce((sum, item) => {
+      const lineAmount = Number(item.rate) * Number(item.qty);
+      const rate = Number(item.gstRate ?? 18);
+      return sum + (usesExclusivePrices ? lineAmount * rate / 100 : lineAmount - lineAmount / (1 + rate / 100));
     }, 0);
-
-    const gst = isNonGstInv ? 0 : (subtotal - taxable);
+    const taxable = isNonGstInv ? subtotal : usesExclusivePrices ? subtotal : subtotal - taxBeforeDiscount;
+    const grand = Math.max(0, Math.round(subtotal + (usesExclusivePrices ? taxBeforeDiscount : 0) - disc));
+    const gst = taxBeforeDiscount;
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
@@ -191,7 +191,15 @@ export default function InvoicesHub({
       ...invoiceToEdit,
       items: invoiceToEdit.items.map(it => ({
         ...it,
-        total: Number(it.rate) * Number(it.qty),
+        total: Number(it.rate) * Number(it.qty) + (usesExclusivePrices && !isNonGstInv
+          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
+          : 0),
+        taxable: isNonGstInv || usesExclusivePrices
+          ? Number(it.rate) * Number(it.qty)
+          : (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100),
+        gstAmount: isNonGstInv ? 0 : (usesExclusivePrices
+          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
+          : Number(it.rate) * Number(it.qty) - (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100)),
         profit: (Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)
       })),
       taxableAmount: taxable,
