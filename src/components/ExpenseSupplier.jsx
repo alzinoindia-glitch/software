@@ -18,7 +18,7 @@ import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supp
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
@@ -300,6 +300,7 @@ export default function ExpenseSupplier({
           name: String(line.newProductName || '').trim(),
           category: String(line.newProductCategory || '').trim(),
           brand: String(line.newProductBrand || '').trim() || 'General',
+          hsn: String(line.newProductHsn || '').trim(),
           sellPrice: Number(line.newProductSellPrice) || unitCost,
           mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || unitCost,
           gstRate: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18,
@@ -1132,6 +1133,7 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductName} onChange={event => updateInwardLine(line.id, { newProductName: event.target.value })} placeholder="Product name *" required aria-label={`New product ${index + 1} name`} />
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
+                        <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/[^0-9]/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
                         <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (defaults to cost)" aria-label={`New product ${index + 1} selling price`} />
                         <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
