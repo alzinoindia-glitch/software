@@ -511,10 +511,20 @@ input, select, textarea {
     background-image: none !important;
   }
 
+  html {
+    position: static !important;
+    overflow: visible !important;
+  }
+
   body.print-document-mode {
     margin: 0 !important;
     min-height: 0 !important;
     height: auto !important;
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    width: auto !important;
+    overflow: visible !important;
   }
 
   body.print-document-mode > #root {
