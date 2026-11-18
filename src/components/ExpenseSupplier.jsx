@@ -65,6 +65,7 @@ export default function ExpenseSupplier({
   // Expense form state
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expCategory, setExpCategory] = useState('Tea & Refreshments');
+  const [expPayeeName, setExpPayeeName] = useState('');
   const [expAmount, setExpAmount] = useState('');
   const [expNotes, setExpNotes] = useState('');
   const [expPaidBy, setExpPaidBy] = useState('Cash');
@@ -105,20 +106,23 @@ export default function ExpenseSupplier({
     'Internet & Telephone',
     'Cleaning & Maintenance',
     'Marketing & Banners',
-    'Miscellaneous'
+    'Miscellaneous',
+    'Other'
   ];
+  const expenseNeedsPayeeName = ['Staff Salary', 'Other', 'Miscellaneous'].includes(expCategory);
 
   // Calculations
   const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
   const handleAddExpense = (e) => {
     e.preventDefault();
-    if (!expAmount) return;
+    if (!expAmount || (expenseNeedsPayeeName && !expPayeeName.trim())) return;
 
     const newExp = {
       id: `EXP-${Date.now().toString().slice(-4)}`,
       date: new Date().toISOString().split('T')[0],
       category: expCategory,
+      payeeName: expenseNeedsPayeeName ? expPayeeName.trim() : '',
       amount: parseFloat(expAmount),
       notes: expNotes.trim() || expCategory,
       paidBy: expPaidBy,
@@ -127,6 +131,7 @@ export default function ExpenseSupplier({
     setExpenses(prev => [newExp, ...prev]);
     setShowExpenseModal(false);
     setExpAmount('');
+    setExpPayeeName('');
     setExpNotes('');
   };
 
@@ -745,6 +750,7 @@ export default function ExpenseSupplier({
               <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                 <th style={{ padding: '0.65rem 0.5rem' }}>Date</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>Category</th>
+                <th style={{ padding: '0.65rem 0.5rem' }}>Name</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>Amount (₹)</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>Paid By</th>
                 <th style={{ padding: '0.65rem 0.5rem' }}>Notes / Description</th>
@@ -758,6 +764,7 @@ export default function ExpenseSupplier({
                   <td style={{ padding: '0.75rem 0.5rem' }}>
                     <span className="mono-tag">{exp.category}</span>
                   </td>
+                  <td style={{ padding: '0.75rem 0.5rem' }}>{exp.payeeName || '—'}</td>
                   <td style={{ padding: '0.75rem 0.5rem', fontWeight: 700, color: 'var(--status-red)', fontSize: '0.95rem' }}>
                     ₹{exp.amount.toLocaleString()}
                   </td>
@@ -988,6 +995,13 @@ export default function ExpenseSupplier({
                   {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+
+              {expenseNeedsPayeeName && <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+                  {expCategory === 'Staff Salary' ? 'Staff Name *' : 'Paid To / Person Name *'}
+                </label>
+                <input type="text" placeholder={expCategory === 'Staff Salary' ? 'Enter staff member name' : 'Enter person or business name'} value={expPayeeName} onChange={e => setExpPayeeName(e.target.value)} required className="input-field" />
+              </div>}
 
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Amount (₹) *</label>
