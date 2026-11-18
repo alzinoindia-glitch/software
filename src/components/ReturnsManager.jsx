@@ -9,8 +9,8 @@ const describeReplacement = (entry) => (entry.replacements || (entry.replacement
 export default function ReturnsManager({ invoices = [], setInvoices, inventory = [], setInventory, customers = [], setCustomers = () => {}, suppliers = [], shopConfig = {} }) {
   const [invoiceQuery, setInvoiceQuery] = useState('');
   const [selectedInvoiceKey, setSelectedInvoiceKey] = useState('');
-  const [lineIndex, setLineIndex] = useState('');
-  const [quantity, setQuantity] = useState(1);
+  const [lineIndices, setLineIndices] = useState([]);
+  const [returnQuantities, setReturnQuantities] = useState({});
   const [action, setAction] = useState('refund');
   const [replacementMode, setReplacementMode] = useState('product-exchange');
   const [pageView, setPageView] = useState('process');
@@ -37,23 +37,25 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   }, [invoices, invoiceQuery]);
   const invoice = invoices.find((item) => String(item.invoiceNo || item.id) === selectedInvoiceKey) || null;
   const invoiceItems = invoice?.items || [];
+  const invoiceLineGross = invoiceItems.reduce((sum, item) => sum + Number(item.total ?? (Number(item.rate || 0) * Number(item.qty || 1))), 0);
+  const invoiceNetScale = invoice && invoiceLineGross > 0 ? Math.min(1, Number(invoice.grandTotal ?? invoiceLineGross) / invoiceLineGross) : 1;
   const availableQty = (index) => {
     const sold = Number(invoiceItems[index]?.qty || 0);
     const already = (invoice?.returnTransactions || []).filter((entry) => Number(entry.originalItemIndex) === index && entry.status !== 'voided')
       .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
     return Math.max(0, sold - already);
   };
-  const selectedLine = lineIndex === '' ? null : invoiceItems[Number(lineIndex)];
-  const maxQty = lineIndex === '' ? 0 : availableQty(Number(lineIndex));
+  const selectedReturnLines = lineIndices.map((index) => {
+    const item = invoiceItems[index];
+    const maxQty = availableQty(index);
+    const itemValue = Number(item?.total ?? (Number(item?.rate || 0) * Number(item?.qty || 1))) * invoiceNetScale;
+    const quantity = Math.min(maxQty, Math.max(1, Number(returnQuantities[index]) || 1));
+    return { index, item, maxQty, quantity, unitPaid: itemValue / Math.max(1, Number(item?.qty || 1)), returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity };
+  }).filter((line) => line.item && line.maxQty > 0);
+  const returnValue = selectedReturnLines.reduce((sum, line) => sum + line.returnValue, 0);
   const inStockProducts = inventory.filter((item) => Number(item.stock || 0) > 0);
   const matchingStockProducts = inStockProducts.filter((item) => [item.name, item.brand, item.category, item.barcode, item.serialNumber, item.model]
     .some((value) => String(value || '').toLowerCase().includes(replacementProductQuery.trim().toLowerCase())));
-  const invoiceLineGross = invoiceItems.reduce((sum, item) => sum + Number(item.total ?? (Number(item.rate || 0) * Number(item.qty || 1))), 0);
-  const invoiceNetScale = invoice && invoiceLineGross > 0 ? Math.min(1, Number(invoice.grandTotal ?? invoiceLineGross) / invoiceLineGross) : 1;
-  const lineUnitPaid = selectedLine
-    ? Number(selectedLine.total ?? (Number(selectedLine.rate || 0) * Number(selectedLine.qty || 1))) * invoiceNetScale / Math.max(1, Number(selectedLine.qty || 1))
-    : 0;
-  const returnValue = lineUnitPaid * Number(quantity || 0);
   const returnAllowance = Math.min(returnValue, Math.max(0, returnAllowanceInput === '' ? returnValue : Number(returnAllowanceInput) || 0));
   const invoicePaid = invoice ? Math.max(0, Number(invoice.paidAmount ?? (String(invoice.paymentMode || '').toLowerCase() === 'khata' ? 0 : Number(invoice.grandTotal || 0) - Number(invoice.balanceDue ?? invoice.khataDue ?? 0))) || 0) : 0;
   const invoiceOutstanding = invoice ? Math.max(0, Number(invoice.balanceDue ?? invoice.khataDue ?? (Number(invoice.grandTotal || 0) - invoicePaid)) || 0) : 0;
@@ -115,13 +117,13 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const selectInvoice = (item) => {
     setSelectedInvoiceKey(String(item.invoiceNo || item.id));
     setInvoiceQuery(String(item.invoiceNo || item.id));
-    setLineIndex(''); setNotice(null); setReplacementLines([]); setAdditionalReplacementDiscount(0); setReplacementProductQuery(''); setAction('refund');
+    setLineIndices([]); setReturnQuantities({}); setNotice(null); setReplacementLines([]); setAdditionalReplacementDiscount(0); setReplacementProductQuery(''); setAction('refund');
     setReturnAllowanceInput(''); setSettlementReference(''); setPaymentConfirmed(false);
   };
 
   const completeReturn = () => {
-    if (!invoice || !selectedLine || maxQty < 1 || Number(quantity) < 1 || Number(quantity) > maxQty) {
-      setNotice({ kind: 'error', text: 'Choose an invoice line and a quantity that has not already been returned.' }); return;
+    if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty)) {
+      setNotice({ kind: 'error', text: 'Choose one or more invoice lines and valid quantities that have not already been returned.' }); return;
     }
     if (action === 'refund' && refundAmount > refundableBalance + 0.01) {
       setNotice({ kind: 'error', text: `Refund exceeds the remaining amount paid on this invoice (${money(refundableBalance)}). Apply any unpaid balance as Khata credit instead.` }); return;
@@ -135,11 +137,11 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     if (action === 'replacement' && (!replacementLines.length || resolvedReplacementLines.some((line) => !line.product || Number(line.quantity) < 1))) {
       setNotice({ kind: 'error', text: 'Add at least one replacement product and set a valid quantity.' }); return;
     }
-    if (action === 'replacement' && replacementMode === 'full-replacement' && Number(quantity) !== maxQty) {
-      setNotice({ kind: 'error', text: 'A full replacement must include every remaining unit on this invoice line.' }); return;
+    if (action === 'replacement' && replacementMode === 'full-replacement' && selectedReturnLines.some((line) => line.quantity !== line.maxQty)) {
+      setNotice({ kind: 'error', text: 'A full replacement must include every remaining unit on each selected invoice line.' }); return;
     }
-    if (action === 'replacement' && replacementMode === 'partial-replacement' && Number(quantity) >= maxQty) {
-      setNotice({ kind: 'error', text: 'Partial replacement quantity must be less than the remaining quantity. Choose full replacement to return all remaining units.' }); return;
+    if (action === 'replacement' && replacementMode === 'partial-replacement' && selectedReturnLines.some((line) => line.quantity >= line.maxQty)) {
+      setNotice({ kind: 'error', text: 'For a partial replacement, return less than the remaining quantity on each selected line. Choose full replacement to return all remaining units.' }); return;
     }
     if (action === 'replacement' && resolvedReplacementLines.some((line) => !Number.isFinite(line.discountPerUnit) || line.discountPerUnit < 0 || line.discountPerUnit > line.listPrice)) {
       setNotice({ kind: 'error', text: 'Each replacement discount must be zero or more and cannot exceed that product’s selling price.' }); return;
@@ -167,25 +169,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       if (new Set(selectedReplacementCodes).size !== selectedReplacementCodes.length) { setNotice({ kind: 'error', text: 'The same IMEI or unit cannot be assigned to multiple replacement items.' }); return; }
     }
 
-    const returnedImeis = (selectedLine.imeis || []).slice(0, Number(quantity));
-    const transaction = {
-      id: `RET-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      date: new Date().toISOString(), status: 'completed', type: action, ...(action === 'replacement' ? { replacementMode } : {}),
-      originalItemIndex: Number(lineIndex), originalProductId: selectedLine.id,
-      originalProductName: selectedLine.name, originalCategory: selectedLine.category,
-      replacementDiscountTotal: action === 'replacement' ? replacementDiscountTotal : 0,
-      additionalReplacementDiscount: action === 'replacement' ? appliedAdditionalReplacementDiscount : 0,
-      originalUnitProfit: Number(selectedLine.profit ?? ((Number(selectedLine.rate || 0) - Number(selectedLine.buyPrice || 0)) * Number(selectedLine.qty || 1))) / Math.max(1, Number(selectedLine.qty || 1)),
-      originalUnitCost: Number(selectedLine.buyPrice || 0), quantity: Number(quantity),
-      originalUnitPaid: lineUnitPaid, returnValue, returnAllowance, allowanceReduction: Math.max(0, returnValue - returnAllowance),
-      invoicePaidAtReturn: invoicePaid, invoiceOutstandingAtReturn: invoiceOutstanding,
-      outstandingCleared, availableReturnCredit,
-      allowanceReason: returnAllowance + 0.01 < returnValue ? 'Admin-approved partial return / used item allowance' : '',
-      refundAmount, refundMethod: action === 'refund' ? refundMethod : '',
-      refundReference: action === 'refund' ? settlementReference.trim() : '',
-      condition, restocked: Boolean(restock), returnedImeis,
-      settlement: action === 'replacement' ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
-      replacements: action === 'replacement' ? resolvedReplacementLines.map((line) => ({
+    const transactionDate = new Date().toISOString();
+    const groupId = `RET-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const replacementRecords = action === 'replacement' ? resolvedReplacementLines.map((line) => ({
         productId: line.product.id, productName: line.product.name, category: line.product.category,
         quantity: Number(line.quantity), imeis: line.imeis || [],
         listPrice: line.listPrice,
@@ -194,8 +180,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         unitPrice: getReplacementNetUnitPrice(line),
         unitProfit: getReplacementNetUnitPrice(line) - Number(line.product.buyPrice || 0),
         unitCost: Number(line.product.buyPrice || 0),
-      })) : [],
-      replacement: action === 'replacement' ? {
+      })) : [];
+    const replacementRecord = action === 'replacement' ? {
         ...(resolvedReplacementLines[0] ? {
           productId: resolvedReplacementLines[0].product.id,
           productName: resolvedReplacementLines[0].product.name,
@@ -210,23 +196,50 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         } : {}),
         quantity: resolvedReplacementLines.reduce((sum, line) => sum + Number(line.quantity), 0),
         valueDifference: replacementDelta,
-      } : null,
-    };
+      } : null;
+    const transactions = selectedReturnLines.map((returnLine, linePosition) => {
+      const lineAllowance = returnValue > 0 ? returnAllowance * returnLine.returnValue / returnValue : 0;
+      const lineOutstandingShare = returnValue > 0 ? returnOutstandingShare * returnLine.returnValue / returnValue : 0;
+      const lineOutstandingCleared = Math.min(lineOutstandingShare, lineAllowance);
+      const lineCredit = Math.max(0, lineAllowance - lineOutstandingCleared);
+      const item = returnLine.item;
+      return {
+        id: `${groupId}-${linePosition + 1}`, groupId, date: transactionDate, status: 'completed', type: action, ...(action === 'replacement' ? { replacementMode } : {}),
+        originalItemIndex: Number(returnLine.index), originalProductId: item.id,
+        originalProductName: item.name, originalCategory: item.category,
+        replacementDiscountTotal: action === 'replacement' && linePosition === 0 ? replacementDiscountTotal : 0,
+        additionalReplacementDiscount: action === 'replacement' && linePosition === 0 ? appliedAdditionalReplacementDiscount : 0,
+        originalUnitProfit: Number(item.profit ?? ((Number(item.rate || 0) - Number(item.buyPrice || 0)) * Number(item.qty || 1))) / Math.max(1, Number(item.qty || 1)),
+        originalUnitCost: Number(item.buyPrice || 0), quantity: returnLine.quantity,
+        originalUnitPaid: returnLine.unitPaid, returnValue: returnLine.returnValue, returnAllowance: lineAllowance, allowanceReduction: Math.max(0, returnLine.returnValue - lineAllowance),
+        invoicePaidAtReturn: invoicePaid, invoiceOutstandingAtReturn: invoiceOutstanding,
+        outstandingCleared: lineOutstandingCleared, availableReturnCredit: lineCredit,
+        allowanceReason: lineAllowance + 0.01 < returnLine.returnValue ? 'Admin-approved partial return / used item allowance' : '',
+        refundAmount: action === 'refund' ? lineCredit : 0, refundMethod: action === 'refund' ? refundMethod : '',
+        refundReference: action === 'refund' ? settlementReference.trim() : '',
+        condition, restocked: Boolean(restock), returnedImeis: (item.imeis || []).slice(0, returnLine.quantity),
+        settlement: action === 'replacement' && linePosition === 0 ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
+        replacements: action === 'replacement' && linePosition === 0 ? replacementRecords : [],
+        replacement: action === 'replacement' && linePosition === 0 ? replacementRecord : null,
+      };
+    });
 
     if (restock || action === 'replacement') {
       setInventory((current) => current.map((item) => {
-        const isReturnedProduct = restock && String(item.id) === String(selectedLine.id);
+        const returnedLines = restock ? selectedReturnLines.filter((line) => String(item.id) === String(line.item.id)) : [];
+        const returnedQty = returnedLines.reduce((sum, line) => sum + line.quantity, 0);
+        const returnedIdentifiers = returnedLines.flatMap((line) => (line.item.imeis || []).slice(0, line.quantity));
+        const isReturnedProduct = returnedQty > 0;
         const consumedLines = action === 'replacement' ? resolvedReplacementLines.filter((line) => String(line.product.id) === String(item.id)) : [];
         if (!isReturnedProduct && !consumedLines.length) return item;
         const consumedQty = consumedLines.reduce((sum, line) => sum + Number(line.quantity), 0);
         const consumedImeis = new Set(consumedLines.flatMap((line) => line.imeis || []).map(String));
-        const returnedIdentifiers = isReturnedProduct ? returnedImeis : [];
-        const returnedUnitEntries = isReturnedProduct ? returnedImeis.map((imei) => ({ imei1: imei, returnedFromInvoice: invoice.invoiceNo })) : [];
+        const returnedUnitEntries = isReturnedProduct ? returnedIdentifiers.map((imei) => ({ imei1: imei, returnedFromInvoice: invoice.invoiceNo })) : [];
         const remainingImeis = (item.imeis || []).filter((imei) => !consumedImeis.has(String(imei)));
         const remainingUnits = (item.units || []).filter((unit) => !consumedImeis.has(String(unit.imei1 || unit.imei2 || unit.barcode || unit.id)));
         return {
           ...item,
-          stock: Math.max(0, Number(item.stock || 0) + (isReturnedProduct ? Number(quantity) : 0) - consumedQty),
+          stock: Math.max(0, Number(item.stock || 0) + returnedQty - consumedQty),
           imeis: item.imeis ? [...new Set([...remainingImeis, ...returnedIdentifiers])] : item.imeis,
           units: item.units ? [...remainingUnits, ...returnedUnitEntries] : item.units,
         };
@@ -234,14 +247,14 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     }
     setInvoices((current) => current.map((item) => {
       if (String(item.invoiceNo || item.id) !== selectedInvoiceKey) return item;
-      const returnTransactions = [...(item.returnTransactions || []), transaction];
+      const returnTransactions = [...(item.returnTransactions || []), ...transactions];
       const isFullyRefunded = (item.items || []).every((line, index) => {
         const returned = returnTransactions.filter((entry) => Number(entry.originalItemIndex) === index && entry.type === 'refund' && entry.status !== 'voided')
           .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
         return returned >= Number(line.qty || 0);
       });
       const balanceDue = Math.max(0, invoiceOutstanding - outstandingCleared);
-      return { ...item, returnOriginalBalanceDue: Number(item.returnOriginalBalanceDue ?? invoiceOutstanding), balanceDue, khataDue: balanceDue, returnTransactions, ...(isFullyRefunded && balanceDue <= 0 ? { status: 'REFUNDED', paymentStatus: 'REFUNDED', isCancelled: true, cancelledAt: transaction.date } : {}) };
+      return { ...item, returnOriginalBalanceDue: Number(item.returnOriginalBalanceDue ?? invoiceOutstanding), balanceDue, khataDue: balanceDue, returnTransactions, ...(isFullyRefunded && balanceDue <= 0 ? { status: 'REFUNDED', paymentStatus: 'REFUNDED', isCancelled: true, cancelledAt: transactionDate } : {}) };
     }));
     if (action === 'replacement' && settlementDirection === 'collect' && effectiveSettlementMethod === 'Khata due' && settlementAmount > 0) {
       const phoneDigits = String(invoice.customerPhone || '').replace(/\D/g, '').slice(-10);
@@ -251,15 +264,15 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
           const customerPhone = String(customer.phone || customer.mobile || '').replace(/\D/g, '').slice(-10);
           return phoneDigits ? customerPhone === phoneDigits : String(customer.name || '').trim().toLowerCase() === String(invoice.customerName || '').trim().toLowerCase();
         });
-        const entry = { id: `KH-RET-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: settlementAmount, paidAmount: 0, balanceDue: settlementAmount, description: `Return/exchange balance for ${invoice.invoiceNo}`, reference: transaction.id };
+        const entry = { id: `KH-RET-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: settlementAmount, paidAmount: 0, balanceDue: settlementAmount, description: `Return/exchange balance for ${invoice.invoiceNo}`, reference: transactions[0]?.groupId || transactions[0]?.id };
         if (matchIndex >= 0) return list.map((customer, index) => index === matchIndex ? { ...customer, balanceDue: Math.max(0, Number(customer.balanceDue || 0) - outstandingCleared) + settlementAmount, khataEntries: [...(customer.khataEntries || []), entry] } : customer);
         return [...list, { id: `CUST-${Date.now()}`, name: invoice.customerName || 'Customer', phone: invoice.customerPhone || '', address: invoice.customerAddress || '', totalSpent: 0, balanceDue: settlementAmount, khataEntries: [entry] }];
       });
     }
     setNotice({ kind: 'success', text: action === 'refund'
-      ? `${money(refundAmount)} refund recorded for ${invoice.invoiceNo}. ${restock ? 'Returned stock was added back.' : 'Returned item was kept out of sellable stock.'}`
-      : `${replacementMode === 'full-replacement' ? 'Full replacement' : replacementMode === 'partial-replacement' ? 'Partial replacement' : 'Product exchange'} recorded for ${invoice.invoiceNo}. ${settlementDirection === 'collect' ? `${money(settlementAmount)} to collect` : settlementDirection === 'refund' ? `${money(settlementAmount)} refund due` : 'No balance due'}. Replacement stock was deducted${restock ? ' and the returned item was restocked' : ''}.` });
-    setLineIndex(''); setReplacementLines([]); setAdditionalReplacementDiscount(0); setRestock(false);
+      ? `${money(refundAmount)} refund recorded for ${invoice.invoiceNo} (${selectedReturnLines.length} item line(s)). ${restock ? 'Returned stock was added back.' : 'Returned items were kept out of sellable stock.'}`
+      : `${replacementMode === 'full-replacement' ? 'Full replacement' : replacementMode === 'partial-replacement' ? 'Partial replacement' : 'Product exchange'} recorded for ${invoice.invoiceNo} (${selectedReturnLines.length} item line(s)). ${settlementDirection === 'collect' ? `${money(settlementAmount)} to collect` : settlementDirection === 'refund' ? `${money(settlementAmount)} refund due` : 'No balance due'}. Replacement stock was deducted${restock ? ' and returned items were restocked' : ''}.` });
+    setLineIndices([]); setReturnQuantities({}); setReplacementLines([]); setAdditionalReplacementDiscount(0); setRestock(false);
   };
 
   const inputStyle = { width: '100%', minHeight: 42, border: '1px solid #cbd8d3', borderRadius: 9, padding: '0.6rem 0.75rem', background: '#fff', color: '#17352d', boxSizing: 'border-box' };
@@ -310,19 +323,34 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       <div style={cardStyle}>
         <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>2. Choose returned item</h2>
         {!invoice ? <div style={{ padding: '30px 10px', textAlign: 'center', color: '#71837c' }}>Search and select an invoice to continue.</div> : <>
+          <p style={{ margin: '0 0 10px', color: '#667a73', fontSize: 12 }}>Select one or more products from this invoice. You can set a return quantity for each selected product.</p>
           {invoiceItems.map((item, index) => {
             const remaining = availableQty(index);
-            const selected = String(lineIndex) === String(index);
+            const selected = lineIndices.includes(index);
             const itemTotalPaid = Number(item.total ?? (Number(item.rate || 0) * Number(item.qty || 1))) * invoiceNetScale;
-            return <button key={`${item.id || item.name}-${index}`} disabled={remaining < 1 || invoice.isCancelled || invoice.status === 'REFUNDED'} onClick={() => { setLineIndex(String(index)); setQuantity(1); setReturnAllowanceInput(''); setSettlementReference(''); setPaymentConfirmed(false); setAdditionalReplacementDiscount(0); setNotice(null); }} style={{ width: '100%', textAlign: 'left', border: `1px solid ${selected ? '#07835d' : '#d5e1dc'}`, borderRadius: 10, padding: 11, marginBottom: 8, background: selected ? '#eff9f4' : '#fff', color: '#17352d', cursor: remaining ? 'pointer' : 'not-allowed', opacity: remaining ? 1 : .6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><strong>{item.name || 'Product'}</strong><span style={{ fontSize: 12, color: remaining ? '#087452' : '#a0433a', whiteSpace: 'nowrap' }}>{remaining} returnable / {item.qty || 0}</span></div>
-            <div style={{ color: '#667a73', fontSize: 12, marginTop: 3 }}>Line value {money(itemTotalPaid)} · {money(itemTotalPaid / Math.max(1, Number(item.qty || 1)))} each</div>
-            </button>;
+            const currentQuantity = Math.min(remaining, Math.max(1, Number(returnQuantities[index]) || 1));
+            return <article key={`${item.id || item.name}-${index}`} style={{ border: `1px solid ${selected ? '#07835d' : '#d5e1dc'}`, borderRadius: 10, padding: 11, marginBottom: 8, background: selected ? '#eff9f4' : '#fff', color: '#17352d', opacity: remaining ? 1 : .6 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: remaining && !invoice.isCancelled && invoice.status !== 'REFUNDED' ? 'pointer' : 'not-allowed' }}>
+                <input type="checkbox" checked={selected} disabled={remaining < 1 || invoice.isCancelled || invoice.status === 'REFUNDED'} onChange={() => {
+                  setLineIndices(current => selected ? current.filter(value => value !== index) : [...current, index]);
+                  setReturnQuantities(current => selected ? Object.fromEntries(Object.entries(current).filter(([key]) => Number(key) !== index)) : { ...current, [index]: 1 });
+                  setReturnAllowanceInput(''); setSettlementReference(''); setPaymentConfirmed(false); setAdditionalReplacementDiscount(0); setNotice(null);
+                }} style={{ marginTop: 3 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><strong>{item.name || 'Product'}</strong><span style={{ fontSize: 12, color: remaining ? '#087452' : '#a0433a', whiteSpace: 'nowrap' }}>{remaining} returnable / {item.qty || 0}</span></span>
+                  <span style={{ display: 'block', color: '#667a73', fontSize: 12, marginTop: 3 }}>Line value {money(itemTotalPaid)} · {money(itemTotalPaid / Math.max(1, Number(item.qty || 1)))} each</span>
+                </span>
+              </label>
+              {selected && <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 0 24px', fontSize: 12, fontWeight: 700 }}>Return quantity
+                <input style={{ ...inputStyle, width: 100, minHeight: 36 }} type="number" min="1" max={remaining} value={currentQuantity} disabled={action === 'replacement' && replacementMode === 'full-replacement'} onChange={event => setReturnQuantities(current => ({ ...current, [index]: Math.min(remaining || 1, Math.max(1, Number(event.target.value) || 1)) }))} />
+                {action === 'replacement' && replacementMode === 'full-replacement' && <small style={{ color: '#667a73', fontWeight: 500 }}>All {remaining} remaining units</small>}
+              </label>}
+            </article>;
           })}
 
-          {selectedLine && <div style={{ borderTop: '1px solid #e4ece8', paddingTop: 14, marginTop: 8 }}>
+          {selectedReturnLines.length > 0 && <div style={{ borderTop: '1px solid #e4ece8', paddingTop: 14, marginTop: 8 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 700 }}>Return quantity<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="1" max={maxQty} value={quantity} disabled={action === 'replacement' && replacementMode === 'full-replacement'} onChange={(event) => setQuantity(Math.min(maxQty || 1, Math.max(1, Number(event.target.value) || 1)))} />{action === 'replacement' && replacementMode === 'full-replacement' && <small style={{ display: 'block', color: '#667a73', marginTop: 4 }}>Full replacement returns all {maxQty} remaining unit(s) from this invoice line.</small>}</label>
+              <div style={{ fontSize: 12, fontWeight: 700, padding: '10px 0' }}>Selected items: {selectedReturnLines.length} · Return quantity: {selectedReturnLines.reduce((sum, line) => sum + line.quantity, 0)}</div>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Condition<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={condition} onChange={(event) => { setCondition(event.target.value); if (event.target.value === 'damaged') setRestock(false); }}><option value="good">Good / sellable</option><option value="damaged">Damaged / inspect</option></select></label>
             </div>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: 11, margin: '12px 0', border: '1px solid #d5e1dc', borderRadius: 10, cursor: 'pointer' }}>
@@ -342,12 +370,12 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
                 ['full-replacement', 'Full replacement'],
                 ['partial-replacement', 'Partial replacement'],
                 ['product-exchange', 'Product exchange'],
-              ].map(([mode, label]) => <button key={mode} disabled={mode === 'partial-replacement' && maxQty < 2} title={mode === 'partial-replacement' && maxQty < 2 ? 'This invoice line has no smaller partial quantity available.' : undefined} onClick={() => {
+              ].map(([mode, label]) => <button key={mode} disabled={mode === 'partial-replacement' && selectedReturnLines.some(line => line.maxQty < 2)} title={mode === 'partial-replacement' && selectedReturnLines.some(line => line.maxQty < 2) ? 'At least one selected line has no smaller partial quantity available.' : undefined} onClick={() => {
                 setAction('replacement'); setReplacementMode(mode);
                 if (!replacementLines.length) setReplacementLines([{ rowId: `replacement-${Date.now()}`, productId: '', quantity: 1, imeis: [], discountPerUnit: 0 }]);
-                if (mode === 'full-replacement') setQuantity(maxQty);
-                else if (mode === 'partial-replacement') setQuantity(Math.min(Number(quantity) || 1, Math.max(1, maxQty - 1)));
-              }} style={{ ...inputStyle, cursor: mode === 'partial-replacement' && maxQty < 2 ? 'not-allowed' : 'pointer', opacity: mode === 'partial-replacement' && maxQty < 2 ? 0.5 : 1, borderColor: action === 'replacement' && replacementMode === mode ? '#087452' : '#d5e1dc', background: action === 'replacement' && replacementMode === mode ? '#e9f7f0' : '#fff', fontWeight: 700 }}><PackageCheck size={16} style={{ verticalAlign: 'middle', marginRight: 5 }} />{label}</button>)}
+                if (mode === 'full-replacement') setReturnQuantities(Object.fromEntries(selectedReturnLines.map(line => [line.index, line.maxQty])));
+                else if (mode === 'partial-replacement') setReturnQuantities(Object.fromEntries(selectedReturnLines.map(line => [line.index, Math.min(line.quantity, Math.max(1, line.maxQty - 1))])));
+              }} style={{ ...inputStyle, cursor: mode === 'partial-replacement' && selectedReturnLines.some(line => line.maxQty < 2) ? 'not-allowed' : 'pointer', opacity: mode === 'partial-replacement' && selectedReturnLines.some(line => line.maxQty < 2) ? 0.5 : 1, borderColor: action === 'replacement' && replacementMode === mode ? '#087452' : '#d5e1dc', background: action === 'replacement' && replacementMode === mode ? '#e9f7f0' : '#fff', fontWeight: 700 }}><PackageCheck size={16} style={{ verticalAlign: 'middle', marginRight: 5 }} />{label}</button>)}
             </div>
             {action === 'refund' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, alignItems: 'end' }}>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Refund amount / approved allowance (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={returnValue} step="0.01" value={returnAllowanceInput === '' ? returnValue : returnAllowanceInput} onChange={(event) => setReturnAllowanceInput(event.target.value)} /><small style={{ color: '#667a73' }}>Returned line value: {money(returnValue)}. Enter a lower amount for a partial refund; any unpaid Khata share is cleared first.</small></label>
@@ -355,10 +383,10 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
               {refundMethod === 'UPI' && <label style={{ fontSize: 12, fontWeight: 700 }}>Refund UTR / transfer reference<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={settlementReference} onChange={(event) => setSettlementReference(event.target.value)} placeholder="Enter transfer reference" /></label>}
               <div style={{ padding: 10, background: '#f3f7f5', borderRadius: 9 }}><small style={{ color: '#667a73' }}>Refund to customer</small><strong style={{ display: 'block', fontSize: 20, color: '#087452', marginTop: 2 }}>{money(refundAmount)}</strong></div>
             </div> : <div style={{ display: 'grid', gap: 10 }}>
-              <p style={{ margin: '0 0 2px', color: '#667a73', fontSize: 13 }}>{replacementMode === 'full-replacement' ? 'Replace all remaining units on this invoice line.' : replacementMode === 'partial-replacement' ? 'Return only the quantity selected above; the remaining units stay on the original invoice.' : 'Exchange the selected returned item for one or more products from stock.'}</p>
+              <p style={{ margin: '0 0 2px', color: '#667a73', fontSize: 13 }}>{replacementMode === 'full-replacement' ? 'Replace all remaining units on each selected invoice line.' : replacementMode === 'partial-replacement' ? 'Return only the quantity selected for each line; the remaining units stay on the original invoice.' : 'Exchange the selected returned items for one or more products from stock.'}</p>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Approved return / exchange allowance (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={returnValue} step="0.01" value={returnAllowanceInput === '' ? returnValue : returnAllowanceInput} onChange={(event) => setReturnAllowanceInput(event.target.value)} /><small style={{ color: '#667a73' }}>Returned line value: {money(returnValue)}. Reduce this for a used / depreciated item. Unpaid Khata is carried into the new balance; available credit updates below.</small></label>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Search replacement stock<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={replacementProductQuery} onChange={(event) => setReplacementProductQuery(event.target.value)} placeholder="Search product, model, barcode or brand" /><small style={{ display: 'block', color: '#667a73', marginTop: 4 }}>{matchingStockProducts.length} in-stock result(s). Supplier, buy cost, sell price and stock appear in product choices.</small></label>
-              {resolvedReplacementLines.map((line, index) => {
+              {resolvedReplacementLines.map((line) => {
                 const otherQty = replacementLines.filter((other) => other.rowId !== line.rowId && String(other.productId) === String(line.productId)).reduce((sum, other) => sum + Number(other.quantity || 0), 0);
                 const maxAvailable = Number(line.product?.stock || 0) - otherQty;
                 const isTracked = line.product && ((line.product.imeis || []).length > 0 || (line.product.units || []).length > 0);
