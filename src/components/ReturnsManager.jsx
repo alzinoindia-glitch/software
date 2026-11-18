@@ -110,7 +110,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const returnHistory = useMemo(() => invoices.flatMap((item) => (item.returnTransactions || [])
     .filter((entry) => entry.status !== 'voided')
     .map((entry) => ({ invoice: item, entry })))
-    .filter(({ invoice: item, entry }) => [item.invoiceNo, item.customerName, item.customerPhone, entry.originalProductName, entry.type, entry.replacementMode, describeReplacement(entry)]
+    .filter(({ invoice: item, entry }) => [item.invoiceNo, item.customerName, item.customerPhone, entry.originalProductName, entry.type, entry.replacementMode, entry.refundMethod, describeReplacement(entry)]
       .some((value) => String(value || '').toLowerCase().includes(historyQuery.trim().toLowerCase())))
     .sort((a, b) => new Date(b.entry.date || 0) - new Date(a.entry.date || 0)), [invoices, historyQuery]);
 
@@ -216,6 +216,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         outstandingCleared: lineOutstandingCleared, availableReturnCredit: lineCredit,
         allowanceReason: lineAllowance + 0.01 < returnLine.returnValue ? 'Admin-approved partial return / used item allowance' : '',
         refundAmount: action === 'refund' ? lineCredit : 0, refundMethod: action === 'refund' ? refundMethod : '',
+        refundPaidAmount: action === 'refund' && refundMethod !== 'Khata (pay later)' ? lineCredit : 0,
+        refundPendingAmount: action === 'refund' && refundMethod === 'Khata (pay later)' ? lineCredit : 0,
+        refundStatus: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid') : '',
         refundReference: action === 'refund' ? settlementReference.trim() : '',
         condition, restocked: Boolean(restock), returnedImeis: (item.imeis || []).slice(0, returnLine.quantity),
         settlement: action === 'replacement' && linePosition === 0 ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
@@ -270,9 +273,30 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       });
     }
     setNotice({ kind: 'success', text: action === 'refund'
-      ? `${money(refundAmount)} refund recorded for ${invoice.invoiceNo} (${selectedReturnLines.length} item line(s)). ${restock ? 'Returned stock was added back.' : 'Returned items were kept out of sellable stock.'}`
+      ? refundMethod === 'Khata (pay later)'
+        ? `${money(refundAmount)} refund kept as a pending customer Khata credit for ${invoice.invoiceNo}. Pay it when the customer collects it. ${restock ? 'Returned stock was added back.' : 'Returned items were kept out of sellable stock.'}`
+        : `${money(refundAmount)} refund recorded for ${invoice.invoiceNo} (${selectedReturnLines.length} item line(s)). ${restock ? 'Returned stock was added back.' : 'Returned items were kept out of sellable stock.'}`
       : `${replacementMode === 'full-replacement' ? 'Full replacement' : replacementMode === 'partial-replacement' ? 'Partial replacement' : 'Product exchange'} recorded for ${invoice.invoiceNo} (${selectedReturnLines.length} item line(s)). ${settlementDirection === 'collect' ? `${money(settlementAmount)} to collect` : settlementDirection === 'refund' ? `${money(settlementAmount)} refund due` : 'No balance due'}. Replacement stock was deducted${restock ? ' and returned items were restocked' : ''}.` });
     setLineIndices([]); setReturnQuantities({}); setReplacementLines([]); setAdditionalReplacementDiscount(0); setRestock(false);
+  };
+
+  const markKhataRefundPaid = (targetInvoice, targetEntry) => {
+    const groupId = targetEntry.groupId || targetEntry.id;
+    const pendingAmount = (targetInvoice.returnTransactions || [])
+      .filter((entry) => entry.status !== 'voided' && (entry.groupId || entry.id) === groupId)
+      .reduce((sum, entry) => sum + Math.max(0, Number(entry.refundPendingAmount) || 0), 0);
+    if (!pendingAmount || !window.confirm(`Confirm that the pending Khata refund of ${money(pendingAmount)} was paid to ${targetInvoice.customerName || 'the customer'}?`)) return;
+    const paidAt = new Date().toISOString();
+    setInvoices((current) => current.map((item) => {
+      if (String(item.invoiceNo || item.id) !== String(targetInvoice.invoiceNo || targetInvoice.id)) return item;
+      return {
+        ...item,
+        returnTransactions: (item.returnTransactions || []).map((entry) => (entry.groupId || entry.id) === groupId && Number(entry.refundPendingAmount) > 0
+          ? { ...entry, refundPaidAmount: Number(entry.refundPaidAmount || 0) + Number(entry.refundPendingAmount), refundPendingAmount: 0, refundStatus: 'paid', refundPaidDate: paidAt, refundPaidMethod: 'Admin recorded payment' }
+          : entry)
+      };
+    }));
+    setNotice({ kind: 'success', text: `Khata refund of ${money(pendingAmount)} marked as paid for ${targetInvoice.invoiceNo || targetInvoice.id}.` });
   };
 
   const inputStyle = { width: '100%', minHeight: 42, border: '1px solid #cbd8d3', borderRadius: 9, padding: '0.6rem 0.75rem', background: '#fff', color: '#17352d', boxSizing: 'border-box' };
@@ -299,7 +323,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       <div style={{ position: 'relative', marginBottom: 12 }}><Search size={17} style={{ position: 'absolute', top: 12, left: 11, color: '#70847c' }} /><input style={{ ...inputStyle, paddingLeft: 36 }} value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search invoice, customer, product, or exchange type" /></div>
       {returnHistory.length ? returnHistory.map(({ invoice: item, entry }) => <article key={`${item.invoiceNo || item.id}-${entry.id}`} style={{ padding: 13, border: '1px solid #e1eae6', borderRadius: 11, marginBottom: 9, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'center' }}>
         <div><strong>{item.invoiceNo || item.id} · {entry.type === 'refund' ? 'Refund' : entry.replacementMode === 'full-replacement' ? 'Full replacement' : entry.replacementMode === 'partial-replacement' ? 'Partial replacement' : 'Product exchange'}</strong><div style={{ color: '#667a73', fontSize: 13, marginTop: 4 }}>{item.customerName || 'Counter Customer'}{item.customerPhone ? ` · ${item.customerPhone}` : ''} · {new Date(entry.date || 0).toLocaleString()}</div><div style={{ marginTop: 5, fontSize: 13 }}>Returned: {entry.originalProductName} × {entry.quantity}{entry.type === 'replacement' ? ` · Replaced with: ${describeReplacement(entry) || '—'}` : ''}</div><small style={{ color: '#667a73' }}>{entry.restocked ? 'Returned item restocked' : 'Returned item not restocked'} · {entry.condition || 'Condition not recorded'}</small></div>
-        <strong style={{ textAlign: 'right', color: entry.settlement?.direction === 'collect' ? '#a35d00' : '#087452' }}>{entry.type === 'refund' ? `Refund ${money(entry.refundAmount)}` : entry.settlement?.direction === 'collect' ? `Collect ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refund ${money(entry.settlement.amount)}` : 'Settled even'}</strong>
+        <div style={{ display: 'grid', justifyItems: 'end', gap: 6 }}><strong style={{ textAlign: 'right', color: entry.refundPendingAmount > 0 || entry.settlement?.direction === 'collect' ? '#a35d00' : '#087452' }}>{entry.type === 'refund' ? entry.refundPendingAmount > 0 ? `Khata refund pending ${money(entry.refundPendingAmount)}` : `Refund ${money(entry.refundAmount)}` : entry.settlement?.direction === 'collect' ? `Collect ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refund ${money(entry.settlement.amount)}` : 'Settled even'}</strong>{entry.refundPendingAmount > 0 && <button type="button" onClick={() => markKhataRefundPaid(item, entry)} style={{ ...inputStyle, minHeight: 34, padding: '0.35rem 0.6rem', width: 'auto', cursor: 'pointer', color: '#fff', background: '#08634d', fontWeight: 700 }}>Mark refund paid</button>}</div>
       </article>) : <div style={{ padding: 28, textAlign: 'center', color: '#71837c' }}>No completed return or replacement records found.</div>}
     </div> : <div className="returns-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 0.8fr) minmax(0, 1.6fr)', gap: 16, alignItems: 'start' }}>
 
@@ -379,9 +403,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
             </div>
             {action === 'refund' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, alignItems: 'end' }}>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Refund amount / approved allowance (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={returnValue} step="0.01" value={returnAllowanceInput === '' ? returnValue : returnAllowanceInput} onChange={(event) => setReturnAllowanceInput(event.target.value)} /><small style={{ color: '#667a73' }}>Returned line value: {money(returnValue)}. Enter a lower amount for a partial refund; any unpaid Khata share is cleared first.</small></label>
-              <label style={{ fontSize: 12, fontWeight: 700 }}>Refund method<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Bank transfer</option></select></label>
+              <label style={{ fontSize: 12, fontWeight: 700 }}>Refund method<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Khata (pay later)</option></select>{refundMethod === 'Khata (pay later)' && <small style={{ display: 'block', marginTop: 4, color: '#a35d00' }}>This amount will be recorded as pending for the customer to collect later.</small>}</label>
               {refundMethod === 'UPI' && <label style={{ fontSize: 12, fontWeight: 700 }}>Refund UTR / transfer reference<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={settlementReference} onChange={(event) => setSettlementReference(event.target.value)} placeholder="Enter transfer reference" /></label>}
-              <div style={{ padding: 10, background: '#f3f7f5', borderRadius: 9 }}><small style={{ color: '#667a73' }}>Refund to customer</small><strong style={{ display: 'block', fontSize: 20, color: '#087452', marginTop: 2 }}>{money(refundAmount)}</strong></div>
+              <div style={{ padding: 10, background: refundMethod === 'Khata (pay later)' ? '#fff8e8' : '#f3f7f5', borderRadius: 9 }}><small style={{ color: '#667a73' }}>{refundMethod === 'Khata (pay later)' ? 'Customer Khata refund pending' : 'Refund to customer'}</small><strong style={{ display: 'block', fontSize: 20, color: refundMethod === 'Khata (pay later)' ? '#a35d00' : '#087452', marginTop: 2 }}>{money(refundAmount)}</strong></div>
             </div> : <div style={{ display: 'grid', gap: 10 }}>
               <p style={{ margin: '0 0 2px', color: '#667a73', fontSize: 13 }}>{replacementMode === 'full-replacement' ? 'Replace all remaining units on each selected invoice line.' : replacementMode === 'partial-replacement' ? 'Return only the quantity selected for each line; the remaining units stay on the original invoice.' : 'Exchange the selected returned items for one or more products from stock.'}</p>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Approved return / exchange allowance (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={returnValue} step="0.01" value={returnAllowanceInput === '' ? returnValue : returnAllowanceInput} onChange={(event) => setReturnAllowanceInput(event.target.value)} /><small style={{ color: '#667a73' }}>Returned line value: {money(returnValue)}. Reduce this for a used / depreciated item. Unpaid Khata is carried into the new balance; available credit updates below.</small></label>
