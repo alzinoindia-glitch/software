@@ -623,18 +623,25 @@ export default function ExpenseSupplier({
     const rows = new Map();
     const ensureRow = (productId, productName = '') => {
       const key = String(productId || `name:${productName}`);
-      if (!rows.has(key)) rows.set(key, { key, productId: productId || '', productName, purchased: 0, purchaseValue: 0, billCount: 0, lastPurchaseDate: '' });
+      if (!rows.has(key)) rows.set(key, { key, productId: productId || '', productName, purchased: 0, purchaseValue: 0, billCount: 0, lastPurchaseDate: '', lastPurchaseQuantity: 0, lastPurchaseUnitCost: null, lastPurchaseInvoiceNumber: '' });
       return rows.get(key);
     };
-    selectedSupplierBills.forEach(bill => {
+    [...selectedSupplierBills].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(bill => {
       const lines = bill.lines?.length ? bill.lines : [{ productId: bill.productId, productName: bill.productName, quantity: bill.quantity, totalAmount: bill.totalAmount }];
       lines.forEach(line => {
         const row = ensureRow(line.productId, line.productName);
         row.productName ||= line.productName || 'Stock product';
-        row.purchased += Number(line.quantity || 0);
-        row.purchaseValue += Number(line.totalAmount || (Number(line.unitCost || 0) * Number(line.quantity || 0)));
+        const lineQuantity = Number(line.quantity || 0);
+        const lineTotal = Number(line.totalAmount || (Number(line.unitCost || 0) * lineQuantity));
+        row.purchased += lineQuantity;
+        row.purchaseValue += lineTotal;
         row.billCount += 1;
-        if (String(bill.date || '') > row.lastPurchaseDate) row.lastPurchaseDate = String(bill.date || '');
+        if (String(bill.date || '') >= row.lastPurchaseDate) {
+          row.lastPurchaseDate = String(bill.date || '');
+          row.lastPurchaseQuantity = lineQuantity;
+          row.lastPurchaseUnitCost = Number(line.unitCost ?? (lineQuantity > 0 ? lineTotal / lineQuantity : 0));
+          row.lastPurchaseInvoiceNumber = bill.invoiceNumber || '';
+        }
       });
     });
     inventory.forEach(product => {
@@ -646,12 +653,26 @@ export default function ExpenseSupplier({
       row.productName ||= product.name || 'Stock product';
       const unbilledPurchases = purchases.filter(purchase => !(purchase.billId && selectedSupplierRecordedBillIds.has(String(purchase.billId)))
         && !(purchase.invoiceNumber && selectedSupplierRecordedInvoiceNumbers.has(String(purchase.invoiceNumber).trim().toLowerCase())));
-      row.purchased += unbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.quantity || 0), 0);
-      row.purchaseValue += unbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.unitCost || 0) * Number(purchase.quantity || 0), 0);
+      [...unbilledPurchases].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(purchase => {
+        const quantity = Number(purchase.quantity || 0);
+        row.purchased += quantity;
+        row.purchaseValue += Number(purchase.unitCost || 0) * quantity;
+        if (String(purchase.date || '') >= row.lastPurchaseDate) {
+          row.lastPurchaseDate = String(purchase.date || '');
+          row.lastPurchaseQuantity = quantity;
+          row.lastPurchaseUnitCost = Number(purchase.unitCost ?? purchase.unitCostEntered ?? 0);
+          row.lastPurchaseInvoiceNumber = purchase.invoiceNumber || '';
+        }
+      });
       if (!row.lastPurchaseDate) row.lastPurchaseDate = purchases.map(purchase => String(purchase.date || '')).sort().at(-1) || '';
       const sourceIds = [...new Set([...(product.supplierPurchases || []).map(purchase => purchase.supplierId), product.supplierId].filter(Boolean).map(String))];
-      const availableUnits = (product.units || []).filter(unit => !['sold', 'returned', 'removed'].includes(String(unit.status || '').toLowerCase()));
-      row.linkedStock = units.length || (sourceIds.length === 1 ? (availableUnits.length || Number(product.stock || 0)) : ((product.units || []).length > 0 ? 0 : null));
+      const availableSupplierUnits = units.filter(unit => !['sold', 'returned', 'removed'].includes(String(unit.status || '').toLowerCase()));
+      const hasUnitBatches = (product.units || []).length > 0;
+      row.linkedStock = hasUnitBatches
+        ? availableSupplierUnits.length
+        : sourceIds.length === 1 && sourceIds[0] === String(selectedSupplier.id)
+          ? Number(product.stock || 0)
+          : null;
       row.currentStock = Number(product.stock || 0);
       row.category = product.category || '—';
       row.sold = selectedSupplierSales.products.get(String(product.id))?.quantity || 0;
@@ -659,7 +680,7 @@ export default function ExpenseSupplier({
       row.buyPrice = Number(product.buyPrice || 0);
       row.lowStockThreshold = Number(product.lowStockThreshold || 2);
       row.reorderQuantity = Math.max(1, row.lowStockThreshold - row.currentStock);
-      row.lastUnitCost = unbilledPurchases.at(-1)?.unitCostEntered ?? unbilledPurchases.at(-1)?.unitCost ?? product.buyCostEntered ?? product.buyPrice ?? '';
+      row.lastUnitCost ??= Number(product.buyCostEntered ?? product.buyPrice ?? 0);
     });
     return [...rows.values()].sort((a, b) => String(a.productName).localeCompare(String(b.productName)));
   })();
@@ -870,20 +891,23 @@ export default function ExpenseSupplier({
 
             <section style={{ marginTop: 16 }}>
               <h3 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>Inventory linked to this supplier</h3>
+              <p style={{ margin: '-2px 0 8px', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Compare the latest quantity received with stock still available and units sold before adding the next bill.</p>
               <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 10 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 720 }}>
-                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Category</th><th style={{ padding: 9 }}>Received</th><th style={{ padding: 9 }}>Linked stock</th><th style={{ padding: 9 }}>Current total stock</th><th style={{ padding: 9 }}>Sold from supplier</th><th style={{ padding: 9 }}>Mixed-source sales not traced</th><th style={{ padding: 9 }}>Last received</th><th style={{ padding: 9 }}>Reorder</th></tr></thead>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: 920 }}>
+                  <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}><th style={{ padding: 9 }}>Product</th><th style={{ padding: 9 }}>Category</th><th style={{ padding: 9 }}>Received total</th><th style={{ padding: 9 }}>Last bill qty</th><th style={{ padding: 9 }}>Supplier stock left</th><th style={{ padding: 9 }}>Current total stock</th><th style={{ padding: 9 }}>Sold from supplier</th><th style={{ padding: 9 }}>Mixed-source sales not traced</th><th style={{ padding: 9 }}>Last received</th><th style={{ padding: 9 }}>Last buy cost / unit</th><th style={{ padding: 9 }}>Reorder</th></tr></thead>
                   <tbody>{selectedSupplierInventory.length ? selectedSupplierInventory.map(product => <tr key={product.key} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: 9, fontWeight: 700 }}>{product.productName}{!product.currentStock && product.currentStock !== 0 ? <small style={{ display: 'block', color: 'var(--status-red)' }}>Product not found in inventory</small> : null}</td>
                     <td style={{ padding: 9 }}>{product.category || '—'}</td>
                     <td style={{ padding: 9 }}>{product.purchased}</td>
+                    <td style={{ padding: 9, fontWeight: 700 }}>{product.lastPurchaseQuantity || '—'}{product.lastPurchaseInvoiceNumber ? <small style={{ display: 'block', color: 'var(--text-secondary)' }}>{product.lastPurchaseInvoiceNumber}</small> : null}</td>
                     <td style={{ padding: 9 }}>{product.linkedStock == null ? 'Not batch-tracked' : product.linkedStock}</td>
-                    <td style={{ padding: 9 }}>{product.currentStock ?? '—'}</td>
+                    <td style={{ padding: 9 }}>{product.currentStock ?? '—'}{product.currentStock != null ? <small style={{ display: 'block', color: Number(product.currentStock) <= Number(product.lowStockThreshold || 2) ? 'var(--status-red)' : 'var(--status-green)' }}>{Number(product.currentStock) <= Number(product.lowStockThreshold || 2) ? 'Reorder recommended' : 'Stock sufficient'}</small> : null}</td>
                     <td style={{ padding: 9 }}>{product.sold || 0}</td>
                     <td style={{ padding: 9 }}>{product.unattributedSold ? `${product.unattributedSold} · source unknown` : '—'}</td>
                     <td style={{ padding: 9 }}>{product.lastPurchaseDate || '—'}</td>
+                    <td style={{ padding: 9 }}>{product.lastPurchaseUnitCost == null ? '—' : `₹${Number(product.lastPurchaseUnitCost).toLocaleString('en-IN')}`}</td>
                     <td style={{ padding: 9 }}>{product.productId ? <button type="button" className="btn-outline" onClick={() => addSupplierReorderLine(product.productId, product.reorderQuantity || 1)}>Add {product.reorderQuantity || 1}</button> : '—'}</td>
-                  </tr>) : <tr><td colSpan="9" style={{ padding: 14, textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier-linked stock or purchase lines have been recorded.</td></tr>}</tbody>
+                  </tr>) : <tr><td colSpan="11" style={{ padding: 14, textAlign: 'center', color: 'var(--text-secondary)' }}>No supplier-linked stock or purchase lines have been recorded.</td></tr>}</tbody>
                 </table>
               </div>
               <div style={{ marginTop: 10, padding: 10, border: '1px solid var(--border-color)', borderRadius: 10, background: 'var(--surface-secondary, var(--surface-primary))' }}>
