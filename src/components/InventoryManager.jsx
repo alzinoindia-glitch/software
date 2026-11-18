@@ -3011,7 +3011,7 @@ export default function InventoryManager({
 
               <div>
                 <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>HSN Code</label>
-                <input type="text" inputMode="numeric" maxLength={8} placeholder="e.g. 851712" value={formData.hsn || ''} onChange={e => setFormData(prev => ({ ...prev, hsn: e.target.value.replace(/\\D/g, '').slice(0, 8) }))} className="input-field" aria-label="Product HSN code" />
+                <input type="text" inputMode="numeric" maxLength={8} placeholder="e.g. 851712" value={formData.hsn || ''} onChange={e => setFormData(prev => ({ ...prev, hsn: e.target.value.replace(/\D/g, '').slice(0, 8) }))} className="input-field" aria-label="Product HSN code" />
                 <small style={{ display: 'block', marginTop: '0.2rem', color: 'var(--text-muted)', fontSize: '0.65rem' }}>Printed on GST invoices when provided.</small>
               </div>
 
