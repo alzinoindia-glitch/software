@@ -129,6 +129,19 @@ export default function App() {
     let lockedScrollY = 0;
 
     const syncPageLock = () => {
+      // The POS checkout modal can remain mounted behind the invoice preview.
+      // Release the fixed-body modal lock before opening the native print view.
+      if (body.classList.contains('print-document-mode')) {
+        if (!previousStyles) return;
+        body.style.overflow = previousStyles.bodyOverflow;
+        body.style.position = previousStyles.bodyPosition;
+        body.style.top = previousStyles.bodyTop;
+        body.style.width = previousStyles.bodyWidth;
+        html.style.overflow = previousStyles.htmlOverflow;
+        previousStyles = null;
+        window.scrollTo(0, lockedScrollY);
+        return;
+      }
       const hasOpenOverlay = [...document.querySelectorAll('.drawer-overlay, .modal-backdrop')].some((overlay) => {
         const style = window.getComputedStyle(overlay);
         return style.display !== 'none' && style.visibility !== 'hidden';
