@@ -242,7 +242,7 @@ export default function ExpenseSupplier({
               newProductName: parsedLine.name,
               newProductHsn: parsedLine.hsn,
               newProductGstRate: String(parsedLine.gstRate ?? 18),
-              unitCostIncludesGst: detected ?? true,
+              unitCostIncludesGst: detected,
               gstInclusionSource: detected === null ? 'admin review required' : 'uploaded PDF'
             };
           });
