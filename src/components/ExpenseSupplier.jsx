@@ -17,6 +17,7 @@ import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills } from '../utils/supplierAccounting';
+import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
 
 const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
@@ -44,7 +45,7 @@ const inferGstInclusionFromRow = row => {
 };
 const inferGstInclusionFromText = text => {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ');
-  if (/\b(inclusive of|includes?|included in|incl\.?\s*)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(is\s+)?included\b/.test(normalized)) return true;
+  if (/\b(inclusive of|includes?|included in|incl\.?\s*)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(is\s+)?included\b|\b(?:gst|tax)\s+inclusive\b/.test(normalized)) return true;
   if (/\b(exclusive of|excludes?|excluding|plus|extra)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(will be\s+)?charged extra\b/.test(normalized)) return false;
   return null;
 };
@@ -211,6 +212,7 @@ export default function ExpenseSupplier({
     if (!file) return;
     setInwardDocument(file);
     setInwardGstHint(null);
+    setIsImportingBill(true);
     if (/\.pdf$/i.test(file.name)) {
       try {
         const [pdfjs, workerUrl] = await Promise.all([
@@ -221,25 +223,45 @@ export default function ExpenseSupplier({
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
         const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
           const page = await pdf.getPage(index + 1);
-          const content = await page.getTextContent();
-          return content.items.map(item => item.str || '').join(' ');
+          return (await page.getTextContent()).items;
         }));
-        const detected = inferGstInclusionFromText(pages.join(' '));
-        if (detected !== null) {
-          setInwardGstHint({ includesGst: detected, source: 'uploaded PDF' });
-          setInwardItems(previous => previous.map(line => line.gstInclusionSource === 'admin' ? line : {
-            ...line,
-            unitCostIncludesGst: detected,
-            gstInclusionSource: 'uploaded PDF'
-          }));
+        const parsed = parseSupplierPdfItems(pages.flat());
+        const detected = parsed.includesGst ?? inferGstInclusionFromText(pages.flat().map(item => item.str || '').join(' '));
+        if (parsed.invoiceNumber) setInwardInvoiceNumber(parsed.invoiceNumber);
+        if (parsed.invoiceDate) setInwardDate(parsed.invoiceDate);
+        if (parsed.lines.length) {
+          const lines = parsed.lines.map(parsedLine => {
+            const product = inventory.find(item => item.name?.trim().toLowerCase() === parsedLine.name.toLowerCase() || item.model?.trim().toLowerCase() === parsedLine.name.toLowerCase());
+            return {
+              ...newInwardLine(),
+              productId: product?.id || '',
+              importedName: parsedLine.name,
+              importedHsn: parsedLine.hsn,
+              quantity: String(parsedLine.quantity),
+              unitCost: String(Math.round(parsedLine.unitCost * 100) / 100),
+              newProductName: parsedLine.name,
+              newProductHsn: parsedLine.hsn,
+              newProductGstRate: String(parsedLine.gstRate ?? 18),
+              unitCostIncludesGst: detected ?? true,
+              gstInclusionSource: detected === null ? 'admin review required' : 'uploaded PDF'
+            };
+          });
+          setInwardItems(lines);
+          setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
+          alert('Read ' + lines.length + ' product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.');
+        } else {
+          alert('The PDF text was readable, but no product table could be identified. Enter bill lines manually or upload an Excel/CSV file.');
         }
       } catch (error) {
-        console.warn('Could not inspect supplier bill PDF for GST wording:', error);
+        console.error('Could not read supplier bill PDF:', error);
+        alert('Could not read this PDF: ' + (error.message || 'check that it contains selectable text') + '. You can still enter the bill lines manually.');
+      } finally {
+        setIsImportingBill(false);
       }
       return;
     }
-    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return;
-    setIsImportingBill(true);
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); return; }
+
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -350,6 +372,7 @@ export default function ExpenseSupplier({
       unitCostEntered: line.unitCost,
       unitCostIncludesGst: Boolean(line.unitCostIncludesGst),
       gstRate,
+      hsn: String(line.importedHsn || line.newProductHsn || line.product.hsn || '').trim(),
       taxableUnitCost: cost.taxable,
       gstUnitAmount: cost.gst,
       totalAmount: Math.round((cost.gross * line.quantity + Number.EPSILON) * 100) / 100,
@@ -474,6 +497,7 @@ export default function ExpenseSupplier({
       const oldUnitBarcodes = (item.units || []).filter(unit => unit.supplierBillId === billId).map(unit => unit.barcode).filter(Boolean);
       return {
         ...item,
+        ...(!item.hsn && received.some(line => line.hsn) ? { hsn: received.find(line => line.hsn)?.hsn } : {}),
         stock: Math.max(0, (Number(item.stock) || 0) - previousQty + addedQty),
         ...(addedQty ? {
           buyPrice: totalReceived / addedQty,
@@ -1093,7 +1117,7 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Supplier bill file (PDF, Excel, or CSV)</label>
                 <input type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" onChange={event => handleBillFile(event.target.files?.[0])} className="input-field" />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-                  {isImportingBill ? 'Reading bill…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · no clear GST wording detected; choose for each line' : ''}` : 'Drop a bill here. Excel/CSV rows can prefill products, quantities, costs and identifiers. Text-based PDFs are checked for GST inclusion wording.'}
+                  {isImportingBill ? 'Reading bill…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : /\.pdf$/i.test(inwardDocument.name) && inwardItems.some(line => line.importedName) ? ` · ${inwardItems.filter(line => line.importedName).length} PDF product rows loaded` : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · confirm GST status for every line' : ''}` : 'Drop a bill here. Excel/CSV rows and selectable-text PDFs can prefill products, quantities, HSN, costs and GST.'}
                 </div>
               </div>
 
@@ -1129,6 +1153,7 @@ export default function ExpenseSupplier({
                         {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
                         <option value="__new__">＋ Add a new product from this supplier</option>
                       </select>
+                      {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
                       {line.isNewProduct && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 6 }}>
                         <input className="input-field" value={line.newProductName} onChange={event => updateInwardLine(line.id, { newProductName: event.target.value })} placeholder="Product name *" required aria-label={`New product ${index + 1} name`} />
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
