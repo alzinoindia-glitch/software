@@ -223,7 +223,8 @@ export default function ExpenseSupplier({
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
         const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
           const page = await pdf.getPage(index + 1);
-          return (await page.getTextContent()).items;
+          const content = await page.getTextContent();
+          return content.items;
         }));
         const parsed = parseSupplierPdfItems(pages.flat());
         const detected = parsed.includesGst ?? inferGstInclusionFromText(pages.flat().map(item => item.str || '').join(' '));
@@ -248,20 +249,19 @@ export default function ExpenseSupplier({
           });
           setInwardItems(lines);
           setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
-          alert('Read ' + lines.length + ' product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.');
+          alert(`Read ${lines.length} product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
         } else {
           alert('The PDF text was readable, but no product table could be identified. Enter bill lines manually or upload an Excel/CSV file.');
         }
       } catch (error) {
         console.error('Could not read supplier bill PDF:', error);
-        alert('Could not read this PDF: ' + (error.message || 'check that it contains selectable text') + '. You can still enter the bill lines manually.');
+        alert(`Could not read this PDF: ${error.message || 'check that it contains selectable text'}. You can still enter the bill lines manually.`);
       } finally {
         setIsImportingBill(false);
       }
       return;
     }
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); return; }
-
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -1029,7 +1029,14 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
                   {expCategory === 'Staff Salary' ? 'Staff Name *' : 'Paid To / Person Name *'}
                 </label>
-                <input type="text" placeholder={expCategory === 'Staff Salary' ? 'Enter staff member name' : 'Enter person or business name'} value={expPayeeName} onChange={e => setExpPayeeName(e.target.value)} required className="input-field" />
+                <input
+                  type="text"
+                  placeholder={expCategory === 'Staff Salary' ? 'Enter staff member name' : 'Enter person or business name'}
+                  value={expPayeeName}
+                  onChange={(e) => setExpPayeeName(e.target.value)}
+                  required
+                  className="input-field"
+                />
               </div>}
 
               <div>
@@ -1162,7 +1169,7 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductName} onChange={event => updateInwardLine(line.id, { newProductName: event.target.value })} placeholder="Product name *" required aria-label={`New product ${index + 1} name`} />
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
-                        <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/[^0-9]/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
+                        <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/\D/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
                         <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (defaults to cost)" aria-label={`New product ${index + 1} selling price`} />
                         <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
