@@ -347,6 +347,10 @@ export default function ExpenseSupplier({
       alert('Choose an inventory product or enter a name and category for each new product, then enter a valid quantity and unit cost.');
       return;
     }
+    if (validLines.some(line => productGstRate(line.product) > 0 && line.unitCostIncludesGst !== true && line.unitCostIncludesGst !== false)) {
+      alert('Choose whether GST is already included in each purchase cost before adding the bill.');
+      return;
+    }
     if (validLines.some(line => line.identifiers.length > line.quantity || line.imei1Values.length > line.quantity || line.imei2Values.length > line.quantity)) {
       alert('A bill line has more identifiers than received units. Check the spreadsheet quantity and serial/IMEI columns.');
       return;
@@ -1181,7 +1185,8 @@ export default function ExpenseSupplier({
                         return <>
                           {rate > 0 ? <>
                             <label style={{ display: 'block', marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)' }}>GST in this bill price? ({rate}%)</label>
-                            <select value={line.unitCostIncludesGst ? 'included' : 'extra'} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.value === 'included', gstInclusionSource: 'admin' })} className="input-field" aria-label={`GST inclusion for product ${index + 1}`}>
+                            <select value={line.unitCostIncludesGst === true ? 'included' : line.unitCostIncludesGst === false ? 'extra' : ''} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.value === 'included' ? true : event.target.value === 'extra' ? false : null, gstInclusionSource: 'admin' })} className="input-field" aria-label={`GST inclusion for product ${index + 1}`}>
+                              <option value="">Choose GST status</option>
                               <option value="included">Included in unit cost</option>
                               <option value="extra">Add GST to unit cost</option>
                             </select>
