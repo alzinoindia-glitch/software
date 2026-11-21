@@ -933,6 +933,7 @@ export default function InventoryManager({
       billId: manualReceiptId,
       invoiceNumber: '',
       date: formData.receivedDate || new Date().toISOString().split('T')[0],
+      recordedAt: new Date().toISOString(),
       quantity: calculatedStock,
       unitCost: finalBuyPrice,
       unitCostEntered: enteredBuyPrice,
@@ -1493,7 +1494,7 @@ export default function InventoryManager({
             const savings = hasValidMrp ? mrp - sellingPrice : 0;
             const savingsPct = hasValidMrp ? Math.round((savings / mrp) * 100) : 0;
             const latestSupplierPurchase = [...(item.supplierPurchases || [])]
-              .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+              .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.recordedAt || b.billId || '').localeCompare(String(a.recordedAt || a.billId || '')))[0];
             const supplierPrice = Number(latestSupplierPurchase?.unitCost || item.buyCostEntered || item.buyPrice) || 0;
             const supplierName = latestSupplierPurchase?.supplierName
               || suppliers.find(supplier => supplier.id === latestSupplierPurchase?.supplierId)?.name
