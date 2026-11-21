@@ -7,7 +7,7 @@ const getInvoiceUnitCodes = (item) => [
   ...(Array.isArray(item?.imeis) ? item.imeis : []),
   ...(Array.isArray(item?.units) ? item.units : [])
 ].map((unit) => typeof unit === 'string' ? unit : unit?.imei1 || unit?.imei || unit?.serialNumber || unit?.imei2 || unit?.barcode || unit?.id || '')
-  .map((value) => String(value).trim()).filter(Boolean);
+  .map((value) => String(value).trim()).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
 const describeReplacement = (entry) => (entry.replacements || (entry.replacement ? [entry.replacement] : []))
   .map((item) => `${item.productName} × ${item.quantity}${Number(item.discountPerUnit || 0) > 0 ? ` (${money(item.discountPerUnit)} discount each)` : ''}`).join(', ');
 
@@ -66,7 +66,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     const excludedCodes = new Set([...explicitReturnedCodes, ...unitCodes.slice(0, legacyReturnedCount)]);
     const availableReturnIdentifiers = unitCodes.filter((code) => !excludedCodes.has(code));
     return {
-      index, item, maxQty, quantity, unitCodes, availableReturnIdentifiers,
+      index, item, maxQty, quantity, unitCodes, availableReturnIdentifiers, hasTrackedUnits: unitCodes.length > 0,
       returnIdentifiers: selectedReturnIdentifiers[index] || [],
       unitPaid: itemValue / Math.max(1, Number(item?.qty || 1)),
       returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity
@@ -143,8 +143,11 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
 
   const completeReturn = () => {
     if (returnSubmissionRef.current) return;
-    if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty || (line.availableReturnIdentifiers.length > 0 && line.returnIdentifiers.length !== line.quantity))) {
+    if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty)) {
       setNotice({ kind: 'error', text: 'Choose one or more invoice lines and valid quantities that have not already been returned.' }); return;
+    }
+    if (selectedReturnLines.some((line) => line.hasTrackedUnits && (line.availableReturnIdentifiers.length < line.quantity || line.returnIdentifiers.length !== line.quantity))) {
+      setNotice({ kind: 'error', text: 'Select a valid, unique IMEI or serial number for every tracked unit being returned.' }); return;
     }
     if (action === 'refund' && refundAmount > refundableBalance + 0.01) {
       setNotice({ kind: 'error', text: `Refund exceeds the remaining amount paid on this invoice (${money(refundableBalance)}). Apply any unpaid balance as Khata credit instead.` }); return;
