@@ -1168,7 +1168,15 @@ export default function ExpenseSupplier({
                         });
                       }} required className="input-field">
                         <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
-                        {inventory.map(product => <option key={product.id} value={product.id}>{product.brand} · {product.name} (Stock: {product.stock})</option>)}
+                        {inventory.map(product => {
+                          const priorPurchase = [...(product.supplierPurchases || [])]
+                            .filter(purchase => !selectedSupplierId || String(purchase.supplierId) === String(selectedSupplierId))
+                            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.recordedAt || b.billId || '').localeCompare(String(a.recordedAt || a.billId || '')))[0];
+                          const priorSupplierName = priorPurchase?.supplierName || suppliers.find(supplier => String(supplier.id) === String(priorPurchase?.supplierId))?.name;
+                          return <option key={product.id} value={product.id}>
+                            {product.brand} · {product.name} (Stock: {product.stock}{priorSupplierName ? ` · Last from ${priorSupplierName} ₹${Number(priorPurchase.unitCost || 0).toLocaleString('en-IN')}` : ''})
+                          </option>;
+                        })}
                         <option value="__new__">＋ Add a new product from this supplier</option>
                       </select>
                       {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
