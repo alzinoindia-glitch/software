@@ -44,11 +44,17 @@ export const sumReplacementSettlement = (invoices = [], predicate = () => true, 
   getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
     .reduce((sum, entry) => {
       const settlement = entry.settlement || {};
+      if (settlement.direction === 'refund' && Number(entry.refundPendingAmount) > 0) return sum;
       if (!methodPredicate(settlement.method || '', settlement.direction || '', entry)) return sum;
       if (settlement.direction === 'collect') return sum + Number(settlement.amount || 0);
       if (settlement.direction === 'refund') return sum - Number(settlement.amount || 0);
       return sum;
     }, 0);
+
+/** Total customer refund liabilities that have not yet been paid. */
+export const sumPendingRefundLiabilities = (invoices = [], predicate = () => true) =>
+  getInvoiceTransactions(invoices, entry => (entry.type === 'refund' || entry.type === 'replacement') && predicate(entry))
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.refundPendingAmount) || 0), 0);
 
 export const isDateInReportRange = (date, dateFilter, todayStr, currentMonthStr) => {
   if (dateFilter === 'today') return String(date || '').slice(0, 10) === todayStr;
