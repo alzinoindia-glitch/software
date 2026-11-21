@@ -1008,12 +1008,12 @@ export default function PosBilling({
     }));
 
     // Update Customer CRM with normalized phone matching and numeric ledger totals.
-    const customerPhoneDigits = customerPhone.trim().replace(/\\D/g, '').slice(-10);
+    const customerPhoneDigits = customerPhone.trim().replace(/\D/g, '').slice(-10);
     if (customerPhoneDigits.length === 10) {
       const saleTotal = Number.isFinite(Number(grandTotal)) ? Number(grandTotal) : 0;
       const saleDue = Number.isFinite(Number(khataDue)) ? Number(khataDue) : 0;
       setCustomers(prev => {
-        const matchesPhone = customer => String(customer.phone || customer.mobile || '').replace(/\\D/g, '').slice(-10) === customerPhoneDigits;
+        const matchesPhone = customer => String(customer.phone || customer.mobile || '').replace(/\D/g, '').slice(-10) === customerPhoneDigits;
         const exists = prev.find(matchesPhone);
         if (exists) {
           const currentSpent = Number(exists.totalSpent);
