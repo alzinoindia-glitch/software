@@ -74,3 +74,16 @@ export const reconcileCustomerAfterInvoiceEdit = (customers = [], previousInvoic
   });
   return next;
 };
+
+const stockLineSignature = items => (items || [])
+  .map(item => {
+    const identifiers = Array.isArray(item.imeis) ? item.imeis : String(item.imeis || '').split(',');
+    return `${String(item.id || '')}|${Number(item.qty) || 0}|${identifiers.map(String).map(value => value.trim()).filter(Boolean).sort().join(',')}`;
+  })
+  .sort();
+
+export const hasInvoiceStockChanges = (previousInvoice = {}, updatedInvoice = {}) => {
+  const previous = stockLineSignature(previousInvoice.items);
+  const updated = stockLineSignature(updatedInvoice.items);
+  return previous.length !== updated.length || previous.some((value, index) => value !== updated[index]);
+};

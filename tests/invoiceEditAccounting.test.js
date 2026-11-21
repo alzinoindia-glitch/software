@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reconcileCustomerAfterInvoiceEdit } from '../src/utils/invoiceEditAccounting.js';
+import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../src/utils/invoiceEditAccounting.js';
 
 const originalInvoice = {
   invoiceNo: 'ALZ-EST-0100',
@@ -39,4 +39,11 @@ test('creates a CRM record when the edited invoice is moved to a new customer', 
   );
   assert.equal(updated.length, 2);
   assert.deepEqual([updated[1].name, updated[1].phone, updated[1].totalSpent, updated[1].balanceDue], ['Chandru', '9000000000', 10000, 1000]);
+});
+
+test('flags quantity and device identifier edits that need inventory movement', () => {
+  const original = { items: [{ id: 'prod-1', qty: 1, imeis: ['imei-1'] }] };
+  assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', qty: 2, imeis: ['imei-1', 'imei-2'] }] }), true);
+  assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', qty: 1, imeis: ['imei-2'] }] }), true);
+  assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', name: 'Corrected title', qty: 1, imeis: ['imei-1'], rate: 900 }] }), false);
 });
