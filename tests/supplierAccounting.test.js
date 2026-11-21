@@ -90,3 +90,19 @@ test('deducts legacy returns without identifiers from the oldest supplier alloca
     ['supplier-b', 1]
   ]);
 });
+
+
+test('subtracts the returned unit actual cost from a mixed-cost supplier bill', () => {
+  const result = getNetSupplierAllocations({
+    qty: 2,
+    supplierAllocations: [
+      { supplierId: 'supplier-a', supplierBillId: 'bill-a', quantity: 2, purchaseCostTotal: 300 }
+    ],
+    soldUnitRecords: [
+      { identifier: 'imei-a', supplierId: 'supplier-a', supplierBillId: 'bill-a', purchaseCost: 100 },
+      { identifier: 'imei-b', supplierId: 'supplier-a', supplierBillId: 'bill-a', purchaseCost: 200 }
+    ]
+  }, [{ quantity: 1, returnedImeis: ['imei-b'] }]);
+
+  assert.deepEqual(result.allocations.map(item => [item.quantity, item.purchaseCostTotal]), [[1, 100]]);
+});
