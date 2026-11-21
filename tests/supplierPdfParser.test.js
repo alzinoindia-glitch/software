@@ -48,7 +48,8 @@ test('extracts product rows from a variable supplier table with wrapped descript
 
 test('recognizes alternate header wording and GST-exclusive invoices', () => {
   const result = parseSupplierPdfItems([
-    textItem('Invoice INV-ACME-42', 40, 800),
+    textItem('Bill No: 981', 40, 800),
+    textItem('Date: 2026-11-18', 410, 800),
     textItem('GST extra', 40, 760),
     textItem('Particulars', 80, 700),
     textItem('Quantity', 350, 700),
@@ -60,6 +61,8 @@ test('recognizes alternate header wording and GST-exclusive invoices', () => {
     textItem('₹600.00', 585, 676),
     textItem('Grand Total', 480, 640)
   ]);
+  assert.equal(result.invoiceNumber, '981');
+  assert.equal(result.invoiceDate, '2026-11-18');
   assert.equal(result.includesGst, false);
   assert.equal(result.lines.length, 1);
   assert.equal(result.lines[0].name, 'Screen protector');
