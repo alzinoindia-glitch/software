@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw,
 import { getUpiQrUrl } from '../utils/barcode';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 import { applyReturnKhataAdjustment } from '../utils/returnAccounting';
+import { getReplacementUnitOptions, hasTrackedReplacementUnits } from '../utils/replacementUnitOptions';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
@@ -209,7 +210,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       });
       if (hasInsufficientStock) { setNotice({ kind: 'error', text: 'A replacement product does not have enough available stock for the requested quantities.' }); return; }
       const invalidImeiSelection = resolvedReplacementLines.some((line) => {
-        const tracked = (line.product.imeis || []).length > 0 || (line.product.units || []).length > 0;
+        const tracked = hasTrackedReplacementUnits(line.product);
         return tracked && (line.imeis || []).length !== Number(line.quantity);
       });
       if (invalidImeiSelection) { setNotice({ kind: 'error', text: 'Select the required IMEI or unit for every tracked replacement quantity.' }); return; }
@@ -540,11 +541,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
               {resolvedReplacementLines.map((line) => {
                 const otherQty = replacementLines.filter((other) => other.rowId !== line.rowId && String(other.productId) === String(line.productId)).reduce((sum, other) => sum + Number(other.quantity || 0), 0);
                 const maxAvailable = Number(line.product?.stock || 0) - otherQty;
-                const isTracked = line.product && ((line.product.imeis || []).length > 0 || (line.product.units || []).length > 0);
-                const availableImeiOptions = line.product ? [
-                  ...(line.product.units || []).map((unit) => ({ value: String(unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''), label: `${unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''}${unit.color ? ` · ${unit.color}` : ''}` })).filter((option) => option.value),
-                  ...(line.product.imeis || []).filter((imei) => !(line.product.units || []).some((unit) => [unit.imei1, unit.imei2, unit.barcode, unit.id].includes(imei))).map((imei) => ({ value: String(imei), label: String(imei) })),
-                ] : [];
+                const isTracked = hasTrackedReplacementUnits(line.product);
+                const availableImeiOptions = getReplacementUnitOptions(line.product);
                 return <div key={line.rowId} className="replacement-product-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 2fr) minmax(70px, .6fr) minmax(105px, .9fr) auto', gap: 8, alignItems: 'end', padding: 10, background: '#f7faf8', border: '1px solid #dfe9e4', borderRadius: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Product<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={line.productId} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, productId: event.target.value, quantity: 1, imeis: [], discountPerUnit: 0 } : entry))}><option value="">Choose stock product</option>{[...matchingStockProducts, ...(line.product && !matchingStockProducts.some((product) => String(product.id) === String(line.product.id)) ? [line.product] : [])].map((product) => { const source = getProductSourceSummary(product); return <option key={product.id} value={product.id}>{product.name} · {product.stock} left · supplier {source.suppliers.join(', ') || product.supplierName || '—'} · buy {money(source.cost)} · sell {money(product.sellPrice ?? product.price)}</option>; })}</select></label>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Qty<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="1" max={Math.max(1, maxAvailable)} value={line.quantity} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, quantity: Math.min(Math.max(1, maxAvailable), Math.max(1, Number(event.target.value) || 1)), imeis: (entry.imeis || []).slice(0, Math.max(1, Number(event.target.value) || 1)) } : entry))} /></label>
