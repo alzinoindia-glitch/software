@@ -47,6 +47,7 @@ import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { getSalePriceBreakdown } from '../utils/gstPricing';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
+import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 
 const isMobileStockCategory = category => {
   const value = String(category || '').trim().toLowerCase();
@@ -277,11 +278,24 @@ export default function PosBilling({
         barcode: unit.barcode || '',
         supplierId: unit.supplierId || '',
         supplierName: unit.supplierName || '',
-        supplierBillId: unit.supplierBillId || ''
+        supplierBillId: unit.supplierBillId || '',
+        purchaseCost: unit.purchaseCost,
+        purchaseCostEntered: unit.purchaseCostEntered,
+        purchaseCostIncludesGst: unit.purchaseCostIncludesGst,
+        purchaseGstRate: unit.purchaseGstRate
       })).filter(unit => unit.id);
     }
     return [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])].map(imei => ({ id: imei, imei, barcode: '' }));
   };
+
+  const getCartCostBreakdown = item => getSupplierUnitCostBreakdown({
+    units: item.allTrackedUnits || [],
+    selectedUnitIds: item.selectedUnitIds || [],
+    quantity: item.qty,
+    fallbackUnitCost: item.buyPrice,
+    supplierId: item.supplierId,
+    supplierName: item.supplierName
+  });
 
   // Add product to cart
   const addToCart = (product, specificImei = null, requestedQty = 1, specificUnitId = null) => {
@@ -684,8 +698,8 @@ export default function PosBilling({
   
   // Total line profit (for admin mode)
   const totalProfit = cart.reduce((sum, item) => {
-    const itemProfit = (item.rate - item.buyPrice) * item.qty;
-    return sum + itemProfit;
+    const cost = getCartCostBreakdown(item);
+    return sum + (Number(item.rate || 0) * Number(item.qty || 0) - cost.totalCost);
   }, 0) - Number(discount);
 
   // EMI auto-calculated loan amount
@@ -903,6 +917,7 @@ export default function PosBilling({
       notes: invoiceNotes.trim(),
       items: cart.map(item => {
         const tax = getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst);
+        const cost = getCartCostBreakdown(item);
         return ({
         id: item.id,
         name: item.name,
@@ -911,26 +926,17 @@ export default function PosBilling({
         qty: item.qty,
         imeis: item.selectedImeis,
         rate: item.rate,
-        buyPrice: item.buyPrice,
+        buyPrice: cost.averageUnitCost,
+        costOfGoods: cost.totalCost,
+        unattributedSupplierQuantity: cost.unattributedQuantity,
         gstRate: isNonGst ? 0 : item.gstRate,
         taxable: tax.taxable,
         gstAmount: tax.gst,
         total: tax.gross,
-        profit: (item.rate - item.buyPrice) * item.qty,
+        profit: Number(item.rate || 0) * Number(item.qty || 0) - cost.totalCost,
         warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
-        supplierAllocations: (() => {
-          const selectedUnits = (item.allTrackedUnits || []).filter(unit => (item.selectedUnitIds || []).includes(unit.id));
-          const bySupplier = new Map();
-          selectedUnits.forEach(unit => {
-            if (!unit.supplierId) return;
-            const current = bySupplier.get(unit.supplierId) || { supplierId: unit.supplierId, supplierName: unit.supplierName || '', supplierBillId: unit.supplierBillId || '', quantity: 0 };
-            current.quantity += 1;
-            bySupplier.set(unit.supplierId, current);
-          });
-          if (!bySupplier.size && item.supplierId) bySupplier.set(item.supplierId, { supplierId: item.supplierId, supplierName: item.supplierName || '', quantity: Number(item.qty || 0) });
-          return [...bySupplier.values()];
-        })(),
+        supplierAllocations: cost.supplierAllocations,
         rack: item.rack || 'R-01',
         bin: item.bin || 'B-01'
         });
