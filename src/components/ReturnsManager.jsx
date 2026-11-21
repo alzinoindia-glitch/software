@@ -3,6 +3,11 @@ import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw,
 import { getUpiQrUrl } from '../utils/barcode';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const getInvoiceUnitCodes = (item) => [
+  ...(Array.isArray(item?.imeis) ? item.imeis : []),
+  ...(Array.isArray(item?.units) ? item.units : [])
+].map((unit) => typeof unit === 'string' ? unit : unit?.imei1 || unit?.imei || unit?.serialNumber || unit?.imei2 || unit?.barcode || unit?.id || '')
+  .map((value) => String(value).trim()).filter(Boolean);
 const describeReplacement = (entry) => (entry.replacements || (entry.replacement ? [entry.replacement] : []))
   .map((item) => `${item.productName} × ${item.quantity}${Number(item.discountPerUnit || 0) > 0 ? ` (${money(item.discountPerUnit)} discount each)` : ''}`).join(', ');
 
@@ -11,6 +16,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const [selectedInvoiceKey, setSelectedInvoiceKey] = useState('');
   const [lineIndices, setLineIndices] = useState([]);
   const [returnQuantities, setReturnQuantities] = useState({});
+  const [selectedReturnIdentifiers, setSelectedReturnIdentifiers] = useState({});
   const [action, setAction] = useState('refund');
   const [replacementMode, setReplacementMode] = useState('product-exchange');
   const [pageView, setPageView] = useState('process');
@@ -43,8 +49,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const invoiceNetScale = invoice && invoiceLineGross > 0 ? Math.min(1, Number(invoice.grandTotal ?? invoiceLineGross) / invoiceLineGross) : 1;
   const availableQty = (index) => {
     const sold = Number(invoiceItems[index]?.qty || 0);
-    const already = (invoice?.returnTransactions || []).filter((entry) => Number(entry.originalItemIndex) === index && entry.status !== 'voided')
-      .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
+    const priorEntries = (invoice?.returnTransactions || []).filter((entry) => Number(entry.originalItemIndex) === index && entry.status !== 'voided');
+    const already = priorEntries.reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
     return Math.max(0, sold - already);
   };
   const selectedReturnLines = lineIndices.map((index) => {
@@ -52,7 +58,19 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     const maxQty = availableQty(index);
     const itemValue = Number(item?.total ?? (Number(item?.rate || 0) * Number(item?.qty || 1))) * invoiceNetScale;
     const quantity = Math.min(maxQty, Math.max(1, Number(returnQuantities[index]) || 1));
-    return { index, item, maxQty, quantity, unitPaid: itemValue / Math.max(1, Number(item?.qty || 1)), returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity };
+    const unitCodes = getInvoiceUnitCodes(item);
+    const priorEntries = (invoice?.returnTransactions || []).filter((entry) => Number(entry.originalItemIndex) === index && entry.status !== 'voided');
+    const explicitReturnedCodes = priorEntries.flatMap((entry) => Array.isArray(entry.returnedImeis) ? entry.returnedImeis.map(String) : []);
+    const legacyReturnedCount = priorEntries.filter((entry) => !Array.isArray(entry.returnedImeis) || !entry.returnedImeis.length)
+      .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
+    const excludedCodes = new Set([...explicitReturnedCodes, ...unitCodes.slice(0, legacyReturnedCount)]);
+    const availableReturnIdentifiers = unitCodes.filter((code) => !excludedCodes.has(code));
+    return {
+      index, item, maxQty, quantity, unitCodes, availableReturnIdentifiers,
+      returnIdentifiers: selectedReturnIdentifiers[index] || [],
+      unitPaid: itemValue / Math.max(1, Number(item?.qty || 1)),
+      returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity
+    };
   }).filter((line) => line.item && line.maxQty > 0);
   const returnValue = selectedReturnLines.reduce((sum, line) => sum + line.returnValue, 0);
   const inStockProducts = inventory.filter((item) => Number(item.stock || 0) > 0);
@@ -119,13 +137,13 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const selectInvoice = (item) => {
     setSelectedInvoiceKey(String(item.invoiceNo || item.id));
     setInvoiceQuery(String(item.invoiceNo || item.id));
-    setLineIndices([]); setReturnQuantities({}); setNotice(null); setReplacementLines([]); setAdditionalReplacementDiscount(0); setReplacementProductQuery(''); setAction('refund');
+    setLineIndices([]); setReturnQuantities({}); setSelectedReturnIdentifiers({}); setNotice(null); setReplacementLines([]); setAdditionalReplacementDiscount(0); setReplacementProductQuery(''); setAction('refund');
     setReturnAllowanceInput(''); setSettlementReference(''); setPaymentConfirmed(false);
   };
 
   const completeReturn = () => {
     if (returnSubmissionRef.current) return;
-    if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty)) {
+    if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty || (line.availableReturnIdentifiers.length > 0 && line.returnIdentifiers.length !== line.quantity))) {
       setNotice({ kind: 'error', text: 'Choose one or more invoice lines and valid quantities that have not already been returned.' }); return;
     }
     if (action === 'refund' && refundAmount > refundableBalance + 0.01) {
@@ -224,7 +242,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         refundPendingAmount: action === 'refund' && refundMethod === 'Khata (pay later)' ? lineCredit : 0,
         refundStatus: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid') : '',
         refundReference: action === 'refund' ? settlementReference.trim() : '',
-        condition, restocked: Boolean(restock), returnedImeis: (item.imeis || []).slice(0, returnLine.quantity),
+        condition, restocked: Boolean(restock), returnedImeis: returnLine.returnIdentifiers,
         settlement: action === 'replacement' && linePosition === 0 ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
         replacements: action === 'replacement' && linePosition === 0 ? replacementRecords : [],
         replacement: action === 'replacement' && linePosition === 0 ? replacementRecord : null,
@@ -235,7 +253,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       setInventory((current) => current.map((item) => {
         const returnedLines = restock ? selectedReturnLines.filter((line) => String(item.id) === String(line.item.id)) : [];
         const returnedQty = returnedLines.reduce((sum, line) => sum + line.quantity, 0);
-        const returnedIdentifiers = returnedLines.flatMap((line) => (line.item.imeis || []).slice(0, line.quantity));
+        const returnedIdentifiers = returnedLines.flatMap((line) => line.returnIdentifiers);
         const isReturnedProduct = returnedQty > 0;
         const consumedLines = action === 'replacement' ? resolvedReplacementLines.filter((line) => String(line.product.id) === String(item.id)) : [];
         if (!isReturnedProduct && !consumedLines.length) return item;
@@ -362,6 +380,10 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
                 <input type="checkbox" checked={selected} disabled={remaining < 1 || invoice.isCancelled || invoice.status === 'REFUNDED'} onChange={() => {
                   setLineIndices(current => selected ? current.filter(value => value !== index) : [...current, index]);
                   setReturnQuantities(current => selected ? Object.fromEntries(Object.entries(current).filter(([key]) => Number(key) !== index)) : { ...current, [index]: 1 });
+                  setSelectedReturnIdentifiers(current => {
+                    if (!selected) return current;
+                    const next = { ...current }; delete next[index]; return next;
+                  });
                   setReturnAllowanceInput(''); setSettlementReference(''); setPaymentConfirmed(false); setAdditionalReplacementDiscount(0); setNotice(null);
                 }} style={{ marginTop: 3 }} />
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -370,9 +392,36 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
                 </span>
               </label>
               {selected && <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 0 24px', fontSize: 12, fontWeight: 700 }}>Return quantity
-                <input style={{ ...inputStyle, width: 100, minHeight: 36 }} type="number" min="1" max={remaining} value={currentQuantity} disabled={action === 'replacement' && replacementMode === 'full-replacement'} onChange={event => setReturnQuantities(current => ({ ...current, [index]: Math.min(remaining || 1, Math.max(1, Number(event.target.value) || 1)) }))} />
+                <input style={{ ...inputStyle, width: 100, minHeight: 36 }} type="number" min="1" max={remaining} value={currentQuantity} disabled={action === 'replacement' && replacementMode === 'full-replacement'} onChange={event => {
+                  const nextQuantity = Math.min(remaining || 1, Math.max(1, Number(event.target.value) || 1));
+                  setReturnQuantities(current => ({ ...current, [index]: nextQuantity }));
+                  setSelectedReturnIdentifiers(current => ({ ...current, [index]: (current[index] || []).slice(0, nextQuantity) }));
+                }} />
                 {action === 'replacement' && replacementMode === 'full-replacement' && <small style={{ color: '#667a73', fontWeight: 500 }}>All {remaining} remaining units</small>}
               </label>}
+              {selected && getInvoiceUnitCodes(item).length > 0 && <div style={{ margin: '10px 0 0 24px' }}>
+                <strong style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>Select the IMEI / serial being returned ({(selectedReturnIdentifiers[index] || []).length}/{currentQuantity})</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {(() => {
+                    const priorEntries = (invoice?.returnTransactions || []).filter((entry) => Number(entry.originalItemIndex) === index && entry.status !== 'voided');
+                    const codes = getInvoiceUnitCodes(item);
+                    const explicit = priorEntries.flatMap((entry) => Array.isArray(entry.returnedImeis) ? entry.returnedImeis.map(String) : []);
+                    const legacyCount = priorEntries.filter((entry) => !Array.isArray(entry.returnedImeis) || !entry.returnedImeis.length).reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
+                    const excluded = new Set([...explicit, ...codes.slice(0, legacyCount)]);
+                    return codes.filter((code) => !excluded.has(code)).map((code) => {
+                      const checked = (selectedReturnIdentifiers[index] || []).includes(code);
+                      const atLimit = (selectedReturnIdentifiers[index] || []).length >= currentQuantity;
+                      return <label key={code} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid #d5e1dc', borderRadius: 6, padding: '4px 7px', fontSize: 11, background: checked ? '#e7f5ef' : '#fff' }}>
+                        <input type="checkbox" checked={checked} disabled={!checked && atLimit} onChange={() => setSelectedReturnIdentifiers((current) => {
+                          const chosen = current[index] || [];
+                          return { ...current, [index]: checked ? chosen.filter((value) => value !== code) : [...chosen, code] };
+                        })} />
+                        {code}
+                      </label>;
+                    });
+                  })()}
+                </div>
+              </div>}
             </article>;
           })}
 
