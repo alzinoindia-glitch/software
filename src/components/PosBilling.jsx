@@ -1,6 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
-import { reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
+import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
 import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -1122,6 +1122,10 @@ export default function PosBilling({
     };
 
     const previousInvoice = invoices.find(inv => inv.invoiceNo === updatedInvoice.invoiceNo) || invoiceToEdit;
+    if (hasInvoiceStockChanges(previousInvoice, updatedInvoice)) {
+      alert('Quantity and IMEI/serial corrections must be processed through Returns & Replacements so inventory and supplier batch records stay accurate. No invoice changes were saved.');
+      return;
+    }
     setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev, previousInvoice, updatedInvoice));
 
     // Update in invoices
@@ -2195,7 +2199,7 @@ export default function PosBilling({
                   </h3>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  Update customer information, contact details, item titles, prices, serials, and warranty terms.
+                  Update customer information, item titles, prices, discounts, and warranty terms. Process quantity or IMEI/serial corrections through Returns & Replacements to keep stock accurate.
                 </div>
               </div>
               <button onClick={() => setEditingInvoiceModal(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.25rem' }}>✕</button>
@@ -2302,11 +2306,7 @@ export default function PosBilling({
                         <input
                           type="number"
                           value={item.qty}
-                          onChange={(e) => {
-                            const newItems = [...invoiceToEdit.items];
-                            newItems[idx].qty = parseInt(e.target.value, 10) || 1;
-                            setInvoiceToEdit({ ...invoiceToEdit, items: newItems });
-                          }}
+                          readOnly
                           className="input-field"
                           style={{ fontSize: '0.8rem' }}
                         />
@@ -2319,11 +2319,7 @@ export default function PosBilling({
                         <input
                           type="text"
                           value={(item.imeis && item.imeis.join(', ')) || ''}
-                          onChange={(e) => {
-                            const newItems = [...invoiceToEdit.items];
-                            newItems[idx].imeis = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                            setInvoiceToEdit({ ...invoiceToEdit, items: newItems });
-                          }}
+                          readOnly
                           className="input-field"
                           style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}
                         />
