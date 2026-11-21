@@ -1,6 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
-import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement } from '../utils/returnAccounting';
+import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement, sumPendingRefundLiabilities } from '../utils/returnAccounting';
 import { 
   TrendingUp, 
   IndianRupee, 
@@ -84,6 +84,7 @@ export default function AnalyticsReports({
     () => getInvoiceTransactions(invoices, inSelectedRange),
     [invoices, dateFilter, todayStr, currentMonthStr]
   );
+  const selectedPendingRefundLiability = sumPendingRefundLiabilities(invoices, inSelectedRange);
   const selectedRefundTotal = selectedReturnEntries.reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
   const selectedCashRefunds = selectedReturnEntries.filter((entry) => entry.refundMethod === 'Cash').reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
   const selectedUpiRefunds = selectedReturnEntries.filter((entry) => String(entry.refundMethod || '').includes('UPI')).reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0);
@@ -121,21 +122,21 @@ export default function AnalyticsReports({
   const posInflow = filteredInvoices
     .filter(i => !i.isRefurbishedResale && !i.isRepairInvoice)
     .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
-      .filter((entry) => entry.refundMethod !== 'Khata credit' && !entry.isRefurbishedResale && !entry.isRepairInvoice && entry.originalCategory !== 'Used Mobiles' && entry.originalCategory !== 'Repair Services')
+      .filter((entry) => !['Khata credit', 'Khata (pay later)'].includes(entry.refundMethod) && !entry.isRefurbishedResale && !entry.isRepairInvoice && entry.originalCategory !== 'Used Mobiles' && entry.originalCategory !== 'Repair Services')
       .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0) + selectedPosSettlement;
 
   // Inflow from Refurbished Mobiles sales
   const refurbInflow = filteredInvoices
     .filter(i => i.isRefurbishedResale || (i.items && i.items.some(it => it.category === 'Used Mobiles')))
     .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
-      .filter((entry) => entry.refundMethod !== 'Khata credit' && (entry.isRefurbishedResale || entry.originalCategory === 'Used Mobiles'))
+      .filter((entry) => !['Khata credit', 'Khata (pay later)'].includes(entry.refundMethod) && (entry.isRefurbishedResale || entry.originalCategory === 'Used Mobiles'))
       .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0) + selectedRefurbSettlement;
 
   // Inflow from Mobile Repairs & Servicing
   const repairInflow = filteredInvoices
     .filter(i => i.isRepairInvoice || i.repairJobRef || (i.items && i.items.some(it => it.category === 'Repair Services')))
     .reduce((s, i) => s + (Number(i.paidAmount) || 0), 0) - selectedReturnEntries
-      .filter((entry) => entry.refundMethod !== 'Khata credit' && (entry.isRepairInvoice || entry.repairJobRef || entry.originalCategory === 'Repair Services'))
+      .filter((entry) => !['Khata credit', 'Khata (pay later)'].includes(entry.refundMethod) && (entry.isRepairInvoice || entry.repairJobRef || entry.originalCategory === 'Repair Services'))
       .reduce((sum, entry) => sum + Number(entry.refundAmount || 0), 0) + selectedRepairSettlement;
 
   // Repair intake advance payments collected
@@ -616,6 +617,11 @@ export default function AnalyticsReports({
               <span style={{ color: 'var(--text-secondary)' }}>• Used Phone Buyouts:</span>
               <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-red)' }}>₹{usedPhoneBuyPayouts.toLocaleString()}</strong>
             </div>
+
+            {selectedPendingRefundLiability > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--status-amber)' }}>• Customer refunds pending (Khata):</span>
+              <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-amber)' }}>₹{selectedPendingRefundLiability.toLocaleString()}</strong>
+            </div>}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: '0.35rem', marginTop: '0.2rem' }}>
               <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>NET BALANCE:</span>
