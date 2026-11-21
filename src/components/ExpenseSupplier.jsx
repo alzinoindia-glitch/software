@@ -307,7 +307,7 @@ export default function ExpenseSupplier({
           });
           setInwardItems(lines);
           setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
-          alert(`${scannedOcrUsed ? 'On-device OCR recognized' : 'Read'} ${lines.length} product line(s) from the PDF. Verify every name, HSN, quantity, cost and GST setting, then match each product or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
+          alert(`${scannedOcrUsed ? 'Recognized' : 'Read'} ${lines.length} product line(s) from the ${scannedOcrUsed ? 'scanned PDF' : 'PDF'}. Verify every name, HSN, quantity, cost and GST setting, then match each product or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
         } else {
           alert(parsed.hasSelectableText
             ? 'The PDF contains selectable text, but its product table could not be identified. Add bill lines manually or upload an Excel/CSV file.'
@@ -369,6 +369,7 @@ export default function ExpenseSupplier({
       alert(`Could not read this bill spreadsheet: ${error.message || 'check the file format'}`);
     } finally {
       setIsImportingBill(false);
+      setInwardImportStatus('');
     }
   };
 
