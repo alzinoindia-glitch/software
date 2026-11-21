@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
+import { calculateCustomerSpend } from '../utils/customerAccounting';
 
 const getRepairRecordId = job => String(job?.recordId || job?.id || [job?.jobId, job?.customerMobile || job?.customerPhone, job?.date, job?.deviceModel].join('|'));
 const invoiceMatchesRepair = (invoice, repair) => invoice.repairJobRef === getRepairRecordId(repair) || invoice.repairJobRef === repair.jobId;
@@ -221,11 +222,12 @@ export default function CustomerKhata({
         else if (type === 'repairs') smartId = `CUST-R-${numPart}`;
       }
 
-      // Compute total lifetime spend
-      const salesSpend = rec.invoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0);
-      const repairSpend = rec.repairs.reduce((sum, rep) => sum + (Number(rep.finalPrice || rep.finalCost || rep.estimatedCost) || 0), 0);
-      const computedTotal = salesSpend + repairSpend;
-      const totalSpent = Math.max(rec.totalSpent, computedTotal);
+      // Compute lifetime spend from invoices; delivered legacy repairs are a fallback.
+      const { salesSpend, repairSpend, totalSpent } = calculateCustomerSpend({
+        invoices: rec.invoices,
+        repairs: rec.repairs,
+        recordedTotal: rec.totalSpent
+      });
 
       // Compute balance dues
       const salesDue = rec.invoices.reduce((sum, inv) => sum + (Number(inv.balanceDue ?? inv.khataDue) || 0), 0);
