@@ -274,7 +274,10 @@ export default function PosBilling({
     if (Array.isArray(product.units) && product.units.length > 0) {
       return product.units.map(unit => ({
         id: unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode || '',
-        imei: unit.imei1 || unit.imei2 || unit.serialNumber || '',
+        imei: unit.imei1 || unit.imei2 || '',
+        imei1: unit.imei1 || '',
+        imei2: unit.imei2 || '',
+        serialNumber: unit.serialNumber || '',
         barcode: unit.barcode || '',
         supplierId: unit.supplierId || '',
         supplierName: unit.supplierName || '',
@@ -282,10 +285,19 @@ export default function PosBilling({
         purchaseCost: unit.purchaseCost,
         purchaseCostEntered: unit.purchaseCostEntered,
         purchaseCostIncludesGst: unit.purchaseCostIncludesGst,
-        purchaseGstRate: unit.purchaseGstRate
+        purchaseGstRate: unit.purchaseGstRate,
+        unitRecord: { ...unit }
       })).filter(unit => unit.id);
     }
-    return [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])].map(imei => ({ id: imei, imei, barcode: '' }));
+    return [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])].map(identifier => ({
+      id: identifier,
+      imei: (product.imeis || []).includes(identifier) ? identifier : '',
+      imei1: (product.imeis || []).includes(identifier) ? identifier : '',
+      imei2: '',
+      serialNumber: (product.serialNumbers || []).includes(identifier) ? identifier : '',
+      barcode: (product.barcodes || []).includes(identifier) ? identifier : '',
+      unitRecord: null
+    }));
   };
 
   const getCartCostBreakdown = item => getSupplierUnitCostBreakdown({
@@ -929,6 +941,7 @@ export default function PosBilling({
         buyPrice: cost.averageUnitCost,
         costOfGoods: cost.totalCost,
         unattributedSupplierQuantity: cost.unattributedQuantity,
+        soldUnitRecords: cost.soldUnitRecords,
         gstRate: isNonGst ? 0 : item.gstRate,
         taxable: tax.taxable,
         gstAmount: tax.gst,
