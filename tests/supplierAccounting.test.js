@@ -18,6 +18,10 @@ test('uses the selected units actual costs and preserves supplier bill attributi
   assert.equal(result.averageUnitCost, 120);
   assert.equal(result.attributedQuantity, 2);
   assert.equal(result.unattributedQuantity, 0);
+  assert.deepEqual(result.soldUnitRecords.map(unit => [unit.identifier, unit.supplierBillId, unit.purchaseCost]), [
+    ['imei-1', 'bill-a', 100],
+    ['imei-2', 'bill-b', 140]
+  ]);
   assert.deepEqual(result.supplierAllocations.map(item => [item.supplierId, item.supplierBillId, item.quantity, item.purchaseCostTotal]), [
     ['supplier-a', 'bill-a', 1, 100],
     ['supplier-b', 'bill-b', 1, 140]
