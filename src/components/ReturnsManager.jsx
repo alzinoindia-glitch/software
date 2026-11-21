@@ -314,7 +314,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
           serialNumbers: item.serialNumbers ? [...new Set([...remainingSerialNumbers, ...returnedSerialNumbers, ...legacySerials.map(String)])] : item.serialNumbers,
           barcodes: item.barcodes ? [...new Set([...remainingBarcodes, ...returnedBarcodes, ...legacyBarcodes.map(String)])] : item.barcodes,
           units: item.units ? [...remainingUnits, ...returnedUnitEntries] : item.units,
-        };      }));
+        };
+      }));
     }
     setInvoices((current) => current.map((item) => {
       if (String(item.invoiceNo || item.id) !== selectedInvoiceKey) return item;
