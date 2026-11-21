@@ -55,3 +55,14 @@ export const isDateInReportRange = (date, dateFilter, todayStr, currentMonthStr)
   if (dateFilter === 'month') return String(date || '').startsWith(currentMonthStr);
   return true;
 };
+
+/** Apply returned invoice credit and any new exchange debt to a customer ledger. */
+export const applyReturnKhataAdjustment = (customer, { outstandingCleared = 0, newKhataDue = 0, entry = null } = {}) => {
+  const cleared = Math.max(0, Number(outstandingCleared) || 0);
+  const added = Math.max(0, Number(newKhataDue) || 0);
+  return {
+    ...customer,
+    balanceDue: Math.max(0, (Number(customer?.balanceDue) || 0) - cleared) + added,
+    ...(added > 0 && entry ? { khataEntries: [entry, ...(customer?.khataEntries || [])] } : {})
+  };
+};

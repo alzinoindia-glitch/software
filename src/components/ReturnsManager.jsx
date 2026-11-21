@@ -2,6 +2,7 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw, Search, RotateCcw } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
+import { applyReturnKhataAdjustment } from '../utils/returnAccounting';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
@@ -348,7 +349,10 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       const balanceDue = Math.max(0, invoiceOutstanding - outstandingCleared);
       return { ...item, returnOriginalBalanceDue: Number(item.returnOriginalBalanceDue ?? invoiceOutstanding), balanceDue, khataDue: balanceDue, returnTransactions, ...(isFullyRefunded && balanceDue <= 0 ? { status: 'REFUNDED', paymentStatus: 'REFUNDED', isCancelled: true, cancelledAt: transactionDate } : {}) };
     }));
-    if (action === 'replacement' && settlementDirection === 'collect' && effectiveSettlementMethod === 'Khata due' && settlementAmount > 0) {
+    const newKhataDue = action === 'replacement' && settlementDirection === 'collect' && effectiveSettlementMethod === 'Khata due'
+      ? settlementAmount
+      : 0;
+    if (outstandingCleared > 0 || newKhataDue > 0) {
       const phoneDigits = String(invoice.customerPhone || '').replace(/\D/g, '').slice(-10);
       setCustomers((current) => {
         const list = Array.isArray(current) ? current : [];
@@ -356,9 +360,12 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
           const customerPhone = String(customer.phone || customer.mobile || '').replace(/\D/g, '').slice(-10);
           return phoneDigits ? customerPhone === phoneDigits : String(customer.name || '').trim().toLowerCase() === String(invoice.customerName || '').trim().toLowerCase();
         });
-        const entry = { id: `KH-RET-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: settlementAmount, paidAmount: 0, balanceDue: settlementAmount, description: `Return/exchange balance for ${invoice.invoiceNo}`, reference: transactions[0]?.groupId || transactions[0]?.id };
-        if (matchIndex >= 0) return list.map((customer, index) => index === matchIndex ? { ...customer, balanceDue: Math.max(0, Number(customer.balanceDue || 0) - outstandingCleared) + settlementAmount, khataEntries: [...(customer.khataEntries || []), entry] } : customer);
-        return [...list, { id: `CUST-${Date.now()}`, name: invoice.customerName || 'Customer', phone: invoice.customerPhone || '', address: invoice.customerAddress || '', totalSpent: 0, balanceDue: settlementAmount, khataEntries: [entry] }];
+        const entry = newKhataDue > 0 ? { id: `KH-RET-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: newKhataDue, paidAmount: 0, balanceDue: newKhataDue, description: `Return/exchange balance for ${invoice.invoiceNo}`, reference: transactions[0]?.groupId || transactions[0]?.id } : null;
+        if (matchIndex >= 0) return list.map((customer, index) => index === matchIndex
+          ? applyReturnKhataAdjustment(customer, { outstandingCleared, newKhataDue, entry })
+          : customer);
+        if (newKhataDue <= 0) return list;
+        return [...list, { id: `CUST-${Date.now()}`, name: invoice.customerName || 'Customer', phone: invoice.customerPhone || '', address: invoice.customerAddress || '', totalSpent: 0, balanceDue: newKhataDue, khataEntries: [entry] }];
       });
     }
     setNotice({ kind: 'success', text: action === 'refund'
