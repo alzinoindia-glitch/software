@@ -78,4 +78,11 @@ test('does not guess product lines when a table header is absent', () => {
     textItem('100', 550, 680)
   ]);
   assert.equal(result.lines.length, 0);
+  assert.equal(result.hasSelectableText, true);
+});
+
+test('identifies scanned or image-only PDFs with no selectable text', () => {
+  const result = parseSupplierPdfItems([]);
+  assert.equal(result.hasSelectableText, false);
+  assert.equal(result.lines.length, 0);
 });
