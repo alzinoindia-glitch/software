@@ -990,7 +990,7 @@ export default function ExpenseSupplier({
               </div>
               <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
                 {role === 'admin' && <button type="button" className="btn-outline" disabled={selectedSupplierTotalDue <= 0} onClick={() => { setSupplierPaymentAmount(''); setSupplierPaymentMode('Cash'); setSupplierPaymentReference(''); setSupplierPaymentNote(''); setShowSupplierPaymentModal(true); }}>Record payment</button>}
-                <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier
+                <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier</button>
                 <button type="button" className="btn-primary" onClick={() => { setSelectedSupplierProfileId(''); openInwardForSupplier(selectedSupplier.id); }}><Plus size={14} /> Add bill</button>
                 <button type="button" className="btn-outline" disabled={!supplierReorderLines.length} onClick={() => { openInwardForSupplier(selectedSupplier.id, supplierReorderLines); setSelectedSupplierProfileId(''); }}>Create bill from reorder list ({supplierReorderLines.length})</button>
                 <button type="button" className="btn-outline" aria-label="Close supplier profile" onClick={() => setSelectedSupplierProfileId('')}><X size={17} /></button>
