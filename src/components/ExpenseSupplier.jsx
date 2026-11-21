@@ -17,7 +17,7 @@ import {
 import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
-import { countUniqueSupplierBills } from '../utils/supplierAccounting';
+import { countUniqueSupplierBills, getNetSupplierAllocations } from '../utils/supplierAccounting';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
 
@@ -565,37 +565,40 @@ export default function ExpenseSupplier({
     supplierName: supplier.name,
   }))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   const supplierBillCount = countUniqueSupplierBills(supplierBills.map(bill => ({ ...bill, invoiceNumber: `${bill.supplierId}:${bill.invoiceNumber || bill.id}` })));
+  const getNetLineSupplierAttribution = (invoice, line, index) => {
+    let allocations = line.supplierAllocations || [];
+    const stockProduct = inventory.find(product => String(product.id) === String(line.id || line.productId));
+    if (!allocations.length) {
+      const sourceIds = [...new Set([...(stockProduct?.supplierPurchases || []).map(purchase => purchase.supplierId), stockProduct?.supplierId].filter(Boolean).map(String))];
+      if (sourceIds.length === 1) allocations = [{ supplierId: sourceIds[0], supplierName: stockProduct?.supplierName || '', quantity: Number(line.qty || 0) }];
+    }
+    const returnTransactions = (invoice.returnTransactions || []).filter(entry => Number(entry.originalItemIndex) === index && entry.status !== 'voided');
+    return getNetSupplierAllocations({ ...line, supplierAllocations: allocations }, returnTransactions);
+  };
+
   const supplierSales = useMemo(() => {
     const totals = new Map();
-    invoices.forEach(invoice => (invoice.items || []).forEach(line => {
-      let allocations = line.supplierAllocations || [];
-      if (!allocations.length) {
-        const stockProduct = inventory.find(product => String(product.id) === String(line.id || line.productId));
-        const sourceIds = [...new Set([...(stockProduct?.supplierPurchases || []).map(purchase => purchase.supplierId), stockProduct?.supplierId].filter(Boolean).map(String))];
-        if (sourceIds.length === 1) allocations = [{ supplierId: sourceIds[0], quantity: Number(line.qty || 0) }];
-      }
-      allocations.forEach(allocation => {
-      if (!allocation.supplierId) return;
-      const supplierTotal = totals.get(allocation.supplierId) || { quantity: 0, products: new Map() };
-      const productKey = String(line.id || line.productId || line.name);
-      const product = supplierTotal.products.get(productKey) || { name: line.name || 'Product', quantity: 0 };
-      product.quantity += Number(allocation.quantity || 0);
-      supplierTotal.quantity += Number(allocation.quantity || 0);
-      supplierTotal.products.set(productKey, product);
-      totals.set(allocation.supplierId, supplierTotal);
+    invoices.forEach(invoice => (invoice.items || []).forEach((line, index) => {
+      const attribution = getNetLineSupplierAttribution(invoice, line, index);
+      attribution.allocations.forEach(allocation => {
+        if (!allocation.supplierId || Number(allocation.quantity || 0) <= 0) return;
+        const supplierId = String(allocation.supplierId);
+        const supplierTotal = totals.get(supplierId) || { quantity: 0, products: new Map() };
+        const productKey = String(line.id || line.productId || line.name);
+        const product = supplierTotal.products.get(productKey) || { name: line.name || 'Product', quantity: 0 };
+        product.quantity += Number(allocation.quantity || 0);
+        supplierTotal.quantity += Number(allocation.quantity || 0);
+        supplierTotal.products.set(productKey, product);
+        totals.set(supplierId, supplierTotal);
       });
     }));
     return totals;
   }, [invoices, inventory]);
-  const supplierSaleRows = useMemo(() => invoices.flatMap(invoice => (invoice.items || []).flatMap(line => {
-    let allocations = line.supplierAllocations || [];
-    if (!allocations.length) {
-      const stockProduct = inventory.find(product => String(product.id) === String(line.id || line.productId));
-      const sourceIds = [...new Set([...(stockProduct?.supplierPurchases || []).map(purchase => purchase.supplierId), stockProduct?.supplierId].filter(Boolean).map(String))];
-      if (sourceIds.length === 1) allocations = [{ supplierId: sourceIds[0], quantity: Number(line.qty || 0) }];
-    }
-    return allocations.map(allocation => ({
+  const supplierSaleRows = useMemo(() => invoices.flatMap(invoice => (invoice.items || []).flatMap((line, index) => {
+    const attribution = getNetLineSupplierAttribution(invoice, line, index);
+    return attribution.allocations.map(allocation => ({
       supplierId: String(allocation.supplierId || ''),
+      supplierBillId: String(allocation.supplierBillId || ''),
       invoiceNo: invoice.invoiceNo || invoice.id || 'Invoice',
       date: invoice.date || '',
       customerName: invoice.customerName || 'Counter Customer',
@@ -605,15 +608,12 @@ export default function ExpenseSupplier({
   })).sort((a, b) => String(b.date).localeCompare(String(a.date))), [invoices, inventory]);
   const unattributedSupplierSales = useMemo(() => {
     const totals = new Map();
-    invoices.forEach(invoice => (invoice.items || []).forEach(line => {
+    invoices.forEach(invoice => (invoice.items || []).forEach((line, index) => {
       const productId = String(line.id || line.productId || '');
       const product = inventory.find(item => String(item.id) === productId);
       const sources = [...new Set([...(product?.supplierPurchases || []).map(purchase => purchase.supplierId), product?.supplierId].filter(Boolean).map(String))];
       if (sources.length < 2) return;
-      const allocated = (line.supplierAllocations || []).reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
-      const unattributed = line.unattributedSupplierQuantity == null
-        ? (line.supplierAllocations?.length ? Math.max(0, Number(line.qty || 0) - allocated) : Number(line.qty || 0))
-        : Math.max(0, Number(line.unattributedSupplierQuantity) || 0);
+      const unattributed = getNetLineSupplierAttribution(invoice, line, index).unattributedQuantity;
       if (unattributed > 0) totals.set(productId, (totals.get(productId) || 0) + unattributed);
     }));
     return totals;
