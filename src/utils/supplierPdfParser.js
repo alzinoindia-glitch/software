@@ -50,6 +50,7 @@ const findNumeric = (items, range) => items.filter(item => inColumn(item, range)
 
 export function parseSupplierPdfItems(items) {
   const safeItems = (items || []).filter(item => textOf(item));
+  const hasSelectableText = safeItems.length > 0;
   const text = safeItems.map(textOf).join(' ');
   const labeledInvoiceNumber = text.match(/\b(?:tax\s+invoice|invoice|bill)\s*(?:no\.?|number|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{1,})/i)?.[1] || '';
   const invoiceNumber = labeledInvoiceNumber || text.match(/\bINV[-/][A-Z0-9-]+\b/i)?.[0] || '';
@@ -73,7 +74,7 @@ export function parseSupplierPdfItems(items) {
     return { y: row.y, columns, score: Number(kinds.has('description')) + Number(kinds.has('quantity')) + Number(kinds.has('rate') || kinds.has('amount')) };
   }).filter(row => row.score >= 3).sort((a, b) => b.score - a.score || b.y - a.y)[0];
 
-  if (!header) return { invoiceNumber, invoiceDate, includesGst, lines: [] };
+  if (!header) return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, lines: [] };
   const descriptionColumn = columnRange(header.columns, 'description');
   const quantityColumn = columnRange(header.columns, 'quantity');
   const hsnColumn = columnRange(header.columns, 'hsn');
@@ -107,5 +108,5 @@ export function parseSupplierPdfItems(items) {
     return { name, hsn, quantity: anchor.quantity, unitCost, gstRate, unitCostIncludesGst: includesGst };
   }).filter(line => line.name.length >= 2 && line.quantity > 0 && line.unitCost > 0);
 
-  return { invoiceNumber, invoiceDate, includesGst, lines: rows };
+  return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, lines: rows };
 }
