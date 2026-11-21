@@ -1,5 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
+import { reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
 import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -1093,7 +1094,11 @@ export default function PosBilling({
 
     const isEmiInvoice = Boolean(invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI'));
     const previouslyPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
-    const paid = Math.min(grand, previouslyPaid);
+    if (previouslyPaid > grand) {
+      alert(`The corrected bill total ₹${grand.toLocaleString()} is below the recorded payment ₹${previouslyPaid.toLocaleString()}. Record a refund or payment adjustment before saving this lower total.`);
+      return;
+    }
+    const paid = previouslyPaid;
     const khata = isEmiInvoice ? 0 : Math.max(0, grand - paid);
 
     const updatedInvoice = {
@@ -1115,6 +1120,9 @@ export default function PosBilling({
       paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
       totalProfit: itemBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0) - disc
     };
+
+    const previousInvoice = invoices.find(inv => inv.invoiceNo === updatedInvoice.invoiceNo) || invoiceToEdit;
+    setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev, previousInvoice, updatedInvoice));
 
     // Update in invoices
     setInvoices(prev => prev.map(inv => inv.invoiceNo === updatedInvoice.invoiceNo ? updatedInvoice : inv));
