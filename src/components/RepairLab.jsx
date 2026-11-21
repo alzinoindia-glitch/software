@@ -1,4 +1,5 @@
 import { getLocalDateString } from '../utils/dateUtils';
+import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Wrench, 
@@ -441,11 +442,7 @@ export default function RepairLab({
 
     const isNonGst = repairBillingType === 'non-gst';
     const prefix = isNonGst ? 'ALZ-SRV' : 'ALZ-INV';
-    const highestSequence = invoices.reduce((highest, invoice) => {
-      const match = String(invoice.invoiceNo || '').match(new RegExp(`^${prefix}-(\\d+)$`));
-      return match ? Math.max(highest, Number(match[1])) : highest;
-    }, 200);
-    const invoiceNo = `${prefix}-${String(highestSequence + 1).padStart(4, '0')}`;
+    const invoiceNo = getNextInvoiceNumber(invoices, prefix, 200);
     const today = getLocalDateString();
 
     const advance = Number(jobToBill.advancePaid) || 0;
