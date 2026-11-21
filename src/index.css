@@ -528,10 +528,8 @@ input, select, textarea {
   }
 
   body.print-document-mode > #root {
-    display: block !important;
-    min-height: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
+    /* The print document is portaled to body; exclude the app to prevent extra pages. */
+    display: none !important;
   }
 
   /* Keep the React app wrapper mounted: the print modal is nested inside it. */
