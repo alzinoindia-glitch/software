@@ -20,7 +20,7 @@ import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills, getNetSupplierAllocations } from '../utils/supplierAccounting';
 import { applySupplierPayment } from '../utils/supplierPayments';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
-import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
+import { parseSupplierPdfPages, supplierPdfOcrWordsToItems } from '../utils/supplierPdfParser';
 
 const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
@@ -52,6 +52,43 @@ const inferGstInclusionFromText = text => {
   if (/\b(exclusive of|excludes?|excluding|plus|extra)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(will be\s+)?charged extra\b/.test(normalized)) return false;
   return null;
 };
+const readScannedSupplierPdf = async (pdf, onProgress) => {
+  if (pdf.numPages > 20) throw new Error('This bill has more than 20 pages. Split it into smaller files or enter the remaining lines manually.');
+  const { createWorker } = await import('tesseract.js');
+  let worker;
+  try {
+    worker = await createWorker('eng', 1, {
+      logger: message => {
+        if (message.status === 'recognizing text' && Number.isFinite(message.progress)) {
+          onProgress(`Reading scanned bill: ${Math.round(message.progress * 100)}%`);
+        } else if (message.status) {
+          onProgress(`Preparing bill reader: ${message.status}`);
+        }
+      }
+    });
+    const pages = [];
+    for (let index = 1; index <= pdf.numPages; index++) {
+      onProgress(`Scanning bill page ${index} of ${pdf.numPages}…`);
+      const page = await pdf.getPage(index);
+      const scale = 2;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('Could not prepare a page for OCR on this device.');
+      await page.render({ canvasContext: context, viewport }).promise;
+      const { data } = await worker.recognize(canvas);
+      pages.push(supplierPdfOcrWordsToItems(data.words, viewport, scale));
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    return pages;
+  } finally {
+    if (worker) await worker.terminate();
+  }
+};
+
 
 export default function ExpenseSupplier({ 
   initialSubTab = 'expenses',
@@ -96,6 +133,7 @@ export default function ExpenseSupplier({
   const [inwardDocument, setInwardDocument] = useState(null);
   const [inwardGstHint, setInwardGstHint] = useState(null);
   const [isImportingBill, setIsImportingBill] = useState(false);
+  const [inwardImportStatus, setInwardImportStatus] = useState('');
   const [inwardInvoiceNumber, setInwardInvoiceNumber] = useState('');
   const [inwardDate, setInwardDate] = useState(getLocalDateString());
   const [supplierBillFilter, setSupplierBillFilter] = useState('all');
@@ -222,21 +260,32 @@ export default function ExpenseSupplier({
     setInwardDocument(file);
     setInwardGstHint(null);
     setIsImportingBill(true);
+    setInwardImportStatus('Reading supplier bill…');
     if (/\.pdf$/i.test(file.name)) {
       try {
+        if (file.size > 30 * 1024 * 1024) throw new Error('PDF is over 30 MB. Compress it or add the bill lines manually.');
         const [pdfjs, workerUrl] = await Promise.all([
           import('pdfjs-dist/build/pdf.mjs'),
           import('pdfjs-dist/build/pdf.worker.min.mjs?url')
         ]);
         pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-        const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
+        const pageContents = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
           const page = await pdf.getPage(index + 1);
           const content = await page.getTextContent();
           return content.items;
         }));
-        const parsed = parseSupplierPdfItems(pages.flat());
-        const detected = parsed.includesGst ?? inferGstInclusionFromText(pages.flat().map(item => item.str || '').join(' '));
+        let parsed = parseSupplierPdfPages(pageContents);
+        let scannedOcrUsed = false;
+        let recognizedPages = pageContents;
+        if (!parsed.lines.length) {
+          scannedOcrUsed = true;
+          setInwardImportStatus('Product table not found. Starting on-device text recognition…');
+          recognizedPages = await readScannedSupplierPdf(pdf, setInwardImportStatus);
+          parsed = parseSupplierPdfPages(recognizedPages);
+        }
+        const billText = recognizedPages.flat().map(item => item.str || '').join(' ');
+        const detected = parsed.includesGst ?? inferGstInclusionFromText(billText);
         if (parsed.invoiceNumber) setInwardInvoiceNumber(parsed.invoiceNumber);
         if (parsed.invoiceDate) setInwardDate(parsed.invoiceDate);
         if (parsed.lines.length) {
@@ -258,21 +307,22 @@ export default function ExpenseSupplier({
           });
           setInwardItems(lines);
           setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
-          alert(`Read ${lines.length} product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
+          alert(`${scannedOcrUsed ? 'On-device OCR recognized' : 'Read'} ${lines.length} product line(s) from the PDF. Verify every name, HSN, quantity, cost and GST setting, then match each product or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
         } else {
           alert(parsed.hasSelectableText
             ? 'The PDF contains selectable text, but its product table could not be identified. Add bill lines manually or upload an Excel/CSV file.'
-            : 'This PDF appears to be scanned or image-only, so its text and products cannot be extracted. Add bill lines manually or upload an Excel/CSV file.');
+            : 'The scanned PDF could not be read confidently. Add bill lines manually or upload an Excel/CSV file; no inventory was changed.');
         }
       } catch (error) {
         console.error('Could not read supplier bill PDF:', error);
-        alert(`Could not read this PDF: ${error.message || 'check that it contains selectable text'}. You can still enter the bill lines manually.`);
+        alert(`Could not read this PDF: ${error.message || 'the file may be damaged or unsupported'}. You can still enter the bill lines manually.`);
       } finally {
         setIsImportingBill(false);
+        setInwardImportStatus('');
       }
       return;
     }
-    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); return; }
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); setInwardImportStatus(''); return; }
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -1253,7 +1303,7 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Supplier bill file (PDF, Excel, or CSV)</label>
                 <input type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" onChange={event => handleBillFile(event.target.files?.[0])} className="input-field" />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-                  {isImportingBill ? 'Reading bill…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : /\.pdf$/i.test(inwardDocument.name) && inwardItems.some(line => line.importedName) ? ` · ${inwardItems.filter(line => line.importedName).length} PDF product rows loaded` : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · confirm GST status for every line' : ''}` : 'Drop a bill here. Excel/CSV rows and selectable-text PDFs can prefill products, quantities, HSN, costs and GST.'}
+                  {isImportingBill ? (inwardImportStatus || 'Reading bill…') : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : /\.pdf$/i.test(inwardDocument.name) && inwardItems.some(line => line.importedName) ? ` · ${inwardItems.filter(line => line.importedName).length} PDF product rows loaded` : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · confirm GST status for every line' : ''}` : 'Drop a bill here. Excel/CSV files and selectable or scanned PDFs can prefill product lines for admin review.'}
                 </div>
               </div>
 

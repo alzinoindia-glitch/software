@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSupplierPdfItems } from '../src/utils/supplierPdfParser.js';
+import { parseSupplierPdfItems, parseSupplierPdfPages, supplierPdfOcrWordsToItems } from '../src/utils/supplierPdfParser.js';
 
 const textItem = (str, x, y) => ({ str, transform: [1, 0, 0, 1, x, y] });
 
@@ -85,4 +85,34 @@ test('identifies scanned or image-only PDFs with no selectable text', () => {
   const result = parseSupplierPdfItems([]);
   assert.equal(result.hasSelectableText, false);
   assert.equal(result.lines.length, 0);
+});
+
+test('uses table columns from the first page when later invoice pages omit repeated headers', () => {
+  const firstPage = [
+    textItem('Description', 48, 710), textItem('HSN', 235, 710), textItem('Qty', 320, 710),
+    textItem('Rate', 405, 710), textItem('Amount', 540, 710),
+    textItem('Phone Case', 48, 680), textItem('392690', 235, 680), textItem('1', 320, 680),
+    textItem('100', 405, 680), textItem('100', 540, 680)
+  ];
+  const secondPage = [
+    textItem('Invoice No: PAGE-2', 40, 780), textItem('Charger 20W', 48, 700),
+    textItem('850440', 235, 700), textItem('2', 320, 700), textItem('250', 405, 700),
+    textItem('500', 540, 700), textItem('Grand Total', 440, 650)
+  ];
+
+  const result = parseSupplierPdfPages([firstPage, secondPage]);
+  assert.equal(result.lines.length, 2);
+  assert.deepEqual(result.lines.map(line => line.name), ['Phone Case', 'Charger 20W']);
+  assert.equal(result.lines[1].quantity, 2);
+  assert.equal(result.invoiceNumber, 'PAGE-2');
+});
+
+test('maps OCR canvas word bounds into PDF text-item coordinates', () => {
+  const [item] = supplierPdfOcrWordsToItems([
+    { text: 'Camera', bbox: { x0: 80, y0: 290, x1: 150, y1: 320 } },
+    { text: '', bbox: { x0: 1, y0: 1, x1: 2, y1: 2 } }
+  ], { height: 1000 }, 2);
+  assert.equal(item.str, 'Camera');
+  assert.equal(item.transform[4], 40);
+  assert.equal(item.transform[5], 340);
 });
