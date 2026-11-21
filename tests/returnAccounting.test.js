@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference } from '../src/utils/returnAccounting.js';
+import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference, sumPendingRefundLiabilities, sumReplacementSettlement } from '../src/utils/returnAccounting.js';
 
 test('clears customer Khata when returned goods cancel an unpaid invoice balance', () => {
   const updated = applyReturnKhataAdjustment({ id: 'C1', balanceDue: 1000 }, { outstandingCleared: 1000 });
@@ -43,4 +43,15 @@ test('records an immediate exchange refund as paid and keeps collection/even exc
   });
   assert.deepEqual(getReplacementRefundPaymentFields({ direction: 'collect', amount: 650, method: 'Khata due' }), {});
   assert.deepEqual(getReplacementRefundPaymentFields({ direction: 'even', amount: 0, method: 'Cash' }), {});
+});
+
+
+test('separates pending return and exchange refunds from actual settlement inflow or outflow', () => {
+  const invoices = [{ returnTransactions: [
+    { id: 'R1', type: 'refund', refundAmount: 300, refundPendingAmount: 300, refundMethod: 'Khata (pay later)' },
+    { id: 'R2', type: 'replacement', settlement: { direction: 'refund', method: 'Khata (pay later)', amount: 200 }, refundPendingAmount: 200 },
+    { id: 'R3', type: 'replacement', settlement: { direction: 'refund', method: 'UPI', amount: 100 }, refundPendingAmount: 0 }
+  ] }];
+  assert.equal(sumPendingRefundLiabilities(invoices), 500);
+  assert.equal(sumReplacementSettlement(invoices), -100);
 });
