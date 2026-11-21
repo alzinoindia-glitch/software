@@ -906,26 +906,38 @@ export default function InventoryManager({
 
     const manualReceiptId = assignedSupplier ? `INV-STOCK-${productId}-${Date.now()}` : '';
     const stockUnits = assignedSupplier && !editingItem
-      ? Array.from({ length: calculatedStock }, (_, index) => {
-        const unit = unitRecords[index] || {};
-        const unitBarcode = unit.barcode || (index === 0 && formData.barcode ? formData.barcode.trim() : `ALZ-${Date.now().toString().slice(-8)}-${index + 1}`);
-        return {
-          ...unit,
-          unitId: unit.unitId || `UNIT-${productId}-${Date.now()}-${index + 1}`,
-          barcode: unitBarcode,
-          rack: unit.rack || rackVal,
-          bin: unit.bin || binVal,
-          status: 'In Stock',
-          supplierId: assignedSupplier.id,
-          supplierName: assignedSupplier.name || '',
-          supplierBillId: manualReceiptId,
-          purchaseCost: finalBuyPrice,
-          purchaseCostEntered: enteredBuyPrice,
-          purchaseCostIncludesGst: buyPriceIncludesGst,
-          purchaseGstRate: finalGstRate,
-          receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0]
-        };
-      })
+      ? (() => {
+        const usedBarcodes = new Set(inventory.flatMap(item => [
+          item.barcode,
+          ...(item.barcodes || []),
+          ...(item.units || []).map(unit => unit.barcode)
+        ]).filter(Boolean).map(String));
+        return Array.from({ length: calculatedStock }, (_, index) => {
+          const unit = unitRecords[index] || {};
+          const proposedBarcode = unit.barcode || (index === 0 ? formData.barcode?.trim() : '') || '';
+          let unitBarcode = proposedBarcode && !usedBarcodes.has(proposedBarcode)
+            ? proposedBarcode
+            : `ALZ-${Date.now().toString().slice(-8)}-${index + 1}`;
+          while (usedBarcodes.has(unitBarcode)) unitBarcode = `ALZ-${Date.now().toString().slice(-8)}-${index + 1}-${Math.random().toString(36).slice(2, 6)}`;
+          usedBarcodes.add(unitBarcode);
+          return {
+            ...unit,
+            unitId: unit.unitId || `UNIT-${productId}-${Date.now()}-${index + 1}`,
+            barcode: unitBarcode,
+            rack: unit.rack || rackVal,
+            bin: unit.bin || binVal,
+            status: 'In Stock',
+            supplierId: assignedSupplier.id,
+            supplierName: assignedSupplier.name || '',
+            supplierBillId: manualReceiptId,
+            purchaseCost: finalBuyPrice,
+            purchaseCostEntered: enteredBuyPrice,
+            purchaseCostIncludesGst: buyPriceIncludesGst,
+            purchaseGstRate: finalGstRate,
+            receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0]
+          };
+        });
+      })()
       : unitRecords;
     const inventoryPurchase = assignedSupplier ? {
       supplierId: assignedSupplier.id,
