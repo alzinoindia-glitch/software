@@ -260,7 +260,9 @@ export default function ExpenseSupplier({
           setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
           alert(`Read ${lines.length} product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
         } else {
-          alert('The PDF text was readable, but no product table could be identified. Enter bill lines manually or upload an Excel/CSV file.');
+          alert(parsed.hasSelectableText
+            ? 'The PDF contains selectable text, but its product table could not be identified. Add bill lines manually or upload an Excel/CSV file.'
+            : 'This PDF appears to be scanned or image-only, so its text and products cannot be extracted. Add bill lines manually or upload an Excel/CSV file.');
         }
       } catch (error) {
         console.error('Could not read supplier bill PDF:', error);
