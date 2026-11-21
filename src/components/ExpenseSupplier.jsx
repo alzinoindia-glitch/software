@@ -327,6 +327,8 @@ export default function ExpenseSupplier({
       const quantity = Number.parseInt(line.quantity, 10);
       const unitCost = Number.parseFloat(line.unitCost);
       if (!line.isNewProduct) return { ...line, quantity, unitCost, product: inventory.find(item => String(item.id) === String(line.productId)) };
+      const newProductGstRate = Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18;
+      const newProductLandedCost = getPurchaseCostBreakdown(unitCost, newProductGstRate, line.unitCostIncludesGst !== false).gross;
       const proposedProduct = {
         id: line.productId || `PROD-SUPP-${Date.now()}-${index}`,
         name: String(line.newProductName || line.importedName || '').trim(),
@@ -337,10 +339,10 @@ export default function ExpenseSupplier({
         ram: String(line.newProductRam || '').trim(),
         storage: String(line.newProductStorage || '').trim(),
         color: String(line.newProductColor || '').trim(),
-        sellPrice: Number(line.newProductSellPrice) || unitCost,
-        mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || unitCost,
-        gstRate: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18,
-        isGst: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) > 0 : true,
+        sellPrice: Number(line.newProductSellPrice) || newProductLandedCost,
+        mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || newProductLandedCost,
+        gstRate: newProductGstRate,
+        isGst: newProductGstRate > 0,
         stock: 0, lowStockThreshold: 2, rack: 'R-01', bin: 'B-01', locations: [],
         units: [], imeis: [], serialNumbers: [], barcodes: [], status: 'Active', isPublished: false,
         supplierId: selectedSupplierId,
@@ -1332,7 +1334,7 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
                         <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/\D/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
-                        <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (defaults to cost)" aria-label={`New product ${index + 1} selling price`} />
+                        <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (GST included; defaults to landed cost)" aria-label={`New product ${index + 1} selling price`} />
                         <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
                           const values = event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);

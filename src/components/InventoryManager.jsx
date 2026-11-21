@@ -2692,7 +2692,7 @@ export default function InventoryManager({
               </div>
 
               <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ *</label>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ * <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>(GST included at POS)</span></label>
                 <input
                   type="number"
                   placeholder="Sell ₹"

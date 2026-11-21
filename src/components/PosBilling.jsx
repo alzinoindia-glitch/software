@@ -49,6 +49,12 @@ import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTe
 import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 
+const getPosGstRate = item => {
+  const rate = Number(item?.gstRate);
+  if (Number.isFinite(rate)) return Math.max(0, rate);
+  return item?.isGst === false ? 0 : 18;
+};
+
 const isMobileStockCategory = category => {
   const value = String(category || '').trim().toLowerCase();
   return ['new mobiles', 'used mobiles', 'feature phones', 'mobile', 'mobiles'].includes(value) || /smartphone|feature phone|handset/.test(value);
@@ -96,7 +102,7 @@ export default function PosBilling({
   
   // Billing Type: GST Invoice vs Non-GST Estimate
   const [billingType, setBillingType] = useState('gst'); // 'gst' | 'non-gst'
-  const [priceIncludesGst, setPriceIncludesGst] = useState(false);
+  const [priceIncludesGst, setPriceIncludesGst] = useState(true);
 
   // Customer details
   const [customerName, setCustomerName] = useState('Counter Customer');
@@ -403,7 +409,7 @@ export default function PosBilling({
             rate: product.sellPrice,
             mrp: product.mrp,
             buyPrice: product.buyPrice,
-            gstRate: product.gstRate || 18,
+            gstRate: getPosGstRate(product),
             qty: quantity,
             availableStock: product.stock,
             allImeis: [...new Set([...(product.serialNumbers || []), ...(product.imeis || [])])],
@@ -699,7 +705,7 @@ export default function PosBilling({
   const isNonGst = billingType === 'non-gst';
   const saleLines = cart.map(item => ({
     item,
-    totals: getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst)
+    totals: getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), priceIncludesGst, !isNonGst)
   }));
   const totalTaxable = saleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
   const subtotalBeforeTax = priceIncludesGst && !isNonGst
@@ -709,9 +715,9 @@ export default function PosBilling({
   const grandTotal = Math.max(0, saleLines.reduce((sum, line) => sum + line.totals.gross, 0) - Number(discount));
   
   // Total line profit (for admin mode)
-  const totalProfit = cart.reduce((sum, item) => {
-    const cost = getCartCostBreakdown(item);
-    return sum + (Number(item.rate || 0) * Number(item.qty || 0) - cost.totalCost);
+  const totalProfit = saleLines.reduce((sum, line) => {
+    const cost = getCartCostBreakdown(line.item);
+    return sum + line.totals.taxable - cost.totalCost;
   }, 0) - Number(discount);
 
   // EMI auto-calculated loan amount
@@ -928,7 +934,7 @@ export default function PosBilling({
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
       items: cart.map(item => {
-        const tax = getSalePriceBreakdown(item.rate, item.qty, item.gstRate || 18, priceIncludesGst, !isNonGst);
+        const tax = getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), priceIncludesGst, !isNonGst);
         const cost = getCartCostBreakdown(item);
         return ({
         id: item.id,
@@ -946,7 +952,7 @@ export default function PosBilling({
         taxable: tax.taxable,
         gstAmount: tax.gst,
         total: tax.gross,
-        profit: Number(item.rate || 0) * Number(item.qty || 0) - cost.totalCost,
+        profit: tax.taxable - cost.totalCost,
         warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
         supplierAllocations: cost.supplierAllocations,
@@ -1069,19 +1075,18 @@ export default function PosBilling({
 
     // Recalculate totals for edited invoice
     const isNonGstInv = invoiceToEdit.isNonGst;
-    const subtotal = invoiceToEdit.items.reduce((s, it) => s + (Number(it.rate) * Number(it.qty)), 0);
     const disc = Number(invoiceToEdit.discount) || 0;
     const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
-    const taxable = isNonGstInv || usesExclusivePrices ? subtotal : invoiceToEdit.items.reduce((sum, item) => {
-      const itTot = Number(item.rate) * Number(item.qty);
-      const rate = item.gstRate || 18;
-      return sum + (itTot / (1 + (rate / 100)));
-    }, 0);
-
-    const gst = isNonGstInv ? 0 : usesExclusivePrices
-      ? invoiceToEdit.items.reduce((sum, item) => sum + (Number(item.rate) * Number(item.qty) * ((item.gstRate || 18) / 100)), 0)
-      : (subtotal - taxable);
-    const grand = Math.max(0, subtotal + (usesExclusivePrices ? gst : 0) - disc);
+    const itemBreakdowns = invoiceToEdit.items.map(item => getSalePriceBreakdown(
+      item.rate,
+      item.qty,
+      getPosGstRate(item),
+      !usesExclusivePrices,
+      !isNonGstInv
+    ));
+    const taxable = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.taxable, 0);
+    const gst = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.gst, 0);
+    const grand = Math.max(0, itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.gross, 0) - disc);
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
@@ -1092,12 +1097,12 @@ export default function PosBilling({
 
     const updatedInvoice = {
       ...invoiceToEdit,
-      items: invoiceToEdit.items.map(it => ({
+      items: invoiceToEdit.items.map((it, index) => ({
         ...it,
-        total: Number(it.rate) * Number(it.qty) + (usesExclusivePrices && !isNonGstInv
-          ? Number(it.rate) * Number(it.qty) * ((it.gstRate || 18) / 100)
-          : 0),
-        profit: (Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)
+        total: itemBreakdowns[index].gross,
+        taxable: itemBreakdowns[index].taxable,
+        gstAmount: itemBreakdowns[index].gst,
+        profit: itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
       })),
       taxableAmount: taxable,
       cgstTotal: cgst,
@@ -1107,7 +1112,7 @@ export default function PosBilling({
       balanceDue: khata,
       khataDue: khata,
       paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: invoiceToEdit.items.reduce((s, it) => s + ((Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)), 0) - disc
+      totalProfit: itemBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0) - disc
     };
 
     // Update in invoices
@@ -1345,7 +1350,7 @@ export default function PosBilling({
                     CASH MEMO (0%)
                   </button>
                 </div>
-                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="Choose this when the entered selling prices or MRP already include GST.">
+                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="Listed prices include GST by default. Turn this off only when the entered selling prices are before GST.">
                   <input type="checkbox" checked={priceIncludesGst} onChange={event => setPriceIncludesGst(event.target.checked)} />
                   Price already includes GST
                 </label>}
