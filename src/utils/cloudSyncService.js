@@ -698,19 +698,45 @@ export const subscribeRealtimeSync = (setters = {}) => {
   let cancelled = false;
   let channel = null;
   let activeOrgId = null;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+  let reconcileAfterReconnect = false;
+
+  const reportReconnectFailure = error => {
+    console.warn('[CloudSync] Realtime subscription error:', error);
+    emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
+    scheduleReconnect();
+  };
+
+  const scheduleReconnect = () => {
+    if (cancelled || reconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * (2 ** Math.min(reconnectAttempts, 5)));
+    reconnectAttempts++;
+    reconcileAfterReconnect = true;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      subscribeForCurrentUser().catch(reportReconnectFailure);
+    }, delay);
+  };
+
   const subscribeForCurrentUser = async () => {
     const orgId = await getActiveOrgId(client);
     if (cancelled) return;
     if (!orgId) {
-      if (channel) await client.removeChannel(channel);
+      const previousChannel = channel;
       channel = null;
       activeOrgId = null;
+      if (previousChannel) await client.removeChannel(previousChannel);
+      emitCloudSyncStatus('REALTIME', 'saved');
       return;
     }
     if (orgId === activeOrgId) return;
-    if (channel) await client.removeChannel(channel);
+    const previousChannel = channel;
+    channel = null;
+    activeOrgId = null;
+    if (previousChannel) await client.removeChannel(previousChannel);
     activeOrgId = orgId;
-    channel = client.channel(`store-state-${orgId}`)
+    const nextChannel = client.channel(`store-state-${orgId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: STORE_STATE_TABLE,
         filter: `organization_id=eq.${orgId}`
@@ -754,22 +780,55 @@ export const subscribeRealtimeSync = (setters = {}) => {
         lastCloudPayloads.set(scope, serialized);
         setters[key](row.payload);
         try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(row.payload)); } catch {}
-      })
-      .subscribe();
+      });
+    channel = nextChannel;
+    nextChannel.subscribe((status, error) => {
+      if (cancelled || channel !== nextChannel) return;
+      if (status === 'SUBSCRIBED') {
+        reconnectAttempts = 0;
+        if (!reconcileAfterReconnect) {
+          emitCloudSyncStatus('REALTIME', 'saved');
+          return;
+        }
+        reconcileAfterReconnect = false;
+        pullAllFromCloud(setters).then(result => {
+          if (cancelled || channel !== nextChannel) return;
+          if (result.success) emitCloudSyncStatus('REALTIME', 'saved');
+          else emitCloudSyncStatus('REALTIME', 'paused', result.error || result.reason || 'Live updates reconnected, but cloud records could not be refreshed.');
+        }).catch(reportReconnectFailure);
+        return;
+      }
+      if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return;
+      console.warn(`[CloudSync] Realtime channel ${status}:`, error || 'No error details provided.');
+      reconcileAfterReconnect = true;
+      emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
+      if (status === 'TIMED_OUT' || status === 'CLOSED') {
+        channel = null;
+        activeOrgId = null;
+        scheduleReconnect();
+      }
+    });
   };
-  subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  subscribeForCurrentUser().catch(reportReconnectFailure);
   const handleAuthReady = () => {
     retryPendingCloudWrites();
-    subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    subscribeForCurrentUser().catch(reportReconnectFailure);
   };
   window.addEventListener('alzino-cloud-auth-ready', handleAuthReady);
   window.addEventListener('alzino-cloud-auth-changed', handleAuthReady);
 
   return () => {
     cancelled = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     window.removeEventListener('alzino-cloud-auth-ready', handleAuthReady);
     window.removeEventListener('alzino-cloud-auth-changed', handleAuthReady);
-    if (channel) client.removeChannel(channel);
+    const activeChannel = channel;
+    channel = null;
+    activeOrgId = null;
+    if (activeChannel) client.removeChannel(activeChannel);
   };
 };
 
