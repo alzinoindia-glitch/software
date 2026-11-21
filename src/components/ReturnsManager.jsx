@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw, Search, RotateCcw } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 
@@ -27,6 +27,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const [selectedUpiAccountId, setSelectedUpiAccountId] = useState('');
   const [replacementProductQuery, setReplacementProductQuery] = useState('');
   const [notice, setNotice] = useState(null);
+  const returnSubmissionRef = useRef(false);
+  useEffect(() => { returnSubmissionRef.current = false; }, [invoices]);
 
   const matchingInvoices = useMemo(() => {
     const q = invoiceQuery.trim().toLowerCase();
@@ -122,6 +124,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   };
 
   const completeReturn = () => {
+    if (returnSubmissionRef.current) return;
     if (!invoice || !selectedReturnLines.length || selectedReturnLines.some((line) => line.quantity < 1 || line.quantity > line.maxQty)) {
       setNotice({ kind: 'error', text: 'Choose one or more invoice lines and valid quantities that have not already been returned.' }); return;
     }
@@ -169,6 +172,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       if (new Set(selectedReplacementCodes).size !== selectedReplacementCodes.length) { setNotice({ kind: 'error', text: 'The same IMEI or unit cannot be assigned to multiple replacement items.' }); return; }
     }
 
+    returnSubmissionRef.current = true;
     const transactionDate = new Date().toISOString();
     const groupId = `RET-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const replacementRecords = action === 'replacement' ? resolvedReplacementLines.map((line) => ({
