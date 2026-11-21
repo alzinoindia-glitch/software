@@ -65,6 +65,7 @@ import {
 import { getProductSuggestions, lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
 import { getSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
+import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 
 export const MOBILE_BRANDS = BASE_MOBILE_BRANDS;
 export const APPLIANCE_BRANDS = BASE_APPLIANCE_BRANDS;
@@ -824,20 +825,23 @@ export default function InventoryManager({
     }
 
     // Persist front/back photos to the on-device image store (not localStorage)
-    const productId = editingItem ? editingItem.id : `PROD-${Date.now()}`;
-    let imagesMeta = null;
-    try {
-      await Promise.all([
-        saveProductImage(productId, 'front', formImages.front),
-        saveProductImage(productId, 'back', formImages.back)
-      ]);
-      imagesMeta = (formImages.front || formImages.back)
-        ? { front: Boolean(formImages.front), back: Boolean(formImages.back), v: Date.now() }
-        : null;
-    } catch (err) {
-      console.error('Product image save failed:', err);
-      alert('Product saved, but photos could not be stored on this device.');
-      imagesMeta = editingItem?.images || null;
+    const matchedVariant = editingItem ? null : findMatchingInventoryVariant(inventory, formData);
+    const productId = editingItem?.id || matchedVariant?.id || `PROD-${Date.now()}`;
+    let imagesMeta = matchedVariant?.images || null;
+    if (!matchedVariant || editingItem) {
+      try {
+        await Promise.all([
+          saveProductImage(productId, 'front', formImages.front),
+          saveProductImage(productId, 'back', formImages.back)
+        ]);
+        imagesMeta = (formImages.front || formImages.back)
+          ? { front: Boolean(formImages.front), back: Boolean(formImages.back), v: Date.now() }
+          : null;
+      } catch (err) {
+        console.error('Product image save failed:', err);
+        alert('Product saved, but photos could not be stored on this device.');
+        imagesMeta = editingItem?.images || null;
+      }
     }
 
     const serialNumbersArray = mobileCategory ? [] : (serialNumbersUnchanged && editingItem
@@ -900,6 +904,43 @@ export default function InventoryManager({
       })
       : existingUnits;
 
+    const manualReceiptId = assignedSupplier ? `INV-STOCK-${productId}-${Date.now()}` : '';
+    const stockUnits = assignedSupplier && !editingItem
+      ? Array.from({ length: calculatedStock }, (_, index) => {
+        const unit = unitRecords[index] || {};
+        const unitBarcode = unit.barcode || (index === 0 && formData.barcode ? formData.barcode.trim() : `ALZ-${Date.now().toString().slice(-8)}-${index + 1}`);
+        return {
+          ...unit,
+          unitId: unit.unitId || `UNIT-${productId}-${Date.now()}-${index + 1}`,
+          barcode: unitBarcode,
+          rack: unit.rack || rackVal,
+          bin: unit.bin || binVal,
+          status: 'In Stock',
+          supplierId: assignedSupplier.id,
+          supplierName: assignedSupplier.name || '',
+          supplierBillId: manualReceiptId,
+          purchaseCost: finalBuyPrice,
+          purchaseCostEntered: enteredBuyPrice,
+          purchaseCostIncludesGst: buyPriceIncludesGst,
+          purchaseGstRate: finalGstRate,
+          receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0]
+        };
+      })
+      : unitRecords;
+    const inventoryPurchase = assignedSupplier ? {
+      supplierId: assignedSupplier.id,
+      supplierName: assignedSupplier.name || '',
+      billId: manualReceiptId,
+      invoiceNumber: '',
+      date: formData.receivedDate || new Date().toISOString().split('T')[0],
+      quantity: calculatedStock,
+      unitCost: finalBuyPrice,
+      unitCostEntered: enteredBuyPrice,
+      unitCostIncludesGst: buyPriceIncludesGst,
+      gstRate: finalGstRate,
+      source: 'inventory'
+    } : null;
+
     if (editingItem) {
       setInventory(prev => prev.map(item => {
         if (item.id === editingItem.id) {
@@ -956,6 +997,41 @@ export default function InventoryManager({
         }
         return item;
       }));
+    } else if (matchedVariant) {
+      setInventory(prev => prev.map(item => {
+        if (String(item.id) !== String(matchedVariant.id)) return item;
+        const existingLocations = Array.isArray(item.locations) && item.locations.length
+          ? item.locations
+          : [{ rack: item.rack || rackVal, bin: item.bin || binVal, qty: Number(item.stock) || 0 }];
+        const locationIndex = existingLocations.findIndex(location => String(location.rack || '').toUpperCase() === rackVal && String(location.bin || '').toUpperCase() === binVal);
+        const nextLocations = locationIndex >= 0
+          ? existingLocations.map((location, index) => index === locationIndex ? { ...location, qty: (Number(location.qty) || 0) + calculatedStock } : location)
+          : [...existingLocations, { rack: rackVal, bin: binVal, qty: calculatedStock }];
+        const addedBarcodes = stockUnits.map(unit => unit.barcode).filter(Boolean);
+        return {
+          ...item,
+          stock: (Number(item.stock) || 0) + calculatedStock,
+          buyPrice: finalBuyPrice,
+          buyCostEntered: enteredBuyPrice,
+          buyCostBase,
+          buyCostGst,
+          buyPriceIncludesGst,
+          ...(formData.hsn && !item.hsn ? { hsn: formData.hsn } : {}),
+          supplierId: assignedSupplier?.id || item.supplierId || '',
+          supplierName: assignedSupplier?.name || item.supplierName || '',
+          receivedDate: formData.receivedDate || item.receivedDate,
+          locations: nextLocations,
+          rack: item.rack || rackVal,
+          bin: item.bin || binVal,
+          units: [...(item.units || []), ...stockUnits],
+          imeis: [...new Set([...(item.imeis || []), ...imeisArray])],
+          serialNumbers: [...new Set([...(item.serialNumbers || []), ...serialNumbersArray])],
+          barcodes: [...new Set([...(item.barcodes || []), ...addedBarcodes])],
+          barcode: item.barcode || addedBarcodes[0] || '',
+          supplierPurchases: inventoryPurchase ? [...(item.supplierPurchases || []), inventoryPurchase] : (item.supplierPurchases || [])
+        };
+      }));
+      alert(`Added ${calculatedStock} unit(s) to existing ${matchedVariant.name}.${assignedSupplier ? ` Purchase source: ${assignedSupplier.name} at ₹${finalBuyPrice.toLocaleString('en-IN')} each.` : ''}`);
     } else {
       const newItem = {
         id: productId,
@@ -992,7 +1068,8 @@ export default function InventoryManager({
         serialNumbers: serialNumbersArray,
         imei1: imei1Values[0] || '',
         imei2: imei2Values[0] || '',
-        units: unitRecords,
+        units: stockUnits,
+        supplierPurchases: inventoryPurchase ? [inventoryPurchase] : [],
         warranty: formData.warranty,
         termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
         receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
@@ -1578,9 +1655,12 @@ export default function InventoryManager({
                 </div>
 
                 {(item.supplierId || item.supplierPurchases?.length > 0) && (
-                  <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}>
-                    <Truck size={12} /> {item.supplierPurchases?.length ? `Supplier history (${item.supplierPurchases.length})` : 'Supplier details'}
-                  </button>
+                  <>
+                    {role === 'admin' && supplierName && supplierPrice > 0 && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}><strong>Latest supplier:</strong> {supplierName} · <strong>₹{supplierPrice.toLocaleString('en-IN')}</strong> / unit</div>}
+                    <button type="button" onClick={() => setSupplierHistoryItem(item)} className="btn-outline" style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}>
+                      <Truck size={12} /> {item.supplierPurchases?.length ? `Supplier history (${item.supplierPurchases.length})` : 'Supplier details'}
+                    </button>
+                  </>
                 )}
 
                 {/* Location Badge + ID Pill */}
