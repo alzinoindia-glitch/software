@@ -4,6 +4,7 @@ import { clearSsdIndexedDb } from './syncAndStorageEngine';
 import { clearAllProductImages, syncAllProductImagesToCloud, getPublishedProductImageUrls, getPublicProductImageUrlFromSignedUrl } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
 import { sanitizePublicSpecifications } from './productSpecifications';
+import { resolveCloudSnapshot } from './cloudSyncSnapshot';
 
 const STORE_STATE_TABLE = 'store_state';
 
@@ -323,15 +324,14 @@ const applyCloudSnapshotOrRestorePending = (orgId, key, cloudPayload, cloudVersi
 
   const pendingData = compactCloudPayload(key, localPayload);
   const serializedPending = serializePayload(pendingData);
-  const serializedCloud = serializePayload(cloudPayload);
-  if (serializedPending === serializedCloud) {
+  const resolution = resolveCloudSnapshot({ marker, localPayload: pendingData, cloudPayload, cloudVersion });
+  if (resolution.action === 'use-cloud') {
     clearPendingMarker(key);
     setter?.(cloudPayload);
     return cloudPayload;
   }
 
-  const hasMatchingBase = marker.baseVersion != null && Number(marker.baseVersion) === Number(cloudVersion);
-  if (hasMatchingBase) {
+  if (resolution.action === 'restore-local') {
     pendingCloudWrites.set(key, {
       serialized: serializedPending,
       data: pendingData,
@@ -349,7 +349,7 @@ const applyCloudSnapshotOrRestorePending = (orgId, key, cloudPayload, cloudVersi
   clearPendingMarker(key);
   conflictedDomains.add(key);
   versionByScope.set(scopeKey(orgId, key), Number(cloudVersion || 0));
-  lastCloudPayloads.set(scopeKey(orgId, key), serializedCloud);
+  lastCloudPayloads.set(scopeKey(orgId, key), serializePayload(cloudPayload));
   emitCloudSyncStatus(key, 'conflict', `An unsynced ${key} update conflicts with newer cloud data. Choose which version to keep.`);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('alzino-cloud-sync-conflict', {
@@ -608,7 +608,7 @@ export const pullCollectionFromCloud = async (key, setter) => {
     .maybeSingle();
   if (error) return { success: false, error: error.message };
   const scope = scopeKey(orgId, key);
-  const payload = row?.payload ?? [];
+  let payload = row?.payload ?? [];
   if (row) {
     versionByScope.set(scope, Number(row.version || 1));
     lastCloudPayloads.set(scope, serializePayload(payload));
@@ -616,15 +616,22 @@ export const pullCollectionFromCloud = async (key, setter) => {
   } else {
     versionByScope.set(scope, 0);
     lastCloudPayloads.set(scope, serializePayload([]));
-    if (getKnownCloudDomains(orgId).has(key)) {
-      setter?.([]);
-      try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
+  }
+  let hasPendingMarker = false;
+  try { hasPendingMarker = Boolean(localStorage.getItem(pendingMarkerKey(key))); } catch {}
+  const shouldApplySnapshot = Boolean(row) || getKnownCloudDomains(orgId).has(key) || hasPendingMarker;
+  if (shouldApplySnapshot) {
+    if (!row) {
+      pendingCloudWrites.delete(key);
+      if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+      conflictedDomains.delete(key);
+    }
+    payload = applyCloudSnapshotOrRestorePending(orgId, key, payload, Number(row?.version || 0), setter);
+    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+    if (!conflictedDomains.has(key)) {
       try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
     }
-  }
-  if (row) {
-    setter?.(payload);
-    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+    if (pendingCloudWrites.has(key)) retryPendingCloudWrites();
   }
   return { success: true, count: row ? 1 : 0, payload };
 };
