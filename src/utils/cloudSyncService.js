@@ -802,8 +802,12 @@ export const subscribeRealtimeSync = (setters = {}) => {
       console.warn(`[CloudSync] Realtime channel ${status}:`, error || 'No error details provided.');
       reconcileAfterReconnect = true;
       emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
-      // CHANNEL_ERROR, TIMED_OUT, and CLOSED all leave this channel unusable.
-      // Clear its identity so the retry creates a fresh subscription for this org.
+      if (status === 'CHANNEL_ERROR') {
+        // Supabase retries channel errors; keep this channel current so its
+        // subsequent SUBSCRIBED callback can reconcile cloud state.
+        return;
+      }
+      // TIMEOUT and CLOSED channels will not complete the current subscription.
       channel = null;
       activeOrgId = null;
       scheduleReconnect();
