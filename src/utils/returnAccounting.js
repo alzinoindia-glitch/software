@@ -74,3 +74,19 @@ export const requiresReturnRefundReference = ({ action = '', direction = '', amo
   const isRefund = action === 'refund' || (action === 'replacement' && direction === 'refund');
   return isRefund && refundAmount > 0 && ['UPI', 'Bank transfer'].includes(String(method));
 };
+
+
+/** Keep an exchange refund payable visible until the customer is paid. */
+export const getReplacementRefundPaymentFields = ({ direction = '', amount = 0, method = '', reference = '' } = {}) => {
+  const refundAmount = Math.max(0, Number(amount) || 0);
+  if (direction !== 'refund' || refundAmount <= 0) return {};
+  const pending = method === 'Khata (pay later)';
+  return {
+    amount: refundAmount,
+    method: String(method || ''),
+    reference: String(reference || '').trim(),
+    paidAmount: pending ? 0 : refundAmount,
+    pendingAmount: pending ? refundAmount : 0,
+    status: pending ? 'pending' : 'paid'
+  };
+};
