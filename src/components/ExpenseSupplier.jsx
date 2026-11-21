@@ -1091,7 +1091,7 @@ export default function ExpenseSupplier({
 
       {showSupplierPaymentModal && selectedSupplier && (
         <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <form onSubmit={handleRecordSupplierPayment} className="illoca-card animate-fade-in" style={{ maxWidth: '520px', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+          <form onSubmit={handleRecordSupplierPayment} role="dialog" aria-modal="true" className="illoca-card animate-fade-in" style={{ maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', overscrollBehavior: 'contain', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
               <div><h3 style={{ margin: 0, fontSize: '1.1rem' }}>Record Supplier Payment</h3><small style={{ color: 'var(--text-secondary)' }}>{selectedSupplier.name}</small></div>
               <button type="button" onClick={() => setShowSupplierPaymentModal(false)} className="btn-outline" aria-label="Close payment form" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
