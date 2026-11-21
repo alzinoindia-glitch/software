@@ -797,6 +797,26 @@ export default function PosBilling({
       alert(`Sale not completed: ${stockChanged.name} has only ${liveStock} unit(s) in stock now. Update the bill quantity and try again.`);
       return;
     }
+    const unavailableTrackedItem = cart.find(cartItem => {
+      if (cartItem.isCustom) return false;
+      const product = inventory.find(item => item.id === cartItem.id);
+      if (!product) return false;
+      const availableCodes = new Set([
+        ...(product.imeis || []),
+        ...(product.serialNumbers || []),
+        ...(product.units || []).flatMap(unit => [unit.id, unit.imei1, unit.imei2, unit.serialNumber, unit.barcode])
+      ].filter(Boolean).map(String));
+      if (!availableCodes.size) return false;
+      const selectedCodes = new Set([
+        ...(cartItem.selectedImeis || []),
+        ...(cartItem.selectedUnitIds || [])
+      ].filter(Boolean).map(String));
+      return [...selectedCodes].some(code => !availableCodes.has(code));
+    });
+    if (unavailableTrackedItem) {
+      alert(`Sale not completed: one of the selected IMEIs or serial numbers for ${unavailableTrackedItem.name} is no longer available. Remove it from the bill and scan/select an available unit again.`);
+      return;
+    }
     finalizingSaleRef.current = true;
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
