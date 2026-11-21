@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSupplierUnitCostBreakdown } from '../src/utils/supplierAccounting.js';
+import { getNetSupplierAllocations, getSupplierUnitCostBreakdown } from '../src/utils/supplierAccounting.js';
 
 test('uses the selected units actual costs and preserves supplier bill attribution', () => {
   const result = getSupplierUnitCostBreakdown({
@@ -54,4 +54,39 @@ test('falls back to product cost and supplier for products without selected unit
   assert.equal(result.supplierAllocations.length, 1);
   assert.equal(result.supplierAllocations[0].quantity, 3);
   assert.equal(result.unattributedQuantity, 0);
+});
+
+
+test('removes returned serialized units from their exact supplier bill sell-through', () => {
+  const result = getNetSupplierAllocations({
+    qty: 2,
+    supplierAllocations: [
+      { supplierId: 'supplier-a', supplierBillId: 'bill-a', quantity: 1, purchaseCostTotal: 100 },
+      { supplierId: 'supplier-b', supplierBillId: 'bill-b', quantity: 1, purchaseCostTotal: 200 }
+    ],
+    soldUnitRecords: [
+      { identifier: 'imei-a', supplierId: 'supplier-a', supplierBillId: 'bill-a' },
+      { identifier: 'imei-b', supplierId: 'supplier-b', supplierBillId: 'bill-b' }
+    ]
+  }, [{ quantity: 1, returnedImeis: ['imei-b'] }]);
+
+  assert.deepEqual(result.allocations.map(item => [item.supplierId, item.supplierBillId, item.quantity]), [
+    ['supplier-a', 'bill-a', 1]
+  ]);
+  assert.equal(result.unattributedQuantity, 0);
+});
+
+test('deducts legacy returns without identifiers from the oldest supplier allocation', () => {
+  const result = getNetSupplierAllocations({
+    qty: 3,
+    supplierAllocations: [
+      { supplierId: 'supplier-a', supplierBillId: 'bill-a', quantity: 2, purchaseCostTotal: 200 },
+      { supplierId: 'supplier-b', supplierBillId: 'bill-b', quantity: 1, purchaseCostTotal: 150 }
+    ]
+  }, [{ quantity: 1, returnedImeis: [] }]);
+
+  assert.deepEqual(result.allocations.map(item => [item.supplierId, item.quantity]), [
+    ['supplier-a', 1],
+    ['supplier-b', 1]
+  ]);
 });
