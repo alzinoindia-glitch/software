@@ -1,4 +1,5 @@
 import { getLocalDateString } from '../utils/dateUtils';
+import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
 import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -852,7 +853,7 @@ export default function PosBilling({
     }
     finalizingSaleRef.current = true;
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
-    const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
+    const invoiceNo = getNextInvoiceNumber(invoices, prefix, 82);
     const today = getLocalDateString();
 
     // Compute GST breakdowns

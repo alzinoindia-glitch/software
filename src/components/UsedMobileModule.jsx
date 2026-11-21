@@ -1,4 +1,5 @@
 import { getLocalDateString } from '../utils/dateUtils';
+import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
 import React, { useState, useMemo } from 'react';
 import { 
   Smartphone, 
@@ -421,7 +422,7 @@ export default function UsedMobileModule({
 
     const isNonGst = resellBillingType === 'non-gst';
     const prefix = isNonGst ? 'ALZ-REF' : 'ALZ-INV';
-    const invoiceNo = `${prefix}-${String(invoices.length + 101).padStart(4, '0')}`;
+    const invoiceNo = getNextInvoiceNumber(invoices, prefix, 100);
     const today = getLocalDateString();
 
     const deviceCost = Number(selectedDevice.buyPrice) || 0;
