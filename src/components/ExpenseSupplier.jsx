@@ -90,6 +90,7 @@ export default function ExpenseSupplier({
   const [showInwardModal, setShowInwardModal] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [inwardItems, setInwardItems] = useState([newInwardLine()]);
+  const [supplierProductSearch, setSupplierProductSearch] = useState({});
   const [inwardDocument, setInwardDocument] = useState(null);
   const [inwardGstHint, setInwardGstHint] = useState(null);
   const [isImportingBill, setIsImportingBill] = useState(false);
@@ -1147,38 +1148,70 @@ export default function ExpenseSupplier({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '32vh', overflowY: 'auto' }}>
                 {inwardItems.map((line, index) => (
                   <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', alignItems: 'end' }}>
-                    <div>
-                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Product {index + 1} *</label>
-                      <select value={line.isNewProduct ? '__new__' : line.productId} onChange={event => {
-                        if (event.target.value === '__new__') {
-                          updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true });
-                          return;
-                        }
-                        const selectedProduct = inventory.find(product => String(product.id) === event.target.value);
-                        const invoiceHint = line.unitCostIncludesGst !== null && line.unitCostIncludesGst !== undefined
-                          ? line.unitCostIncludesGst
-                          : inwardGstHint?.includesGst;
-                        updateInwardLine(line.id, {
-                          productId: event.target.value,
-                          isNewProduct: false,
-                          unitCostIncludesGst: invoiceHint ?? (selectedProduct?.buyPriceIncludesGst !== false),
-                          gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
-                            ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
-                            : 'product setting'
-                        });
-                      }} required className="input-field">
-                        <option value="">{line.importedName ? `Match: ${line.importedName}` : 'Choose inventory product'}</option>
-                        {inventory.map(product => {
-                          const priorPurchase = [...(product.supplierPurchases || [])]
-                            .filter(purchase => !selectedSupplierId || String(purchase.supplierId) === String(selectedSupplierId))
-                            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.recordedAt || b.billId || '').localeCompare(String(a.recordedAt || a.billId || '')))[0];
-                          const priorSupplierName = priorPurchase?.supplierName || suppliers.find(supplier => String(supplier.id) === String(priorPurchase?.supplierId))?.name;
-                          return <option key={product.id} value={product.id}>
-                            {product.brand} · {product.name} (Stock: {product.stock}{priorSupplierName ? ` · Last from ${priorSupplierName} ₹${Number(priorPurchase.unitCost || 0).toLocaleString('en-IN')}` : ''})
-                          </option>;
-                        })}
-                        <option value="__new__">＋ Add a new product from this supplier</option>
-                      </select>
+                    <div style={{ position: 'relative', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Search inventory product {index + 1} *</label>
+                      {(() => {
+                        const selectedProduct = inventory.find(product => String(product.id) === String(line.productId));
+                        const query = supplierProductSearch[line.id] ?? '';
+                        const searchText = query.trim().toLowerCase();
+                        const matchingProducts = inventory.filter(product => {
+                          if (!searchText) return false;
+                          return [product.name, product.brand, product.model, product.category, product.hsnCode]
+                            .filter(Boolean).some(value => String(value).toLowerCase().includes(searchText));
+                        }).slice(0, 12);
+                        const getSupplierPurchase = product => [...(product.supplierPurchases || [])]
+                          .filter(purchase => !selectedSupplierId || String(purchase.supplierId) === String(selectedSupplierId))
+                          .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.recordedAt || b.billId || '').localeCompare(String(a.recordedAt || a.billId || '')))[0];
+                        const selectProduct = product => {
+                          const invoiceHint = line.unitCostIncludesGst !== null && line.unitCostIncludesGst !== undefined
+                            ? line.unitCostIncludesGst
+                            : inwardGstHint?.includesGst;
+                          updateInwardLine(line.id, {
+                            productId: String(product.id),
+                            isNewProduct: false,
+                            unitCostIncludesGst: invoiceHint ?? (product.buyPriceIncludesGst !== false),
+                            gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
+                              ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
+                              : 'product setting'
+                          });
+                          setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; });
+                        };
+                        return <>
+                          <input
+                            className="input-field"
+                            value={supplierProductSearch[line.id] ?? (selectedProduct && !line.isNewProduct ? `${selectedProduct.brand || ''} ${selectedProduct.name || ''}`.trim() : '')}
+                            onChange={event => {
+                              setSupplierProductSearch(previous => ({ ...previous, [line.id]: event.target.value }));
+                              if (!event.target.value) updateInwardLine(line.id, { productId: '', isNewProduct: false });
+                            }}
+                            onFocus={() => {
+                              if (selectedProduct && !line.isNewProduct && !supplierProductSearch[line.id]) {
+                                setSupplierProductSearch(previous => ({ ...previous, [line.id]: '' }));
+                              }
+                            }}
+                            placeholder={line.importedName ? `Search to match: ${line.importedName}` : 'Type product name, brand, model or category'}
+                            required={!line.isNewProduct && !line.productId}
+                            aria-label={`Search inventory product ${index + 1}`}
+                          />
+                          {searchText && !line.isNewProduct && <div style={{ position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, maxHeight: 260, overflowY: 'auto', background: 'var(--card-bg, #fff)', border: '1px solid var(--border-color)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.16)' }}>
+                            {matchingProducts.length ? matchingProducts.map(product => {
+                              const purchase = getSupplierPurchase(product);
+                              const purchaseSupplier = purchase?.supplierName || suppliers.find(supplier => String(supplier.id) === String(purchase?.supplierId))?.name;
+                              return <button key={product.id} type="button" onClick={() => selectProduct(product)} style={{ width: '100%', textAlign: 'left', padding: '0.55rem 0.65rem', background: 'transparent', border: 0, borderBottom: '1px solid var(--border-color)', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                                <span style={{ display: 'block', fontWeight: 700 }}>{product.brand ? `${product.brand} · ` : ''}{product.name}</span>
+                                <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                  Stock {product.stock ?? 0}{purchaseSupplier ? ` · From ${purchaseSupplier} · Last rate ₹${Number(purchase?.unitCost || 0).toLocaleString('en-IN')}` : ' · No purchase history for this supplier'}
+                                </span>
+                              </button>;
+                            }) : <div style={{ padding: '0.65rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>No matching inventory product. You can add this as a new product below.</div>}
+                          </div>}
+                        </>;
+                      })()}
+                      {line.productId && !line.isNewProduct && <button type="button" className="btn-outline" onClick={() => { updateInwardLine(line.id, { productId: '', isNewProduct: false }); setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; }); }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>Clear selection</button>}
+                      <button type="button" className="btn-outline" onClick={() => {
+                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true });
+                        setSupplierProductSearch(previous => ({ ...previous, [line.id]: '' }));
+                      }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>＋ Add a new product</button>
                       {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
                       {line.isNewProduct && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 6 }}>
                         <input className="input-field" value={line.newProductName} onChange={event => updateInwardLine(line.id, { newProductName: event.target.value })} placeholder="Product name *" required aria-label={`New product ${index + 1} name`} />
