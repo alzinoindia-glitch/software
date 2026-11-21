@@ -1007,30 +1007,35 @@ export default function PosBilling({
       return invItem;
     }));
 
-    // Update Customer CRM
-    if (customerPhone.trim()) {
+    // Update Customer CRM with normalized phone matching and numeric ledger totals.
+    const customerPhoneDigits = customerPhone.trim().replace(/\\D/g, '').slice(-10);
+    if (customerPhoneDigits.length === 10) {
+      const saleTotal = Number.isFinite(Number(grandTotal)) ? Number(grandTotal) : 0;
+      const saleDue = Number.isFinite(Number(khataDue)) ? Number(khataDue) : 0;
       setCustomers(prev => {
-        const exists = prev.find(c => c.phone === customerPhone.trim());
+        const matchesPhone = customer => String(customer.phone || customer.mobile || '').replace(/\\D/g, '').slice(-10) === customerPhoneDigits;
+        const exists = prev.find(matchesPhone);
         if (exists) {
-          return prev.map(c => c.phone === customerPhone.trim() ? {
-            ...c,
-            totalSpent: c.totalSpent + grandTotal,
-            balanceDue: c.balanceDue + khataDue,
-          } : c);
-        } else {
-          return [
-            ...prev,
-            {
-              id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
-              name: customerName.trim() || 'Customer',
-              phone: customerPhone.trim(),
-              address: customerAddress.trim() || 'Bodhan',
-              gstin: customerGstin.trim(),
-              totalSpent: grandTotal,
-              balanceDue: khataDue,
-            }
-          ];
+          const currentSpent = Number(exists.totalSpent);
+          const currentBalanceDue = Number(exists.balanceDue);
+          return prev.map(customer => customer === exists ? {
+            ...customer,
+            totalSpent: (Number.isFinite(currentSpent) ? currentSpent : 0) + saleTotal,
+            balanceDue: (Number.isFinite(currentBalanceDue) ? currentBalanceDue : 0) + saleDue,
+          } : customer);
         }
+        return [
+          ...prev,
+          {
+            id: `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: customerName.trim() || 'Customer',
+            phone: customerPhone.trim(),
+            address: customerAddress.trim() || 'Bodhan',
+            gstin: customerGstin.trim(),
+            totalSpent: saleTotal,
+            balanceDue: saleDue,
+          }
+        ];
       });
     }
 
