@@ -17,6 +17,7 @@ import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills } from '../utils/supplierAccounting';
+import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
 
 const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
@@ -232,7 +233,7 @@ export default function ExpenseSupplier({
         if (parsed.invoiceDate) setInwardDate(parsed.invoiceDate);
         if (parsed.lines.length) {
           const lines = parsed.lines.map(parsedLine => {
-            const product = inventory.find(item => item.name?.trim().toLowerCase() === parsedLine.name.toLowerCase() || item.model?.trim().toLowerCase() === parsedLine.name.toLowerCase());
+            const product = findMatchingInventoryVariant(inventory, { name: parsedLine.name });
             return {
               ...newInwardLine(),
               productId: product?.id || '',
@@ -271,8 +272,15 @@ export default function ExpenseSupplier({
       if (billNo) setInwardInvoiceNumber(String(billNo));
       const lines = rows.map(row => {
         const productName = String(getCell(row, 'product', 'productname', 'item', 'itemname', 'model', 'description') || '').trim();
-        const product = inventory.find(item => item.name?.toLowerCase() === productName.toLowerCase() || item.model?.toLowerCase() === productName.toLowerCase())
-          || inventory.find(item => productName && (item.name?.toLowerCase().includes(productName.toLowerCase()) || productName.toLowerCase().includes(item.name?.toLowerCase())));
+        const product = findMatchingInventoryVariant(inventory, {
+          name: productName,
+          category: getCell(row, 'category'),
+          brand: getCell(row, 'brand'),
+          model: getCell(row, 'model'),
+          ram: getCell(row, 'ram', 'memory'),
+          storage: getCell(row, 'storage', 'capacity', 'rom'),
+          color: getCell(row, 'color', 'colour')
+        });
         const list = value => String(value || '').split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
         let imei1Values = list(getCell(row, 'imei1', 'imei'));
         const imei2Values = list(getCell(row, 'imei2'));
@@ -311,37 +319,28 @@ export default function ExpenseSupplier({
       const quantity = Number.parseInt(line.quantity, 10);
       const unitCost = Number.parseFloat(line.unitCost);
       if (!line.isNewProduct) return { ...line, quantity, unitCost, product: inventory.find(item => String(item.id) === String(line.productId)) };
-      const productId = line.productId || `PROD-SUPP-${Date.now()}-${index}`;
-      return {
-        ...line,
-        productId,
-        quantity,
-        unitCost,
-        product: {
-          id: productId,
-          name: String(line.newProductName || '').trim(),
-          category: String(line.newProductCategory || '').trim(),
-          brand: String(line.newProductBrand || '').trim() || 'General',
-          hsn: String(line.newProductHsn || '').trim(),
-          sellPrice: Number(line.newProductSellPrice) || unitCost,
-          mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || unitCost,
-          gstRate: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18,
-          isGst: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) > 0 : true,
-          stock: 0,
-          lowStockThreshold: 2,
-          rack: 'R-01',
-          bin: 'B-01',
-          locations: [],
-          units: [],
-          imeis: [],
-          serialNumbers: [],
-          barcodes: [],
-          status: 'Active',
-          isPublished: false,
-          supplierId: selectedSupplierId,
-          supplierName: suppliers.find(supplier => String(supplier.id) === String(selectedSupplierId))?.name || ''
-        }
+      const proposedProduct = {
+        id: line.productId || `PROD-SUPP-${Date.now()}-${index}`,
+        name: String(line.newProductName || line.importedName || '').trim(),
+        category: String(line.newProductCategory || '').trim(),
+        brand: String(line.newProductBrand || '').trim() || 'General',
+        hsn: String(line.newProductHsn || line.importedHsn || '').trim(),
+        model: String(line.newProductModel || '').trim(),
+        ram: String(line.newProductRam || '').trim(),
+        storage: String(line.newProductStorage || '').trim(),
+        color: String(line.newProductColor || '').trim(),
+        sellPrice: Number(line.newProductSellPrice) || unitCost,
+        mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || unitCost,
+        gstRate: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18,
+        isGst: Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) > 0 : true,
+        stock: 0, lowStockThreshold: 2, rack: 'R-01', bin: 'B-01', locations: [],
+        units: [], imeis: [], serialNumbers: [], barcodes: [], status: 'Active', isPublished: false,
+        supplierId: selectedSupplierId,
+        supplierName: suppliers.find(supplier => String(supplier.id) === String(selectedSupplierId))?.name || ''
       };
+      const matchedProduct = findMatchingInventoryVariant(inventory, proposedProduct);
+      if (matchedProduct) return { ...line, productId: matchedProduct.id, isNewProduct: false, quantity, unitCost, product: matchedProduct };
+      return { ...line, productId: proposedProduct.id, quantity, unitCost, product: proposedProduct };
     });
     if (validLines.some(line => !line.product || (line.isNewProduct && (!line.product.name || !line.product.category)) || !Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.unitCost) || line.unitCost <= 0)) {
       alert('Choose an inventory product or enter a name and category for each new product, then enter a valid quantity and unit cost.');
@@ -447,7 +446,9 @@ export default function ExpenseSupplier({
         ...(imeiTracked ? { ...(line.imei1Values[index] ? { imei1: line.imei1Values[index] } : {}), ...(line.imei2Values[index] ? { imei2: line.imei2Values[index] } : {}) } : (line.identifiers[index] ? { serialNumber: line.identifiers[index] } : {})),
         barcode: `ALZ-${Date.now().toString().slice(-8)}-${String(line.id).slice(-5)}-${index + 1}`,
         rack: 'R-01', bin: 'B-01', status: 'In Stock', supplierId: selectedSupplierId,
-        supplierName: supplier?.name || '', supplierBillId: billId
+        supplierName: supplier?.name || '', supplierBillId: billId,
+        purchaseCost: purchaseCost.gross, purchaseCostEntered: line.unitCost,
+        purchaseCostIncludesGst: Boolean(line.unitCostIncludesGst), purchaseGstRate: productGstRate(line.product), receivedDate: inwardDate
       }));
       return {
         ...line.product,
@@ -491,7 +492,12 @@ export default function ExpenseSupplier({
           bin: item.bin || 'B-01',
           status: 'In Stock',
           supplierId: selectedSupplierId,
-          supplierBillId: billId
+          supplierName: supplier?.name || '',
+          supplierBillId: billId,
+          purchaseCost: line.unitCost,
+          purchaseCostIncludesGst: Boolean(line.unitCostIncludesGst),
+          purchaseGstRate: line.gstRate,
+          receivedDate: inwardDate
         };
       }));
       const totalReceived = received.reduce((sum, line) => sum + line.totalAmount, 0);
