@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getNetSupplierAllocations, getSupplierUnitCostBreakdown } from '../src/utils/supplierAccounting.js';
+import { applySupplierPayment } from '../src/utils/supplierPayments.js';
 
 test('uses the selected units actual costs and preserves supplier bill attribution', () => {
   const result = getSupplierUnitCostBreakdown({
@@ -105,4 +106,37 @@ test('subtracts the returned unit actual cost from a mixed-cost supplier bill', 
   }, [{ quantity: 1, returnedImeis: ['imei-b'] }]);
 
   assert.deepEqual(result.allocations.map(item => [item.quantity, item.purchaseCostTotal]), [[1, 100]]);
+});
+
+
+test('allocates supplier payments to oldest bills then Khata and updates payable', () => {
+  const supplier = {
+    balancePayable: 400,
+    purchaseBills: [
+      { id: 'bill-new', date: '2026-11-02', totalAmount: 200, paidAmount: 0, balanceDue: 200 },
+      { id: 'bill-old', date: '2026-10-01', totalAmount: 100, paidAmount: 0, balanceDue: 100 }
+    ],
+    khataEntries: [{ id: 'khata-1', amount: 100, paidAmount: 0, balanceDue: 100 }],
+    payments: []
+  };
+  const result = applySupplierPayment(supplier, { id: 'pay-1', date: '2026-11-21', amount: 250, mode: 'UPI', note: 'UTR-123' });
+
+  assert.equal(result.success, true);
+  assert.equal(result.supplier.purchaseBills.find(bill => bill.id === 'bill-old').balanceDue, 0);
+  assert.equal(result.supplier.purchaseBills.find(bill => bill.id === 'bill-new').balanceDue, 50);
+  assert.equal(result.supplier.khataEntries[0].balanceDue, 100);
+  assert.equal(result.supplier.balancePayable, 150);
+  assert.deepEqual(result.supplier.payments[0].allocations.bills, [
+    { billId: 'bill-old', invoiceNumber: '', amount: 100 },
+    { billId: 'bill-new', invoiceNumber: '', amount: 150 }
+  ]);
+});
+
+test('rejects supplier payments above the recorded payable without changing the supplier', () => {
+  const supplier = { balancePayable: 20, purchaseBills: [], khataEntries: [], payments: [] };
+  const result = applySupplierPayment(supplier, { id: 'pay-over', amount: 21, mode: 'Cash' });
+
+  assert.equal(result.success, false);
+  assert.equal(supplier.balancePayable, 20);
+  assert.equal(supplier.payments.length, 0);
 });

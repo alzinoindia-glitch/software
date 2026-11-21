@@ -18,6 +18,7 @@ import { isImeiTrackedCategory } from '../utils/customTaxonomy';
 import { getSupplierBillDocument, saveSupplierBillDocument } from '../utils/supplierBillStore';
 import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills, getNetSupplierAllocations } from '../utils/supplierAccounting';
+import { applySupplierPayment } from '../utils/supplierPayments';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
 
@@ -99,6 +100,11 @@ export default function ExpenseSupplier({
   const [inwardDate, setInwardDate] = useState(getLocalDateString());
   const [supplierBillFilter, setSupplierBillFilter] = useState('all');
   const [editingBillId, setEditingBillId] = useState('');
+  const [showSupplierPaymentModal, setShowSupplierPaymentModal] = useState(false);
+  const [supplierPaymentAmount, setSupplierPaymentAmount] = useState('');
+  const [supplierPaymentMode, setSupplierPaymentMode] = useState('Cash');
+  const [supplierPaymentReference, setSupplierPaymentReference] = useState('');
+  const [supplierPaymentNote, setSupplierPaymentNote] = useState('');
 
   const expenseCategories = [
     'Shop Rent',
@@ -704,6 +710,7 @@ export default function ExpenseSupplier({
     + selectedSupplierUnbilledPurchases.reduce((sum, purchase) => sum + Number(purchase.unitCost || 0) * Number(purchase.quantity || 0), 0);
   const selectedSupplierBillsDue = selectedSupplierBills.reduce((sum, bill) => sum + Math.max(0, Number(bill.balanceDue ?? Number(bill.totalAmount || 0) - Number(bill.paidAmount || 0)) || 0), 0);
   const selectedSupplierOtherKhataDue = (selectedSupplier?.khataEntries || []).reduce((sum, entry) => sum + Math.max(0, Number(entry.balanceDue ?? Number(entry.amount || 0) - Number(entry.paidAmount || 0)) || 0), 0);
+  const selectedSupplierTotalDue = Math.max(0, Number(selectedSupplier?.balancePayable) || 0, selectedSupplierBillsDue + selectedSupplierOtherKhataDue);
   const selectedSupplierInventory = (() => {
     if (!selectedSupplier) return [];
     const rows = new Map();
@@ -787,6 +794,31 @@ export default function ExpenseSupplier({
     setReorderProductId('');
     setReorderQuantity('1');
     setSelectedSupplierProfileId(supplierId);
+  };
+
+  const handleRecordSupplierPayment = event => {
+    event.preventDefault();
+    if (role !== 'admin' || !selectedSupplier) return;
+    const amount = Math.round((Number(supplierPaymentAmount) + Number.EPSILON) * 100) / 100;
+    if (!(amount > 0)) { alert('Enter a payment amount greater than zero.'); return; }
+    if (supplierPaymentMode === 'UPI' && !supplierPaymentReference.trim()) { alert('Enter the UPI UTR / transaction reference.'); return; }
+    const reference = supplierPaymentReference.trim();
+    const note = [reference ? `Reference: ${reference}` : '', supplierPaymentNote.trim()].filter(Boolean).join(' · ');
+    const result = applySupplierPayment(selectedSupplier, {
+      id: `SUPPAY-${Date.now()}`,
+      date: getLocalDateString(),
+      amount,
+      mode: supplierPaymentMode,
+      note
+    });
+    if (!result.success) { alert(result.reason); return; }
+    setSuppliers(previous => previous.map(supplier => String(supplier.id) === String(selectedSupplier.id) ? result.supplier : supplier));
+    setShowSupplierPaymentModal(false);
+    setSupplierPaymentAmount('');
+    setSupplierPaymentMode('Cash');
+    setSupplierPaymentReference('');
+    setSupplierPaymentNote('');
+    alert(`Supplier payment of ₹${amount.toLocaleString('en-IN')} recorded.`);
   };
 
   return (
@@ -957,7 +989,8 @@ export default function ExpenseSupplier({
                 <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{selectedSupplier.contactPerson || 'No contact person'} · {selectedSupplier.phone || 'No phone'} · {selectedSupplier.city || 'Location not recorded'}{selectedSupplier.gstin ? ` · GSTIN ${selectedSupplier.gstin}` : ''}</div>
               </div>
               <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
-                <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier</button>
+                {role === 'admin' && <button type="button" className="btn-outline" disabled={selectedSupplierTotalDue <= 0} onClick={() => { setSupplierPaymentAmount(''); setSupplierPaymentMode('Cash'); setSupplierPaymentReference(''); setSupplierPaymentNote(''); setShowSupplierPaymentModal(true); }}>Record payment</button>}
+                <button type="button" className="btn-outline" onClick={() => { setSelectedSupplierProfileId(''); editSupplier(selectedSupplier); }}>Edit supplier
                 <button type="button" className="btn-primary" onClick={() => { setSelectedSupplierProfileId(''); openInwardForSupplier(selectedSupplier.id); }}><Plus size={14} /> Add bill</button>
                 <button type="button" className="btn-outline" disabled={!supplierReorderLines.length} onClick={() => { openInwardForSupplier(selectedSupplier.id, supplierReorderLines); setSelectedSupplierProfileId(''); }}>Create bill from reorder list ({supplierReorderLines.length})</button>
                 <button type="button" className="btn-outline" aria-label="Close supplier profile" onClick={() => setSelectedSupplierProfileId('')}><X size={17} /></button>
@@ -973,7 +1006,7 @@ export default function ExpenseSupplier({
                 ['Purchase value', `₹${selectedSupplierPurchaseValue.toLocaleString('en-IN')}`],
                 ['Bills due', `₹${selectedSupplierBillsDue.toLocaleString('en-IN')}`],
                 ['Other Khata due', `₹${selectedSupplierOtherKhataDue.toLocaleString('en-IN')}`],
-                ['Total payable', `₹${(Number(selectedSupplier.balancePayable) || 0).toLocaleString('en-IN')}`],
+                ['Total payable', `₹${selectedSupplierTotalDue.toLocaleString('en-IN')}`],
               ].map(([label, value]) => <div key={label} style={{ padding: '0.7rem 0.8rem', border: '1px solid var(--border-color)', borderRadius: 10, background: 'var(--surface-secondary, var(--surface-primary))' }}><small style={{ color: 'var(--text-secondary)' }}>{label}</small><strong style={{ display: 'block', fontSize: '1.05rem', marginTop: 3 }}>{value}</strong></div>)}
             </div>
 
@@ -1053,6 +1086,43 @@ export default function ExpenseSupplier({
               {selectedSupplier.khataEntries?.length > 0 && <div style={{ marginTop: 10, border: '1px solid var(--border-color)', borderRadius: 10, padding: 10 }}><strong style={{ fontSize: '0.82rem' }}>Other supplier Khata entries</strong><div style={{ display: 'grid', gap: 5, marginTop: 6 }}>{selectedSupplier.khataEntries.map(entry => <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: '0.78rem' }}><span>{entry.date || '—'} · {entry.description || 'Khata adjustment'}</span><span>₹{Number(entry.amount || 0).toLocaleString('en-IN')} · Due ₹{Number(entry.balanceDue ?? Number(entry.amount || 0) - Number(entry.paidAmount || 0)).toLocaleString('en-IN')}</span></div>)}</div></div>}
             </section>
           </section>
+        </div>
+      )}
+
+      {showSupplierPaymentModal && selectedSupplier && (
+        <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <form onSubmit={handleRecordSupplierPayment} className="illoca-card animate-fade-in" style={{ maxWidth: '520px', width: '100%', padding: '1.25rem', background: 'var(--surface-primary)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div><h3 style={{ margin: 0, fontSize: '1.1rem' }}>Record Supplier Payment</h3><small style={{ color: 'var(--text-secondary)' }}>{selectedSupplier.name}</small></div>
+              <button type="button" onClick={() => setShowSupplierPaymentModal(false)} className="btn-outline" aria-label="Close payment form" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>Amount paid (₹) *
+                <input className="input-field" type="number" min="0.01" max={selectedSupplierTotalDue} step="0.01" required value={supplierPaymentAmount} onChange={event => setSupplierPaymentAmount(event.target.value)} placeholder="Enter amount" />
+              </label>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600 }}>Payment mode *
+                <select className="input-field" value={supplierPaymentMode} onChange={event => setSupplierPaymentMode(event.target.value)}>
+                  <option>Cash</option><option>UPI</option><option>Bank Transfer</option><option>Cheque</option><option>Other</option>
+                </select>
+              </label>
+              {supplierPaymentMode === 'UPI' && <label style={{ gridColumn: '1 / -1', fontSize: '0.78rem', fontWeight: 600 }}>UTR / transaction reference *
+                <input className="input-field" required value={supplierPaymentReference} onChange={event => setSupplierPaymentReference(event.target.value)} placeholder="Enter UTR" />
+              </label>}
+              {supplierPaymentMode === 'Bank Transfer' && <label style={{ gridColumn: '1 / -1', fontSize: '0.78rem', fontWeight: 600 }}>Bank reference
+                <input className="input-field" value={supplierPaymentReference} onChange={event => setSupplierPaymentReference(event.target.value)} placeholder="Enter transaction reference" />
+              </label>}
+              <label style={{ gridColumn: '1 / -1', fontSize: '0.78rem', fontWeight: 600 }}>Note
+                <input className="input-field" value={supplierPaymentNote} onChange={event => setSupplierPaymentNote(event.target.value)} placeholder="Optional payment note" />
+              </label>
+            </div>
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: 'var(--surface-secondary, #f5f7f6)', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+              Payable now: <strong>₹{selectedSupplierTotalDue.toLocaleString('en-IN')}</strong>. Payment applies to the oldest unpaid supplier bills first, then Other Khata entries and any older unassigned balance.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button type="button" className="btn-outline" onClick={() => setShowSupplierPaymentModal(false)}>Cancel</button>
+              <button type="submit" className="btn-primary">Save payment</button>
+            </div>
+          </form>
         </div>
       )}
 
