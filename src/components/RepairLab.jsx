@@ -28,6 +28,7 @@ import {
 import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
 import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxonomy';
 import { getUpiQrUrl } from '../utils/barcode';
+import { applyRepairInvoiceToCustomerLedger } from '../utils/repairAccounting';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -571,30 +572,14 @@ export default function RepairLab({
       return job;
     }));
 
-    // 3. Update customer record
-    setCustomers(prev => {
-      const matchIndex = prev.findIndex(c => c.phone && c.phone.replace(/\D/g, '') === jobToBill.customerMobile.replace(/\D/g, ''));
-      if (matchIndex >= 0) {
-        const updated = [...prev];
-        updated[matchIndex] = {
-          ...updated[matchIndex],
-          totalSpent: (updated[matchIndex].totalSpent || 0) + finalPrice,
-          balanceDue: (updated[matchIndex].balanceDue || 0) + khataDue,
-        };
-        return updated;
-      } else {
-        const newCust = {
-          id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
-          name: jobToBill.customerName,
-          phone: jobToBill.customerMobile,
-          address: 'Bodhan, Telangana',
-          gstin: '',
-          totalSpent: finalPrice,
-          balanceDue: khataDue,
-        };
-        return [newCust, ...prev];
-      }
-    });
+    // 3. Update CRM from the amount actually billed after discount.
+    setCustomers(prev => applyRepairInvoiceToCustomerLedger(prev, {
+      phone: jobToBill.customerMobile,
+      name: jobToBill.customerName,
+      address: 'Bodhan, Telangana',
+      invoiceTotal: grandTotalPrice,
+      khataDue,
+    }));
 
     // Close modal
     setBillModalOpen(false);
