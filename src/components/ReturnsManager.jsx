@@ -5,8 +5,9 @@ import { getUpiQrUrl } from '../utils/barcode';
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
   ...(Array.isArray(item?.imeis) ? item.imeis : []),
-  ...(Array.isArray(item?.units) ? item.units : [])
-].map((unit) => typeof unit === 'string' ? unit : unit?.imei1 || unit?.imei || unit?.serialNumber || unit?.imei2 || unit?.barcode || unit?.id || '')
+  ...(Array.isArray(item?.units) ? item.units : []),
+  ...(Array.isArray(item?.soldUnitRecords) ? item.soldUnitRecords.map(unit => unit?.identifier || unit?.imei || unit?.serialNumber || unit?.barcode || '') : [])
+].map((unit) => typeof unit === 'string' ? unit : unit?.imei1 || unit?.imei || unit?.serialNumber || unit?.imei2 || unit?.barcode || unit?.identifier || unit?.id || '')
   .map((value) => String(value).trim()).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
 const describeReplacement = (entry) => (entry.replacements || (entry.replacement ? [entry.replacement] : []))
   .map((item) => `${item.productName} × ${item.quantity}${Number(item.discountPerUnit || 0) > 0 ? ` (${money(item.discountPerUnit)} discount each)` : ''}`).join(', ');
@@ -65,12 +66,33 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       .reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
     const excludedCodes = new Set([...explicitReturnedCodes, ...unitCodes.slice(0, legacyReturnedCount)]);
     const availableReturnIdentifiers = unitCodes.filter((code) => !excludedCodes.has(code));
+    const returnIdentifiers = selectedReturnIdentifiers[index] || [];
+    const soldUnitRecords = Array.isArray(item?.soldUnitRecords) ? item.soldUnitRecords : [];
+    const returnUnits = returnIdentifiers.map(identifier => {
+      const soldRecord = soldUnitRecords.find(record => String(record.identifier || record.imei || record.barcode || record.serialNumber || '') === String(identifier));
+      const original = soldRecord?.unitRecord || {};
+      const legacyIsImei = (item?.imeis || []).map(String).includes(String(identifier));
+      const legacyIsSerial = (item?.serialNumbers || []).map(String).includes(String(identifier));
+      const legacyIsBarcode = (item?.barcodes || []).map(String).includes(String(identifier));
+      return {
+        ...original,
+        ...(soldRecord?.imei1 || original.imei1 ? { imei1: soldRecord?.imei1 || original.imei1 } : (legacyIsImei ? { imei1: String(identifier) } : {})),
+        ...(soldRecord?.imei2 || original.imei2 ? { imei2: soldRecord?.imei2 || original.imei2 } : {}),
+        ...(soldRecord?.serialNumber || original.serialNumber ? { serialNumber: soldRecord?.serialNumber || original.serialNumber } : (legacyIsSerial ? { serialNumber: String(identifier) } : {})),
+        ...(soldRecord?.barcode || original.barcode ? { barcode: soldRecord?.barcode || original.barcode } : (legacyIsBarcode ? { barcode: String(identifier) } : {})),
+        ...(soldRecord?.supplierId || original.supplierId ? { supplierId: soldRecord?.supplierId || original.supplierId } : {}),
+        ...(soldRecord?.supplierName || original.supplierName ? { supplierName: soldRecord?.supplierName || original.supplierName } : {}),
+        ...(soldRecord?.supplierBillId || original.supplierBillId ? { supplierBillId: soldRecord?.supplierBillId || original.supplierBillId } : {}),
+        ...(soldRecord?.purchaseCost != null || original.purchaseCost != null ? { purchaseCost: soldRecord?.purchaseCost ?? original.purchaseCost } : {}),
+        returnedFromInvoice: invoice?.invoiceNo || '',
+        status: 'In Stock'
+      };
+    });
     return {
       index, item, maxQty, quantity, unitCodes, availableReturnIdentifiers, hasTrackedUnits: unitCodes.length > 0,
-      returnIdentifiers: selectedReturnIdentifiers[index] || [],
+      returnIdentifiers, returnUnits,
       unitPaid: itemValue / Math.max(1, Number(item?.qty || 1)),
-      returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity
-    };
+      returnValue: itemValue / Math.max(1, Number(item?.qty || 1)) * quantity    };
   }).filter((line) => line.item && line.maxQty > 0);
   const returnValue = selectedReturnLines.reduce((sum, line) => sum + line.returnValue, 0);
   const inStockProducts = inventory.filter((item) => Number(item.stock || 0) > 0);
@@ -256,22 +278,43 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       setInventory((current) => current.map((item) => {
         const returnedLines = restock ? selectedReturnLines.filter((line) => String(item.id) === String(line.item.id)) : [];
         const returnedQty = returnedLines.reduce((sum, line) => sum + line.quantity, 0);
-        const returnedIdentifiers = returnedLines.flatMap((line) => line.returnIdentifiers);
+        const returnedIdentifiers = returnedLines.flatMap(line => line.returnIdentifiers);
+        const returnedUnits = returnedLines.flatMap(line => line.returnUnits || []);
+        const returnedImeis = returnedUnits.flatMap(unit => [unit.imei1, unit.imei2].filter(Boolean).map(String));
+        const returnedSerialNumbers = returnedUnits.map(unit => String(unit.serialNumber || '')).filter(Boolean);
+        const returnedBarcodes = returnedUnits.map(unit => String(unit.barcode || '')).filter(Boolean);
         const isReturnedProduct = returnedQty > 0;
-        const consumedLines = action === 'replacement' ? resolvedReplacementLines.filter((line) => String(line.product.id) === String(item.id)) : [];
+        const consumedLines = action === 'replacement' ? resolvedReplacementLines.filter(line => String(line.product.id) === String(item.id)) : [];
         if (!isReturnedProduct && !consumedLines.length) return item;
         const consumedQty = consumedLines.reduce((sum, line) => sum + Number(line.quantity), 0);
-        const consumedImeis = new Set(consumedLines.flatMap((line) => line.imeis || []).map(String));
-        const returnedUnitEntries = isReturnedProduct ? returnedIdentifiers.map((imei) => ({ imei1: imei, returnedFromInvoice: invoice.invoiceNo })) : [];
-        const remainingImeis = (item.imeis || []).filter((imei) => !consumedImeis.has(String(imei)));
-        const remainingUnits = (item.units || []).filter((unit) => !consumedImeis.has(String(unit.imei1 || unit.imei2 || unit.barcode || unit.id)));
+        const consumedImeis = new Set(consumedLines.flatMap(line => line.imeis || []).map(String));
+        const returnedUnitEntries = isReturnedProduct ? returnedLines.flatMap(line => line.returnUnits?.length ? line.returnUnits : line.returnIdentifiers.map(identifier => {
+          const isImei = (line.item?.imeis || []).map(String).includes(String(identifier));
+          const isSerial = (line.item?.serialNumbers || []).map(String).includes(String(identifier));
+          const isBarcode = (line.item?.barcodes || []).map(String).includes(String(identifier));
+          return {
+            ...(isImei ? { imei1: String(identifier) } : {}),
+            ...(isSerial ? { serialNumber: String(identifier) } : {}),
+            ...(isBarcode ? { barcode: String(identifier) } : {}),
+            returnedFromInvoice: invoice.invoiceNo,
+            status: 'In Stock'
+          };
+        })) : [];
+        const legacyImeis = returnedLines.flatMap(line => !line.returnUnits?.length ? line.returnIdentifiers.filter(identifier => (line.item?.imeis || []).map(String).includes(String(identifier))) : []);
+        const legacySerials = returnedLines.flatMap(line => !line.returnUnits?.length ? line.returnIdentifiers.filter(identifier => (line.item?.serialNumbers || []).map(String).includes(String(identifier))) : []);
+        const legacyBarcodes = returnedLines.flatMap(line => !line.returnUnits?.length ? line.returnIdentifiers.filter(identifier => (line.item?.barcodes || []).map(String).includes(String(identifier))) : []);
+        const remainingImeis = (item.imeis || []).filter(imei => !consumedImeis.has(String(imei)));
+        const remainingSerialNumbers = (item.serialNumbers || []).filter(serial => !consumedImeis.has(String(serial)));
+        const remainingBarcodes = (item.barcodes || []).filter(barcode => !consumedImeis.has(String(barcode)));
+        const remainingUnits = (item.units || []).filter(unit => !consumedImeis.has(String(unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode || unit.id)));
         return {
           ...item,
           stock: Math.max(0, Number(item.stock || 0) + returnedQty - consumedQty),
-          imeis: item.imeis ? [...new Set([...remainingImeis, ...returnedIdentifiers])] : item.imeis,
+          imeis: item.imeis ? [...new Set([...remainingImeis, ...returnedImeis, ...legacyImeis.map(String)])] : item.imeis,
+          serialNumbers: item.serialNumbers ? [...new Set([...remainingSerialNumbers, ...returnedSerialNumbers, ...legacySerials.map(String)])] : item.serialNumbers,
+          barcodes: item.barcodes ? [...new Set([...remainingBarcodes, ...returnedBarcodes, ...legacyBarcodes.map(String)])] : item.barcodes,
           units: item.units ? [...remainingUnits, ...returnedUnitEntries] : item.units,
-        };
-      }));
+        };      }));
     }
     setInvoices((current) => current.map((item) => {
       if (String(item.invoiceNo || item.id) !== selectedInvoiceKey) return item;
