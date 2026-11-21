@@ -81,6 +81,8 @@ export const getSupplierUnitCostBreakdown = ({
       return {
         identifier: String(unit.id || unit.imei || unit.barcode || unit.serialNumber || ''),
         imei: String(unit.imei || ''),
+        imei1: String(unit.imei1 || ''),
+        imei2: String(unit.imei2 || ''),
         barcode: String(unit.barcode || ''),
         serialNumber: String(unit.serialNumber || ''),
         supplierId: String(unit.supplierId || ''),
@@ -92,5 +94,70 @@ export const getSupplierUnitCostBreakdown = ({
     }).filter(record => record.identifier),
     attributedQuantity: supplierAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0),
     unattributedQuantity: Math.max(0, count - supplierAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0))
+  };
+};
+
+
+// Returns reduce supplier sell-through for the exact batch that was sold when a
+// returned IMEI, serial or stock-unit barcode is available. Legacy returns with
+// no unit identifier are deducted from the oldest recorded supplier allocation.
+export const getNetSupplierAllocations = (line = {}, returnTransactions = []) => {
+  const lineQuantity = Math.max(0, Number(line.qty || 0));
+  const allocations = (line.supplierAllocations || []).map(allocation => ({
+    ...allocation,
+    quantity: Math.max(0, Number(allocation.quantity || 0)),
+    purchaseCostTotal: Math.max(0, Number(allocation.purchaseCostTotal || 0))
+  }));
+  let unattributedQuantity = Math.max(0, Number(
+    line.unattributedSupplierQuantity ?? Math.max(0, lineQuantity - allocations.reduce((sum, item) => sum + item.quantity, 0))
+  ) || 0);
+  const soldUnits = line.soldUnitRecords || [];
+  let unassignedReturnCount = 0;
+
+  const decrementAllocation = (supplierId, supplierBillId = '') => {
+    const exact = allocations.find(allocation => String(allocation.supplierId || '') === String(supplierId || '')
+      && String(allocation.supplierBillId || '') === String(supplierBillId || '')
+      && allocation.quantity > 0);
+    const allocation = exact || allocations.find(item => String(item.supplierId || '') === String(supplierId || '') && item.quantity > 0);
+    if (!allocation) return false;
+    const previousQuantity = allocation.quantity;
+    allocation.quantity = Math.max(0, previousQuantity - 1);
+    if (previousQuantity > 0) allocation.purchaseCostTotal *= allocation.quantity / previousQuantity;
+    return true;
+  };
+
+  (returnTransactions || []).filter(entry => entry?.status !== 'voided').forEach(entry => {
+    const quantity = Math.max(0, Number(entry?.quantity || 0));
+    const identifiers = [...new Set((entry?.returnedImeis || []).map(String))];
+    let matchedReturns = 0;
+    identifiers.forEach(identifier => {
+      const unit = soldUnits.find(record => [
+        record.identifier, record.imei, record.imei1, record.imei2, record.serialNumber, record.barcode
+      ].some(value => value && String(value) === identifier));
+      if (!unit) return;
+      if (unit.supplierId && decrementAllocation(unit.supplierId, unit.supplierBillId)) matchedReturns += 1;
+      else if (!unit.supplierId && unattributedQuantity > 0) {
+        unattributedQuantity = Math.max(0, unattributedQuantity - 1);
+        matchedReturns += 1;
+      }
+    });
+    unassignedReturnCount += Math.max(0, quantity - matchedReturns);
+  });
+
+  allocations.forEach(allocation => {
+    if (unassignedReturnCount <= 0) return;
+    const removed = Math.min(allocation.quantity, unassignedReturnCount);
+    const previousQuantity = allocation.quantity;
+    allocation.quantity -= removed;
+    if (previousQuantity > 0) allocation.purchaseCostTotal *= allocation.quantity / previousQuantity;
+    unassignedReturnCount -= removed;
+  });
+  if (unassignedReturnCount > 0) {
+    unattributedQuantity = Math.max(0, unattributedQuantity - unassignedReturnCount);
+  }
+
+  return {
+    allocations: allocations.filter(allocation => allocation.quantity > 0),
+    unattributedQuantity
   };
 };
