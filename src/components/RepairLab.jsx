@@ -1,5 +1,5 @@
 import { getLocalDateString } from '../utils/dateUtils';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Wrench, 
   Plus, 
@@ -266,6 +266,10 @@ export default function RepairLab({
   // 2. GENERATE BILL MODAL STATE (PRE-FILLED CUSTOMER DATA)
   // =========================================================================
   const [billModalOpen, setBillModalOpen] = useState(false);
+  const repairInvoiceFinalizingRef = useRef(false);
+  useEffect(() => {
+    if (!billModalOpen) repairInvoiceFinalizingRef.current = false;
+  }, [billModalOpen]);
   const [jobToBill, setJobToBill] = useState(null);
   const [finalServicePrice, setFinalServicePrice] = useState('');
   const [repairDescription, setRepairDescription] = useState('');
@@ -425,7 +429,7 @@ export default function RepairLab({
 
   // Commit Bill & Generate Invoice
   const handleGenerateRepairInvoice = (printFormat = 'thermal') => {
-    if (!jobToBill) return;
+    if (!jobToBill || repairInvoiceFinalizingRef.current) return;
 
     const finalPrice = parseFloat(finalServicePrice);
     if (!finalPrice || finalPrice <= 0) {
@@ -453,11 +457,29 @@ export default function RepairLab({
       alert('Confirm the UPI payment was received and enter its UTR before generating the bill.');
       return;
     }
+    const inventoryDeductionById = new Map();
+    consumedParts.forEach(part => {
+      if (!part.inventoryId) return;
+      const productId = String(part.inventoryId);
+      const quantity = Math.max(1, Number(part.qty) || 1);
+      inventoryDeductionById.set(productId, (inventoryDeductionById.get(productId) || 0) + quantity);
+    });
+    const unavailablePart = [...inventoryDeductionById.entries()].find(([productId, quantity]) => {
+      const product = inventory.find(item => String(item.id) === productId);
+      return !product || quantity > Number(product.stock || 0);
+    });
+    if (unavailablePart) {
+      const product = inventory.find(item => String(item.id) === unavailablePart[0]);
+      alert(`Repair bill not generated: ${product?.name || 'A selected spare part'} has only ${Number(product?.stock || 0)} unit(s) in stock, but ${unavailablePart[1]} are required.`);
+      return;
+    }
+    repairInvoiceFinalizingRef.current = true;
+
     const actualPaid = effectivePaymentMode === 'Khata' ? advance : grandTotalPrice;
     const khataDue = effectivePaymentMode === 'Khata' ? netBalanceToCollect : 0;
 
     // Calculate spare parts cost vs profit
-    const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+    const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0) * Math.max(1, Number(p.qty) || 1), 0);
     const buyPrice = totalSparePartsCost > 0 ? totalSparePartsCost : Math.round(finalPrice * 0.35);
     const calculatedProfit = Math.max(0, grandTotalPrice - buyPrice);
 
@@ -529,13 +551,8 @@ export default function RepairLab({
     const inventoryItemsToDeduct = consumedParts.filter(p => p.inventoryId);
     if (inventoryItemsToDeduct.length > 0 && typeof setInventory === 'function') {
       setInventory(prev => prev.map(invItem => {
-        const matched = inventoryItemsToDeduct.find(p => p.inventoryId === invItem.id);
-        if (matched) {
-          return {
-            ...invItem,
-            stock: Math.max(0, (invItem.stock || 1) - (matched.qty || 1))
-          };
-        }
+        const quantity = inventoryDeductionById.get(String(invItem.id));
+        if (quantity) return { ...invItem, stock: Number(invItem.stock || 0) - quantity };
         return invItem;
       }));
     }
@@ -1147,7 +1164,7 @@ export default function RepairLab({
                   <span>Consumed Spare Parts & Hardware (Tracks Net Profit & Stock)</span>
                 </div>
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                  Total Parts Cost: <strong style={{ color: 'var(--text-primary)' }}>₹{consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0), 0).toLocaleString()}</strong>
+                  Total Parts Cost: <strong style={{ color: 'var(--text-primary)' }}>₹{consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0) * Math.max(1, Number(p.qty) || 1), 0).toLocaleString()}</strong>
                 </span>
               </div>
 
