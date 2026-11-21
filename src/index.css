@@ -534,9 +534,7 @@ input, select, textarea {
     overflow: visible !important;
   }
 
-  body.print-document-mode > #root > :not(.print-modal-container) {
-    display: none !important;
-  }
+  /* Keep the React app wrapper mounted: the print modal is nested inside it. */
   .no-print {
     display: none !important;
   }
