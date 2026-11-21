@@ -1,12 +1,12 @@
 const numeric = value => {
-  const parsed = Number(String(value || '').replace(/[,₹\\s]/g, '').replace(/[^\\d.-]/g, ''));
+  const parsed = Number(String(value || '').replace(/[,₹\s]/g, '').replace(/[^\d.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const textOf = item => String(item?.str || '').trim();
 const xOf = item => Number(item?.transform?.[4] || 0);
 const yOf = item => Number(item?.transform?.[5] || 0);
-const isNumberCell = value => /^\\s*(?:₹\\s*)?[\\d,]+(?:\\.\\d+)?\\s*(?:pcs?|units?|nos?\\.?)?\\s*$/i.test(String(value || ''));
+const isNumberCell = value => /^\s*(?:₹\s*)?[\d,]+(?:\.\d+)?\s*(?:pcs?|units?|nos?\.?)?\s*$/i.test(String(value || ''));
 
 const groupByBaseline = items => {
   const groups = [];
@@ -23,12 +23,12 @@ const groupByBaseline = items => {
 };
 
 const headerKind = value => {
-  const text = String(value || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
-  if (/\\b(qty|quantity|units)\\b/.test(text)) return 'quantity';
-  if (/\\b(hsn|sac)\\b/.test(text)) return 'hsn';
-  if (/\\b(rate|unit price|price|unit cost|cost)\\b/.test(text)) return 'rate';
-  if (/\\b(amount|line total|total|taxable value|net amount)\\b/.test(text)) return 'amount';
-  if (/\\b(description|particulars|product|item|goods)\\b/.test(text)) return 'description';
+  const text = String(value || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/\b(qty|quantity|units)\b/.test(text)) return 'quantity';
+  if (/\b(hsn|sac)\b/.test(text)) return 'hsn';
+  if (/\b(rate|unit price|price|unit cost|cost)\b/.test(text)) return 'rate';
+  if (/\b(amount|line total|total|taxable value|net amount)\b/.test(text)) return 'amount';
+  if (/\b(description|particulars|product|item|goods)\b/.test(text)) return 'description';
   return '';
 };
 
@@ -51,13 +51,13 @@ const findNumeric = (items, range) => items.filter(item => inColumn(item, range)
 export function parseSupplierPdfItems(items) {
   const safeItems = (items || []).filter(item => textOf(item));
   const text = safeItems.map(textOf).join(' ');
-  const invoiceNumber = text.match(/\\b(?:invoice\\s*(?:no|number)?\\s*[:#-]?\\s*)?INV[-/][A-Z0-9-]+\\b/i)?.[0]?.replace(/^invoice\\s*(?:no|number)?\\s*[:#-]?\\s*/i, '') || '';
-  const dateMatch = text.match(/\\b(?:invoice\\s+date|date)\\s*:?[\\s]*(\\d{1,2})[/-](\\d{1,2})[/-](\\d{4})/i);
+  const invoiceNumber = text.match(/\b(?:invoice\s*(?:no|number)?\s*[:#-]?\s*)?INV[-/][A-Z0-9-]+\b/i)?.[0]?.replace(/^invoice\s*(?:no|number)?\s*[:#-]?\s*/i, '') || '';
+  const dateMatch = text.match(/\b(?:invoice\s+date|date)\s*:?[\s]*(\d{1,2})[/-](\d{1,2})[/-](\d{4})/i);
   const invoiceDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}` : '';
   const gstText = text.toLowerCase().replace(/[()]/g, ' ');
-  const includesGst = /\\b(?:tax|gst)\\s+inclusive\\b|\\binclusive\\s+(?:of\\s+)?(?:all\\s+)?(?:tax|gst)\\b|\\b(?:tax|gst)\\s+included\\b/.test(gstText)
+  const includesGst = /\b(?:tax|gst)\s+inclusive\b|\binclusive\s+(?:of\s+)?(?:all\s+)?(?:tax|gst)\b|\b(?:tax|gst)\s+included\b/.test(gstText)
     ? true
-    : /\\b(?:tax|gst)\\s+exclusive\\b|\\bexclusive\\s+(?:of\\s+)?(?:all\\s+)?(?:tax|gst)\\b|\\b(?:tax|gst)\\s+(?:extra|additional)\\b/.test(gstText)
+    : /\b(?:tax|gst)\s+exclusive\b|\bexclusive\s+(?:of\s+)?(?:all\s+)?(?:tax|gst)\b|\b(?:tax|gst)\s+(?:extra|additional)\b/.test(gstText)
       ? false
       : null;
 
@@ -74,7 +74,7 @@ export function parseSupplierPdfItems(items) {
   const hsnColumn = columnRange(header.columns, 'hsn');
   const rateColumn = columnRange(header.columns, 'rate');
   const amountColumn = columnRange(header.columns, 'amount');
-  const subtotalY = safeItems.filter(item => /sub\\s*total|grand\\s*total|amount\\s*due|round\\s*off/i.test(textOf(item)))
+  const subtotalY = safeItems.filter(item => /sub\s*total|grand\s*total|amount\s*due|round\s*off/i.test(textOf(item)))
     .map(yOf).filter(y => y < header.y).sort((a, b) => b - a)[0];
   const dataBottom = subtotalY ?? Math.min(...safeItems.filter(item => yOf(item) < header.y).map(yOf), 0);
   const anchors = baselines.filter(row => row.y < header.y - 2 && row.y > dataBottom - 2)
@@ -91,13 +91,13 @@ export function parseSupplierPdfItems(items) {
     const cell = safeItems.filter(item => yOf(item) <= anchor.y + 2 && yOf(item) > bottom);
     const descriptionMax = hsnColumn ? hsnColumn.min : quantityColumn?.min;
     const name = cell.filter(item => descriptionColumn && xOf(item) >= descriptionColumn.min && xOf(item) < descriptionMax)
-      .sort((a, b) => yOf(b) - yOf(a)).map(textOf).join(' ').replace(/\\s*\\/\\s*/g, '/').replace(/\\s+/g, ' ').trim();
-    const hsn = cell.filter(item => inColumn(item, hsnColumn)).map(textOf).join('').replace(/\\D/g, '');
+      .sort((a, b) => yOf(b) - yOf(a)).map(textOf).join(' ').replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim();
+    const hsn = cell.filter(item => inColumn(item, hsnColumn)).map(textOf).join('').replace(/\D/g, '');
     const amount = findNumeric(cell, amountColumn);
     const rate = findNumeric(cell, rateColumn);
     const unitCost = amount && anchor.quantity ? amount / anchor.quantity : rate;
     const taxText = cell.filter(item => rateColumn && amountColumn && xOf(item) > rateColumn.x && xOf(item) < amountColumn.x).map(textOf).join(' ');
-    const gstRates = [...taxText.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(match => Number(match[1]));
+    const gstRates = [...taxText.matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map(match => Number(match[1]));
     const gstRate = gstRates.length ? gstRates.reduce((sum, value) => sum + value, 0) : null;
     return { name, hsn, quantity: anchor.quantity, unitCost, gstRate, unitCostIncludesGst: includesGst };
   }).filter(line => line.name.length >= 2 && line.quantity > 0 && line.unitCost > 0);
