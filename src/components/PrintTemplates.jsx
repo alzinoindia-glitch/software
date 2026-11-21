@@ -37,17 +37,7 @@ export default function PrintTemplates({
     return printMode || 'thermal';
   });
 
-  useEffect(() => {
-    const resetPrintScale = () => {
-      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
-      if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
-      document.body.classList.remove('print-document-mode');
-    };
-    window.addEventListener('afterprint', resetPrintScale);
-    return () => window.removeEventListener('afterprint', resetPrintScale);
-  }, []);
-
-  const handlePrint = () => {
+  const preparePrintDocument = () => {
     document.body.classList.add('print-document-mode');
     if (activeFormat === 'a4') {
       const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
@@ -59,6 +49,28 @@ export default function PrintTemplates({
         sheet.style.setProperty('--invoice-print-zoom', String(zoom));
       }
     }
+  };
+
+  useEffect(() => {
+    const resetPrintScale = () => {
+      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
+      if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
+      document.body.classList.remove('print-document-mode');
+    };
+    // Also isolate the invoice when printing from the browser menu or Ctrl+P.
+    // Otherwise the hidden admin screen still occupies layout and Chrome can
+    // report dozens of sheets even though the invoice preview looks correct.
+    const prepareBeforePrint = () => preparePrintDocument();
+    window.addEventListener('beforeprint', prepareBeforePrint);
+    window.addEventListener('afterprint', resetPrintScale);
+    return () => {
+      window.removeEventListener('beforeprint', prepareBeforePrint);
+      window.removeEventListener('afterprint', resetPrintScale);
+    };
+  }, [activeFormat]);
+
+  const handlePrint = () => {
+    preparePrintDocument();
     window.requestAnimationFrame(() => window.print());
   };
 
