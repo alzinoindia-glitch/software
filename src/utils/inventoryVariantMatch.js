@@ -7,7 +7,7 @@ const sameKnownVariant = (existing, candidate) => {
 
   const existingBrand = normalizeProductIdentity(existing.brand);
   const candidateBrand = normalizeProductIdentity(candidate.brand);
-  if (existingBrand && candidateBrand && existingBrand !== candidateBrand) return false;
+  if (existingBrand && candidateBrand && candidateBrand !== 'general' && existingBrand !== candidateBrand) return false;
 
   const existingModel = normalizeProductIdentity(existing.model);
   const candidateModel = normalizeProductIdentity(candidate.model);
