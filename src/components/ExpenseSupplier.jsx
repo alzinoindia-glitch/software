@@ -576,6 +576,10 @@ export default function ExpenseSupplier({
     return getNetSupplierAllocations({ ...line, supplierAllocations: allocations }, returnTransactions);
   };
 
+  const getReplacementLinesFromReturn = entry => Array.isArray(entry.replacements)
+    ? entry.replacements
+    : (entry.replacement ? [entry.replacement] : []);
+
   const supplierSales = useMemo(() => {
     const totals = new Map();
     invoices.forEach(invoice => (invoice.items || []).forEach((line, index) => {
@@ -592,6 +596,19 @@ export default function ExpenseSupplier({
         totals.set(supplierId, supplierTotal);
       });
     }));
+    invoices.forEach(invoice => (invoice.returnTransactions || []).filter(entry => entry.status !== 'voided').forEach(entry => {
+      getReplacementLinesFromReturn(entry).forEach(replacement => (replacement.supplierAllocations || []).forEach(allocation => {
+        if (!allocation.supplierId || Number(allocation.quantity || 0) <= 0) return;
+        const supplierId = String(allocation.supplierId);
+        const supplierTotal = totals.get(supplierId) || { quantity: 0, products: new Map() };
+        const productKey = String(replacement.productId || replacement.productName || 'replacement');
+        const product = supplierTotal.products.get(productKey) || { name: replacement.productName || 'Replacement product', quantity: 0 };
+        product.quantity += Number(allocation.quantity || 0);
+        supplierTotal.quantity += Number(allocation.quantity || 0);
+        supplierTotal.products.set(productKey, product);
+        totals.set(supplierId, supplierTotal);
+      }));
+    }));
     return totals;
   }, [invoices, inventory]);
   const supplierSaleRows = useMemo(() => invoices.flatMap(invoice => (invoice.items || []).flatMap((line, index) => {
@@ -605,7 +622,17 @@ export default function ExpenseSupplier({
       productName: line.name || 'Product',
       quantity: Number(allocation.quantity || 0),
     })).filter(row => row.supplierId && row.quantity > 0);
-  })).sort((a, b) => String(b.date).localeCompare(String(a.date))), [invoices, inventory]);
+  })).concat(invoices.flatMap(invoice => (invoice.returnTransactions || []).filter(entry => entry.status !== 'voided').flatMap(entry =>
+    getReplacementLinesFromReturn(entry).flatMap(replacement => (replacement.supplierAllocations || []).map(allocation => ({
+      supplierId: String(allocation.supplierId || ''),
+      supplierBillId: String(allocation.supplierBillId || ''),
+      invoiceNo: `${invoice.invoiceNo || invoice.id || 'Invoice'} · Replacement`,
+      date: invoice.date || entry.date || '',
+      customerName: invoice.customerName || 'Counter Customer',
+      productName: replacement.productName || 'Replacement product',
+      quantity: Number(allocation.quantity || 0),
+    })).filter(row => row.supplierId && row.quantity > 0))
+  ))).sort((a, b) => String(b.date).localeCompare(String(a.date))), [invoices, inventory]);
   const unattributedSupplierSales = useMemo(() => {
     const totals = new Map();
     invoices.forEach(invoice => (invoice.items || []).forEach((line, index) => {
@@ -615,6 +642,19 @@ export default function ExpenseSupplier({
       if (sources.length < 2) return;
       const unattributed = getNetLineSupplierAttribution(invoice, line, index).unattributedQuantity;
       if (unattributed > 0) totals.set(productId, (totals.get(productId) || 0) + unattributed);
+    }));
+    invoices.forEach(invoice => (invoice.returnTransactions || []).filter(entry => entry.status !== 'voided').forEach(entry => {
+      getReplacementLinesFromReturn(entry).forEach(replacement => {
+        const productId = String(replacement.productId || '');
+        const product = inventory.find(item => String(item.id) === productId);
+        const sources = [...new Set([...(product?.supplierPurchases || []).map(purchase => purchase.supplierId), product?.supplierId].filter(Boolean).map(String))];
+        if (sources.length < 2) return;
+        const attributed = (replacement.supplierAllocations || []).reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+        const unattributed = replacement.unattributedSupplierQuantity == null
+          ? Math.max(0, Number(replacement.quantity || 0) - attributed)
+          : Math.max(0, Number(replacement.unattributedSupplierQuantity) || 0);
+        if (unattributed > 0) totals.set(productId, (totals.get(productId) || 0) + unattributed);
+      });
     }));
     return totals;
   }, [invoices, inventory]);
