@@ -588,6 +588,10 @@ export const pullAllFromCloud = async (setters = {}) => {
       if (!conflictedDomains.has(key)) try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
     }
   }
+  // pullAllFromCloud can restore locally persisted unsynced writes into the
+  // in-memory queue. Resume those immediately: the auth-ready event may have
+  // fired before this queue was reconstructed after a page reload.
+  retryPendingCloudWrites();
   return { success: true, count, source: STORE_STATE_TABLE };
 };
 
