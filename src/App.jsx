@@ -806,7 +806,7 @@ export default function App() {
               </span>
               {!Object.values(cloudSyncStatus).some(item => item.status === 'conflict') && (
                 <button type="button" className="btn-secondary" onClick={() => {
-                  if (cloudSyncStatus.CLOUD) window.dispatchEvent(new Event('alzino-cloud-hydration-retry'));
+                  if (cloudSyncStatus.CLOUD || cloudSyncStatus.REALTIME) window.dispatchEvent(new Event('alzino-cloud-hydration-retry'));
                   else retryPendingCloudWrites();
                 }}>
                   Sync now
