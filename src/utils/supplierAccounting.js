@@ -73,6 +73,23 @@ export const getSupplierUnitCostBreakdown = ({
     totalCost: Math.round((totalCost + Number.EPSILON) * 100) / 100,
     averageUnitCost: count ? totalCost / count : fallbackCost,
     supplierAllocations,
+    soldUnitRecords: selectedUnits.map(unit => {
+      const storedCost = unit?.purchaseCost;
+      const purchaseCost = storedCost !== undefined && storedCost !== null && storedCost !== '' && Number.isFinite(Number(storedCost))
+        ? Math.max(0, Number(storedCost))
+        : fallbackCost;
+      return {
+        identifier: String(unit.id || unit.imei || unit.barcode || unit.serialNumber || ''),
+        imei: String(unit.imei || ''),
+        barcode: String(unit.barcode || ''),
+        serialNumber: String(unit.serialNumber || ''),
+        supplierId: String(unit.supplierId || ''),
+        supplierName: unit.supplierName || '',
+        supplierBillId: String(unit.supplierBillId || ''),
+        purchaseCost,
+        unitRecord: unit.unitRecord || null
+      };
+    }).filter(record => record.identifier),
     attributedQuantity: supplierAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0),
     unattributedQuantity: Math.max(0, count - supplierAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0))
   };
