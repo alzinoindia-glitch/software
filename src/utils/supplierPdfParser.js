@@ -51,9 +51,13 @@ const findNumeric = (items, range) => items.filter(item => inColumn(item, range)
 export function parseSupplierPdfItems(items) {
   const safeItems = (items || []).filter(item => textOf(item));
   const text = safeItems.map(textOf).join(' ');
-  const invoiceNumber = text.match(/\b(?:invoice\s*(?:no|number)?\s*[:#-]?\s*)?INV[-/][A-Z0-9-]+\b/i)?.[0]?.replace(/^invoice\s*(?:no|number)?\s*[:#-]?\s*/i, '') || '';
-  const dateMatch = text.match(/\b(?:invoice\s+date|date)\s*:?[\s]*(\d{1,2})[/-](\d{1,2})[/-](\d{4})/i);
-  const invoiceDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}` : '';
+  const labeledInvoiceNumber = text.match(/\b(?:tax\s+invoice|invoice|bill)\s*(?:no\.?|number|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{1,})/i)?.[1] || '';
+  const invoiceNumber = labeledInvoiceNumber || text.match(/\bINV[-/][A-Z0-9-]+\b/i)?.[0] || '';
+  const dateMatch = text.match(/\b(?:invoice\s+date|date)\s*:?\s*(?:(\d{1,2})[/-](\d{1,2})[/-](\d{4})|(\d{4})[-/](\d{1,2})[-/](\d{1,2}))/i);
+  const invoiceDate = dateMatch
+    ? dateMatch[4] ? \`${dateMatch[4]}-${dateMatch[5].padStart(2, '0')}-${dateMatch[6].padStart(2, '0')}\`
+      : \`${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}\`
+    : '';
   const gstText = text.toLowerCase().replace(/[()]/g, ' ');
   const includesGst = /\b(?:tax|gst)\s+inclusive\b|\binclusive\s+(?:of\s+)?(?:all\s+)?(?:tax|gst)\b|\b(?:tax|gst)\s+included\b/.test(gstText)
     ? true
