@@ -1215,7 +1215,7 @@ export default function ExpenseSupplier({
       {/* Stock Inward Modal */}
       {showInwardModal && (
         <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in supplier-inward-dialog" style={{ width: 'min(1600px, calc(100vw - 1rem))', maxWidth: 'min(1600px, calc(100vw - 1rem))', flex: '0 1 1600px', boxSizing: 'border-box', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in supplier-inward-dialog" style={{ width: 'min(1800px, calc(100vw - 0.5rem))', maxWidth: 'min(1800px, calc(100vw - 0.5rem))', flex: '0 0 min(1800px, calc(100vw - 0.5rem))', boxSizing: 'border-box', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
               <h3 style={{ fontSize: '1.2rem' }}>{editingBillId ? 'Edit Supplier Bill & Stock Inward' : 'Purchase Stock Inward (From Supplier)'}</h3>
               <button type="button" onClick={() => { setShowInwardModal(false); setEditingBillId(''); }} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
