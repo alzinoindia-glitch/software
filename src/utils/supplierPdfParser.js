@@ -1,51 +1,106 @@
 const numeric = value => {
-  const parsed = Number(String(value || '').replace(/[,₹\s]/g, '').replace(/[^\d.-]/g, ''));
+  const parsed = Number(String(value || '').replace(/[,₹\\s]/g, '').replace(/[^\\d.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const textOf = item => String(item?.str || '').trim();
 const xOf = item => Number(item?.transform?.[4] || 0);
 const yOf = item => Number(item?.transform?.[5] || 0);
+const isNumberCell = value => /^\\s*(?:₹\\s*)?[\\d,]+(?:\\.\\d+)?\\s*(?:pcs?|units?|nos?\\.?)?\\s*$/i.test(String(value || ''));
+
+const groupByBaseline = items => {
+  const groups = [];
+  [...items].filter(item => textOf(item)).sort((a, b) => yOf(b) - yOf(a)).forEach(item => {
+    let group = groups.find(row => Math.abs(row.y - yOf(item)) <= 2.5);
+    if (!group) {
+      group = { y: yOf(item), items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  });
+  return groups.map(group => ({ ...group, items: group.items.sort((a, b) => xOf(a) - xOf(b)) }))
+    .sort((a, b) => b.y - a.y);
+};
+
+const headerKind = value => {
+  const text = String(value || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  if (/\\b(qty|quantity|units)\\b/.test(text)) return 'quantity';
+  if (/\\b(hsn|sac)\\b/.test(text)) return 'hsn';
+  if (/\\b(rate|unit price|price|unit cost|cost)\\b/.test(text)) return 'rate';
+  if (/\\b(amount|line total|total|taxable value|net amount)\\b/.test(text)) return 'amount';
+  if (/\\b(description|particulars|product|item|goods)\\b/.test(text)) return 'description';
+  return '';
+};
+
+const columnRange = (columns, kind) => {
+  const column = columns.find(item => item.kind === kind);
+  if (!column) return null;
+  const positions = [...new Set(columns.map(item => item.x))].sort((a, b) => a - b);
+  const index = positions.indexOf(column.x);
+  return {
+    min: index === 0 ? -Infinity : (positions[index - 1] + column.x) / 2,
+    max: index === positions.length - 1 ? Infinity : (column.x + positions[index + 1]) / 2,
+    x: column.x
+  };
+};
+
+const inColumn = (item, range) => Boolean(range && xOf(item) >= range.min && xOf(item) < range.max);
+const findNumeric = (items, range) => items.filter(item => inColumn(item, range) && isNumberCell(textOf(item)))
+  .map(item => numeric(textOf(item))).find(value => value > 0) || 0;
 
 export function parseSupplierPdfItems(items) {
-  const text = items.map(textOf).filter(Boolean).join(' ');
-  const invoiceNumber = text.match(/\bINV[-/][A-Z0-9-]+\b/i)?.[0] || '';
-  const dateMatch = text.match(/\b(?:invoice\s+date|date)\s*:?\s*(\d{1,2})[/-](\d{1,2})[/-](\d{4})/i);
+  const safeItems = (items || []).filter(item => textOf(item));
+  const text = safeItems.map(textOf).join(' ');
+  const invoiceNumber = text.match(/\\b(?:invoice\\s*(?:no|number)?\\s*[:#-]?\\s*)?INV[-/][A-Z0-9-]+\\b/i)?.[0]?.replace(/^invoice\\s*(?:no|number)?\\s*[:#-]?\\s*/i, '') || '';
+  const dateMatch = text.match(/\\b(?:invoice\\s+date|date)\\s*:?[\\s]*(\\d{1,2})[/-](\\d{1,2})[/-](\\d{4})/i);
   const invoiceDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}` : '';
   const gstText = text.toLowerCase().replace(/[()]/g, ' ');
-  const includesGst = /\b(?:tax|gst)\s+inclusive\b|\binclusive\s+(?:of\s+)?(?:all\s+)?(?:tax|gst)\b|\b(?:tax|gst)\s+included\b/.test(gstText)
+  const includesGst = /\\b(?:tax|gst)\\s+inclusive\\b|\\binclusive\\s+(?:of\\s+)?(?:all\\s+)?(?:tax|gst)\\b|\\b(?:tax|gst)\\s+included\\b/.test(gstText)
     ? true
-    : /\b(?:tax|gst)\s+exclusive\b|\bexclusive\s+(?:of\s+)?(?:all\s+)?(?:tax|gst)\b|\b(?:tax|gst)\s+(?:extra|additional)\b/.test(gstText)
+    : /\\b(?:tax|gst)\\s+exclusive\\b|\\bexclusive\\s+(?:of\\s+)?(?:all\\s+)?(?:tax|gst)\\b|\\b(?:tax|gst)\\s+(?:extra|additional)\\b/.test(gstText)
       ? false
       : null;
 
-  const headerItems = items.filter(item => /^(item\s*&\s*description|description|hsn|qty|quantity|rate|amount)$/i.test(textOf(item)));
-  const headerY = Math.max(...headerItems.map(yOf));
-  if (!Number.isFinite(headerY) || !headerItems.some(item => /^(item\s*&\s*description|description)$/i.test(textOf(item)))) {
-    return { invoiceNumber, invoiceDate, includesGst, lines: [] };
-  }
+  const baselines = groupByBaseline(safeItems);
+  const header = baselines.map(row => {
+    const columns = row.items.map(item => ({ kind: headerKind(textOf(item)), x: xOf(item) })).filter(item => item.kind);
+    const kinds = new Set(columns.map(item => item.kind));
+    return { y: row.y, columns, score: Number(kinds.has('description')) + Number(kinds.has('quantity')) + Number(kinds.has('rate') || kinds.has('amount')) };
+  }).filter(row => row.score >= 3).sort((a, b) => b.score - a.score || b.y - a.y)[0];
 
-  // The invoice template aligns the table values in fixed text columns. Row
-  // numbers provide reliable anchors even when a product description wraps.
-  const rowStarts = items.filter(item => xOf(item) >= 35 && xOf(item) < 62 && yOf(item) < headerY - 2 && /^\d{1,3}$/.test(textOf(item)))
-    .sort((a, b) => yOf(b) - yOf(a));
-  const subtotalY = items.filter(item => /sub\s*total/i.test(textOf(item))).map(yOf).sort((a, b) => b - a)[0];
-  const rows = rowStarts.map((start, index) => {
-    const top = yOf(start) + 1;
-    const bottom = rowStarts[index + 1] ? yOf(rowStarts[index + 1]) + 1 : (subtotalY || 28) + 1;
-    const cell = items.filter(item => yOf(item) <= top && yOf(item) > bottom && item !== start && textOf(item));
-    const inColumn = (item, min, max) => xOf(item) >= min && xOf(item) < max;
-    const description = cell.filter(item => inColumn(item, 62, 180)).sort((a, b) => yOf(b) - yOf(a)).map(textOf).join(' ').replace(/\s*\/\s*/g, '/').replace(/\s+/g, ' ').trim();
-    const hsn = cell.filter(item => inColumn(item, 180, 245)).sort((a, b) => yOf(b) - yOf(a)).map(textOf).join('').replace(/\D/g, '');
-    const quantity = numeric(cell.find(item => inColumn(item, 245, 278) && /\d/.test(textOf(item)))?.str);
-    const amount = numeric(cell.filter(item => xOf(item) >= 510 && /\d/.test(textOf(item))).sort((a, b) => xOf(b) - xOf(a))[0]?.str);
-    const rate = numeric(cell.filter(item => xOf(item) >= 278 && xOf(item) < 350 && /\d/.test(textOf(item))).sort((a, b) => xOf(b) - xOf(a))[0]?.str);
-    const gstTokens = cell.filter(item => xOf(item) >= 350 && xOf(item) < 510).map(textOf).join(' ');
-    const gstRates = [...gstTokens.matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map(match => Number(match[1]));
+  if (!header) return { invoiceNumber, invoiceDate, includesGst, lines: [] };
+  const descriptionColumn = columnRange(header.columns, 'description');
+  const quantityColumn = columnRange(header.columns, 'quantity');
+  const hsnColumn = columnRange(header.columns, 'hsn');
+  const rateColumn = columnRange(header.columns, 'rate');
+  const amountColumn = columnRange(header.columns, 'amount');
+  const subtotalY = safeItems.filter(item => /sub\\s*total|grand\\s*total|amount\\s*due|round\\s*off/i.test(textOf(item)))
+    .map(yOf).filter(y => y < header.y).sort((a, b) => b - a)[0];
+  const dataBottom = subtotalY ?? Math.min(...safeItems.filter(item => yOf(item) < header.y).map(yOf), 0);
+  const anchors = baselines.filter(row => row.y < header.y - 2 && row.y > dataBottom - 2)
+    .map(row => {
+      const quantity = findNumeric(row.items, quantityColumn);
+      const description = row.items.some(item => inColumn(item, descriptionColumn) && headerKind(textOf(item)) !== 'description' && /[a-zA-Z]{2,}/.test(textOf(item)));
+      const hasPrice = findNumeric(row.items, rateColumn) > 0 || findNumeric(row.items, amountColumn) > 0;
+      return { ...row, quantity, valid: quantity > 0 && description && hasPrice };
+    }).filter(row => row.valid).sort((a, b) => b.y - a.y);
+
+  const rows = anchors.map((anchor, index) => {
+    const nextAnchor = anchors[index + 1];
+    const bottom = nextAnchor ? nextAnchor.y + 2 : dataBottom - 1;
+    const cell = safeItems.filter(item => yOf(item) <= anchor.y + 2 && yOf(item) > bottom);
+    const descriptionMax = hsnColumn ? hsnColumn.min : quantityColumn?.min;
+    const name = cell.filter(item => descriptionColumn && xOf(item) >= descriptionColumn.min && xOf(item) < descriptionMax)
+      .sort((a, b) => yOf(b) - yOf(a)).map(textOf).join(' ').replace(/\\s*\\/\\s*/g, '/').replace(/\\s+/g, ' ').trim();
+    const hsn = cell.filter(item => inColumn(item, hsnColumn)).map(textOf).join('').replace(/\\D/g, '');
+    const amount = findNumeric(cell, amountColumn);
+    const rate = findNumeric(cell, rateColumn);
+    const unitCost = amount && anchor.quantity ? amount / anchor.quantity : rate;
+    const taxText = cell.filter(item => rateColumn && amountColumn && xOf(item) > rateColumn.x && xOf(item) < amountColumn.x).map(textOf).join(' ');
+    const gstRates = [...taxText.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(match => Number(match[1]));
     const gstRate = gstRates.length ? gstRates.reduce((sum, value) => sum + value, 0) : null;
-    const unitCost = amount && quantity ? amount / quantity : rate;
-    return { name: description, hsn: hsn || '', quantity: quantity || 0, unitCost, gstRate, unitCostIncludesGst: includesGst };
-  }).filter(line => line.name && line.quantity > 0 && line.unitCost > 0);
+    return { name, hsn, quantity: anchor.quantity, unitCost, gstRate, unitCostIncludesGst: includesGst };
+  }).filter(line => line.name.length >= 2 && line.quantity > 0 && line.unitCost > 0);
 
   return { invoiceNumber, invoiceDate, includesGst, lines: rows };
 }
