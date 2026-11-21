@@ -114,7 +114,7 @@ export const getNetSupplierAllocations = (line = {}, returnTransactions = []) =>
   const soldUnits = line.soldUnitRecords || [];
   let unassignedReturnCount = 0;
 
-  const decrementAllocation = (supplierId, supplierBillId = '') => {
+  const decrementAllocation = (supplierId, supplierBillId = '', returnedUnitCost) => {
     const exact = allocations.find(allocation => String(allocation.supplierId || '') === String(supplierId || '')
       && String(allocation.supplierBillId || '') === String(supplierBillId || '')
       && allocation.quantity > 0);
@@ -122,7 +122,15 @@ export const getNetSupplierAllocations = (line = {}, returnTransactions = []) =>
     if (!allocation) return false;
     const previousQuantity = allocation.quantity;
     allocation.quantity = Math.max(0, previousQuantity - 1);
-    if (previousQuantity > 0) allocation.purchaseCostTotal *= allocation.quantity / previousQuantity;
+    const hasExactUnitCost = returnedUnitCost !== undefined && returnedUnitCost !== null
+      && returnedUnitCost !== '' && Number.isFinite(Number(returnedUnitCost));
+    if (hasExactUnitCost) {
+      allocation.purchaseCostTotal = Math.round((Math.max(0, allocation.purchaseCostTotal - Math.max(0, Number(returnedUnitCost))) + Number.EPSILON) * 100) / 100;
+    } else if (previousQuantity > 0) {
+      // Older invoices may not retain a per-unit cost; approximate those at
+      // the batch's remaining average cost.
+      allocation.purchaseCostTotal *= allocation.quantity / previousQuantity;
+    }
     return true;
   };
 
@@ -135,7 +143,7 @@ export const getNetSupplierAllocations = (line = {}, returnTransactions = []) =>
         record.identifier, record.imei, record.imei1, record.imei2, record.serialNumber, record.barcode
       ].some(value => value && String(value) === identifier));
       if (!unit) return;
-      if (unit.supplierId && decrementAllocation(unit.supplierId, unit.supplierBillId)) matchedReturns += 1;
+      if (unit.supplierId && decrementAllocation(unit.supplierId, unit.supplierBillId, unit.purchaseCost)) matchedReturns += 1;
       else if (!unit.supplierId && unattributedQuantity > 0) {
         unattributedQuantity = Math.max(0, unattributedQuantity - 1);
         matchedReturns += 1;
