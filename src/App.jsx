@@ -17,7 +17,7 @@ const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModa
 const PrintTemplates = lazy(() => import('./components/PrintTemplates'));
 import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
-import { getAuthenticatorIdentity } from './utils/authenticatorSession';
+import { getAuthenticatorIdentity, needsAuthenticatorLogin } from './utils/authenticatorSession';
 const CustomerStorefront = lazy(() => import('./components/CustomerStorefront'));
 const ProductScanDetailsModal = lazy(() => import('./components/ProductScanDetailsModal'));
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from './utils/productTerms';
@@ -193,8 +193,8 @@ export default function App() {
   const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
   // Role Mode ('admin' | 'cashier')
   const [role, setRole] = useState(() => initialRoute.role !== 'customer' ? initialRoute.role : getStorageData('ROLE', 'admin'));
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
-  const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier');
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin' && needsAuthenticatorLogin('admin'));
+  const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier' && needsAuthenticatorLogin('cashier'));
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const [cloudHydrationPending, setCloudHydrationPending] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState({});

@@ -16,6 +16,15 @@ const getStorage = () => {
   try { return typeof window !== 'undefined' ? window.sessionStorage : null; } catch { return null; }
 };
 
+const scheduleSessionExpiry = (portal, expiresAt) => {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  expiryTimer = setTimeout(() => {
+    clearAuthenticatorSession();
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('alzino-cloud-auth-expired', { detail: { portal } }));
+  }, Math.max(0, expiresAt * 1000 - Date.now()));
+  expiryTimer.unref?.();
+};
+
 export const getAuthenticatorAccessToken = () => {
   const token = getStorage()?.getItem(TOKEN_KEY) || '';
   const claims = decodeJwtPayload(token);
@@ -23,6 +32,7 @@ export const getAuthenticatorAccessToken = () => {
     if (token) clearAuthenticatorSession();
     return null;
   }
+  if (!expiryTimer) scheduleSessionExpiry(getStorage()?.getItem(ROLE_KEY) || claims.app_metadata?.portal, claims.exp);
   return token;
 };
 
@@ -41,6 +51,8 @@ export const getAuthenticatorIdentity = () => {
   };
 };
 
+export const needsAuthenticatorLogin = (portal) => getAuthenticatorIdentity()?.portal !== portal;
+
 export const storeAuthenticatorSession = (accessToken, portal) => {
   const storage = getStorage();
   if (!storage || !accessToken || !['admin', 'cashier'].includes(portal)) throw new Error('Could not save the authenticator session.');
@@ -50,11 +62,7 @@ export const storeAuthenticatorSession = (accessToken, portal) => {
   }
   storage.setItem(TOKEN_KEY, accessToken);
   storage.setItem(ROLE_KEY, portal);
-  if (expiryTimer) clearTimeout(expiryTimer);
-  expiryTimer = setTimeout(() => {
-    clearAuthenticatorSession();
-    window.dispatchEvent(new CustomEvent('alzino-cloud-auth-expired', { detail: { portal } }));
-  }, Math.max(0, claims.exp * 1000 - Date.now()));
+  scheduleSessionExpiry(portal, claims.exp);
   window.dispatchEvent(new CustomEvent('alzino-cloud-auth-changed', { detail: { portal } }));
 };
 
