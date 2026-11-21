@@ -1215,7 +1215,7 @@ export default function ExpenseSupplier({
       {/* Stock Inward Modal */}
       {showInwardModal && (
         <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in" style={{ maxWidth: '680px', width: '100%', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in supplier-inward-dialog" style={{ maxWidth: 'min(1080px, calc(100vw - 2rem))', width: '100%', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
               <h3 style={{ fontSize: '1.2rem' }}>{editingBillId ? 'Edit Supplier Bill & Stock Inward' : 'Purchase Stock Inward (From Supplier)'}</h3>
               <button type="button" onClick={() => { setShowInwardModal(false); setEditingBillId(''); }} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
@@ -1228,7 +1228,6 @@ export default function ExpenseSupplier({
                   value={selectedSupplierId} 
                   onChange={(e) => setSelectedSupplierId(e.target.value)}
                   required
-                  disabled={Boolean(editingBillId)}
                   disabled={Boolean(editingBillId)}
                   className="input-field"
                 >
