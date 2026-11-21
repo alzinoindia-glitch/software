@@ -48,7 +48,7 @@ const inColumn = (item, range) => Boolean(range && xOf(item) >= range.min && xOf
 const findNumeric = (items, range) => items.filter(item => inColumn(item, range) && isNumberCell(textOf(item)))
   .map(item => numeric(textOf(item))).find(value => value > 0) || 0;
 
-export function parseSupplierPdfItems(items) {
+export function parseSupplierPdfItems(items, inheritedColumns = null) {
   const safeItems = (items || []).filter(item => textOf(item));
   const hasSelectableText = safeItems.length > 0;
   const text = safeItems.map(textOf).join(' ');
@@ -68,13 +68,16 @@ export function parseSupplierPdfItems(items) {
       : null;
 
   const baselines = groupByBaseline(safeItems);
-  const header = baselines.map(row => {
+  const detectedHeader = baselines.map(row => {
     const columns = row.items.map(item => ({ kind: headerKind(textOf(item)), x: xOf(item) })).filter(item => item.kind);
     const kinds = new Set(columns.map(item => item.kind));
     return { y: row.y, columns, score: Number(kinds.has('description')) + Number(kinds.has('quantity')) + Number(kinds.has('rate') || kinds.has('amount')) };
   }).filter(row => row.score >= 3).sort((a, b) => b.score - a.score || b.y - a.y)[0];
+  const header = detectedHeader || (inheritedColumns?.length && baselines.length
+    ? { y: Math.max(...baselines.map(row => row.y)) + 3, columns: inheritedColumns }
+    : null);
 
-  if (!header) return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, lines: [] };
+  if (!header) return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, columns: null, lines: [] };
   const descriptionColumn = columnRange(header.columns, 'description');
   const quantityColumn = columnRange(header.columns, 'quantity');
   const hsnColumn = columnRange(header.columns, 'hsn');
@@ -108,5 +111,33 @@ export function parseSupplierPdfItems(items) {
     return { name, hsn, quantity: anchor.quantity, unitCost, gstRate, unitCostIncludesGst: includesGst };
   }).filter(line => line.name.length >= 2 && line.quantity > 0 && line.unitCost > 0);
 
-  return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, lines: rows };
+  return { hasSelectableText, invoiceNumber, invoiceDate, includesGst, columns: header.columns, lines: rows };
+}
+
+export function parseSupplierPdfPages(pages) {
+  let columns = null;
+  const results = (pages || []).map(items => {
+    const result = parseSupplierPdfItems(items, columns);
+    if (result.columns?.length) columns = result.columns;
+    return result;
+  });
+  return {
+    hasSelectableText: results.some(result => result.hasSelectableText),
+    invoiceNumber: results.find(result => result.invoiceNumber)?.invoiceNumber || '',
+    invoiceDate: results.find(result => result.invoiceDate)?.invoiceDate || '',
+    includesGst: results.find(result => result.includesGst != null)?.includesGst ?? null,
+    lines: results.flatMap(result => result.lines)
+  };
+}
+
+export function supplierPdfOcrWordsToItems(words, viewport, scale = 1) {
+  return (words || []).filter(word => String(word?.text || '').trim() && word?.bbox).map(word => {
+    const x = Number(word.bbox.x0);
+    const yTop = Number(word.bbox.y1);
+    if (!Number.isFinite(x) || !Number.isFinite(yTop)) return null;
+    return {
+      str: String(word.text).trim(),
+      transform: [0, 0, 0, 0, x / scale, (Number(viewport.height) - yTop) / scale]
+    };
+  }).filter(Boolean);
 }
