@@ -532,7 +532,7 @@ input, select, textarea {
     display: none !important;
   }
 
-  /* Keep the React app wrapper mounted: the print modal is nested inside it. */
+  /* Only the portaled print surface remains in the print document. */
   .no-print {
     display: none !important;
   }
