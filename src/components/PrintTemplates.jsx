@@ -1,5 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
 import AlzinoLogo from './AlzinoLogo';
@@ -66,7 +67,7 @@ export default function PrintTemplates({
   const isInvoiceBill = Boolean(printData.invoiceNo || printData.items);
   const isSingleBarcodeLabel = printMode === 'barcodes' && !printData.bulk && (printData.copies === 1 || printData.format === 'single');
 
-  return (
+  return createPortal((
     <div className="print-modal-container" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       
       {/* Top Floating Control Bar (Hidden on actual print) */}
@@ -1332,7 +1333,7 @@ export default function PrintTemplates({
 
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 function BulkBarcodePages({ labels, format, shopName }) {
