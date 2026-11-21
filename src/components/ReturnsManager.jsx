@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw, Search, RotateCcw } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
+import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
@@ -218,16 +219,35 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     returnSubmissionRef.current = true;
     const transactionDate = new Date().toISOString();
     const groupId = `RET-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const replacementRecords = action === 'replacement' ? resolvedReplacementLines.map((line) => ({
+    const replacementRecords = action === 'replacement' ? resolvedReplacementLines.map((line) => {
+      const unitRecords = (line.product.units || []).map(unit => ({
+        ...unit,
+        id: String(unit.imei1 || unit.imei2 || unit.serialNumber || unit.barcode || unit.id || ''),
+        imei: String(unit.imei1 || unit.imei2 || '')
+      })).filter(unit => unit.id);
+      const cost = getSupplierUnitCostBreakdown({
+        units: unitRecords,
+        selectedUnitIds: line.imeis || [],
+        quantity: line.quantity,
+        fallbackUnitCost: line.product.buyPrice,
+        supplierId: line.product.supplierId,
+        supplierName: line.product.supplierName
+      });
+      return {
         productId: line.product.id, productName: line.product.name, category: line.product.category,
         quantity: Number(line.quantity), imeis: line.imeis || [],
         listPrice: line.listPrice,
         discountPerUnit: Math.min(line.discountPerUnit, line.listPrice),
         additionalDiscountShare: replacementSubtotal > 0 ? appliedAdditionalReplacementDiscount * (line.netUnitPrice * Number(line.quantity) / replacementSubtotal) : 0,
         unitPrice: getReplacementNetUnitPrice(line),
-        unitProfit: getReplacementNetUnitPrice(line) - Number(line.product.buyPrice || 0),
-        unitCost: Number(line.product.buyPrice || 0),
-      })) : [];
+        unitProfit: getReplacementNetUnitPrice(line) - cost.averageUnitCost,
+        unitCost: cost.averageUnitCost,
+        costOfGoods: cost.totalCost,
+        supplierAllocations: cost.supplierAllocations,
+        soldUnitRecords: cost.soldUnitRecords,
+        unattributedSupplierQuantity: cost.unattributedQuantity
+      };
+    }) : [];
     const replacementRecord = action === 'replacement' ? {
         ...(resolvedReplacementLines[0] ? {
           productId: resolvedReplacementLines[0].product.id,
