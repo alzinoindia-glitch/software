@@ -45,5 +45,17 @@ test('flags quantity and device identifier edits that need inventory movement', 
   const original = { items: [{ id: 'prod-1', qty: 1, imeis: ['imei-1'] }] };
   assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', qty: 2, imeis: ['imei-1', 'imei-2'] }] }), true);
   assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', qty: 1, imeis: ['imei-2'] }] }), true);
+  assert.equal(hasInvoiceStockChanges(
+    { items: [{ productId: 'prod-1', qty: 1, serialNumbers: ['serial-1'] }] },
+    { items: [{ productId: 'prod-1', qty: 1, serialNumbers: ['serial-2'] }] }
+  ), true);
+  assert.equal(hasInvoiceStockChanges(
+    { items: [{ productId: 'prod-1', qty: 1, imeis: 'imei-1, imei-2' }] },
+    { items: [{ productId: 'prod-1', qty: 1, imeis: 'imei-1, imei-3' }] }
+  ), true);
+  assert.equal(hasInvoiceStockChanges(
+    { items: [{ productId: 'prod-1', qty: 1, units: [{ serialNumber: 'serial-1' }] }] },
+    { items: [{ productId: 'prod-1', qty: 1, units: [{ serialNumber: 'serial-2' }] }] }
+  ), true);
   assert.equal(hasInvoiceStockChanges(original, { items: [{ id: 'prod-1', name: 'Corrected title', qty: 1, imeis: ['imei-1'], rate: 900 }] }), false);
 });
