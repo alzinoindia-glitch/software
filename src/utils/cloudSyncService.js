@@ -534,6 +534,13 @@ export const retryPendingCloudWrites = () => {
   });
 };
 
+// Resume queued local changes as soon as connectivity returns or an admin
+// returns to a tab that was paused while offline.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', retryPendingCloudWrites);
+  window.addEventListener('focus', retryPendingCloudWrites);
+}
+
 export const resolveCloudConflict = (key) => conflictedDomains.delete(key);
 
 export const pullAllFromCloud = async (setters = {}) => {
@@ -747,7 +754,10 @@ export const subscribeRealtimeSync = (setters = {}) => {
       .subscribe();
   };
   subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
-  const handleAuthReady = () => subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  const handleAuthReady = () => {
+    retryPendingCloudWrites();
+    subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  };
   window.addEventListener('alzino-cloud-auth-ready', handleAuthReady);
   window.addEventListener('alzino-cloud-auth-changed', handleAuthReady);
 
