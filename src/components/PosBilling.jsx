@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -820,7 +821,7 @@ export default function PosBilling({
     finalizingSaleRef.current = true;
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     // Compute GST breakdowns
     const cgstTotal = isNonGst ? 0 : (isInterstate ? 0 : totalGst / 2);

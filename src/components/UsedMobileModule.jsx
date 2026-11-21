@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { 
   Smartphone, 
@@ -224,7 +225,7 @@ export default function UsedMobileModule({
     }
 
     const voucherNo = `ALZ-VOUCH-${String(usedPurchases.length + 1).padStart(3, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const effectiveBrand = brand === 'Other' ? (customBrand.trim() || 'Other') : brand;
     if (effectiveBrand && effectiveBrand !== 'Other') {
       saveCustomBrand(effectiveBrand, 'Used Mobiles');
@@ -421,7 +422,7 @@ export default function UsedMobileModule({
     const isNonGst = resellBillingType === 'non-gst';
     const prefix = isNonGst ? 'ALZ-REF' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 101).padStart(4, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const deviceCost = Number(selectedDevice.buyPrice) || 0;
     const marginProfit = Math.round(grandTotalPrice - deviceCost);

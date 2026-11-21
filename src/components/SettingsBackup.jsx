@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Database, 
@@ -385,7 +386,7 @@ export default function SettingsBackup({
 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
     const downloadAnchor = document.createElement('a');
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = getLocalDateString();
     downloadAnchor.setAttribute("href", dataStr);
     downloadAnchor.setAttribute("download", `ALZINO_ERP_BACKUP_${dateStr}.json`);
     document.body.appendChild(downloadAnchor);

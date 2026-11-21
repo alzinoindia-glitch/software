@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement } from '../utils/returnAccounting';
 import { 
@@ -63,7 +64,7 @@ export default function AnalyticsReports({
   const [cashierName, setCashierName] = useState('Admin / Cashier');
   const [closingRemarks, setClosingRemarks] = useState('');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const currentMonthStr = todayStr.substring(0, 7);
 
   // 1. Filtered Invoices by Date

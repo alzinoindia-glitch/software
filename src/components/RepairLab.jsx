@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Wrench, 
@@ -155,7 +156,7 @@ export default function RepairLab({
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 1023);
     const jobId = `ALZ-REP-${highestJobNumber + 1}`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const newJob = {
       recordId: `REPAIR-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
@@ -441,7 +442,7 @@ export default function RepairLab({
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 200);
     const invoiceNo = `${prefix}-${String(highestSequence + 1).padStart(4, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const advance = Number(jobToBill.advancePaid) || 0;
     const netBalanceToCollect = Math.max(0, grandTotalPrice - advance);

@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo, useEffect } from 'react';
 import { countUniqueSupplierBills } from '../utils/supplierAccounting';
 import { 
@@ -128,7 +129,7 @@ export default function CustomerKhata({
         totalSpent: Number(c.totalSpent) || 0,
         balanceDue: Number(c.balanceDue) || 0,
         khataEntries: c.khataEntries || [],
-        createdAt: c.createdAt || new Date().toISOString().split('T')[0],
+        createdAt: c.createdAt || getLocalDateString(),
         invoices: [],
         repairs: [],
         isFromCrm: true
@@ -150,7 +151,7 @@ export default function CustomerKhata({
           gstin: inv.customerGstin || '',
           totalSpent: 0,
           balanceDue: 0,
-          createdAt: inv.date || new Date().toISOString().split('T')[0],
+          createdAt: inv.date || getLocalDateString(),
           invoices: [],
           repairs: [],
           isFromCrm: false
@@ -184,7 +185,7 @@ export default function CustomerKhata({
           gstin: '',
           totalSpent: 0,
           balanceDue: 0,
-          createdAt: rep.date || new Date().toISOString().split('T')[0],
+          createdAt: rep.date || getLocalDateString(),
           invoices: [],
           repairs: [],
           isFromCrm: false
@@ -486,7 +487,7 @@ export default function CustomerKhata({
       gstin: newGstin.trim(),
       totalSpent: 0,
       balanceDue: 0,
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: getLocalDateString()
     };
 
     setCustomers(prev => [newCust, ...prev]);

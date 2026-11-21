@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
@@ -56,12 +57,12 @@ export default function ExecutiveDashboard({
     productName: '',
     serialOrImei: '',
     issueDescription: '',
-    claimDate: new Date().toISOString().split('T')[0],
+    claimDate: getLocalDateString(),
     status: 'Received at Shop',
     expectedReturnDate: ''
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const currentMonthStr = todayStr.substring(0, 7);
 
   // 1. AAJ KI SALE (Today's Total ₹ and Bills count)

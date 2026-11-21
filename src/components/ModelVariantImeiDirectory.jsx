@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { 
   Smartphone, 
@@ -185,7 +186,7 @@ export default function ModelVariantImeiDirectory({
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Model_IMEI_Directory');
-    XLSX.writeFile(wb, `ALZINO_Model_IMEI_Directory_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `ALZINO_Model_IMEI_Directory_${getLocalDateString()}.xlsx`);
   };
 
   return (

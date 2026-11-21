@@ -1,3 +1,4 @@
+import { getLocalDateString } from './dateUtils';
 /**
  * ALZINO ERP — Hardware Devices Integration Layer
  * External Devices Supported:
@@ -218,7 +219,7 @@ export const PRINTER_PROFILES = {
  * Generate a Sample Test Invoice for Hardware Printer Diagnostics
  */
 export function getSampleDeviceTestInvoice(shopConfig) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   return {
     invoiceNo: 'ALZ-TEST-9999',
     date: today,

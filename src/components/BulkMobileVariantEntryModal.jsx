@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Smartphone, 
@@ -71,7 +72,7 @@ export default function BulkMobileVariantEntryModal({
     rack: 'R-01',
     bin: 'B-01',
     warranty: '',
-    receivedDate: new Date().toISOString().split('T')[0],
+    receivedDate: getLocalDateString(),
   });
 
   // Product Terms & Conditions for the batch (shown on QR scan)

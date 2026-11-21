@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { 
   FileText, 
@@ -45,7 +46,7 @@ export default function InvoicesHub({
   const [typeFilter, setTypeFilter] = useState('all'); // invoice register filters
   const [dateFilter, setDateFilter] = useState('all'); // 'all' | 'today' | 'month'
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const currentMonthStr = todayStr.substring(0, 7);
 
   // Edit Invoice Modal State

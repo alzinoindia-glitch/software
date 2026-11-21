@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { lazy, Suspense, useState, useMemo, useEffect } from 'react';
 import { 
   Package, 
@@ -223,7 +224,7 @@ export default function InventoryManager({
     serialNumbers: '',
     warranty: '',
     termsAndConditions: [],
-    receivedDate: new Date().toISOString().split('T')[0],
+    receivedDate: getLocalDateString(),
     isPublished: true,
     supplierId: '',
   });
@@ -602,7 +603,7 @@ export default function InventoryManager({
       serialNumbers: '',
       warranty: '',
       termsAndConditions: [],
-      receivedDate: new Date().toISOString().split('T')[0],
+      receivedDate: getLocalDateString(),
       isPublished: true,
       supplierId: '',
     });
@@ -661,7 +662,7 @@ export default function InventoryManager({
         : '',
       warranty: item.warranty || '',
       termsAndConditions: normalizeProductTerms(item.termsAndConditions || item.terms),
-      receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+      receivedDate: item.receivedDate || (item.createdAt ? item.createdAt.split('T')[0] : getLocalDateString()),
       isPublished: item.isPublished !== false,
       supplierId: item.supplierId || '',
     });
@@ -934,7 +935,7 @@ export default function InventoryManager({
             purchaseCostEntered: enteredBuyPrice,
             purchaseCostIncludesGst: buyPriceIncludesGst,
             purchaseGstRate: finalGstRate,
-            receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0]
+            receivedDate: formData.receivedDate || getLocalDateString()
           };
         });
       })()
@@ -944,7 +945,7 @@ export default function InventoryManager({
       supplierName: assignedSupplier.name || '',
       billId: manualReceiptId,
       invoiceNumber: '',
-      date: formData.receivedDate || new Date().toISOString().split('T')[0],
+      date: formData.receivedDate || getLocalDateString(),
       recordedAt: new Date().toISOString(),
       quantity: calculatedStock,
       unitCost: finalBuyPrice,
@@ -1001,7 +1002,7 @@ export default function InventoryManager({
             units: unitRecords,
             warranty: formData.warranty,
             termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
-            receivedDate: formData.receivedDate || editingItem.receivedDate || new Date().toISOString().split('T')[0],
+            receivedDate: formData.receivedDate || editingItem.receivedDate || getLocalDateString(),
             isPublished: Boolean(formData.isPublished),
             offer: editingItem.offer,
             createdAt: editingItem.createdAt || new Date().toISOString(),
@@ -1085,7 +1086,7 @@ export default function InventoryManager({
         supplierPurchases: inventoryPurchase ? [inventoryPurchase] : [],
         warranty: formData.warranty,
         termsAndConditions: normalizeProductTerms(formData.termsAndConditions),
-        receivedDate: formData.receivedDate || new Date().toISOString().split('T')[0],
+        receivedDate: formData.receivedDate || getLocalDateString(),
         isPublished: Boolean(formData.isPublished),
         createdAt: new Date().toISOString(),
         images: imagesMeta,

@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useEffect, useRef, useState } from 'react';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
@@ -1240,7 +1241,7 @@ export default function PrintTemplates({
               <div style={{ fontSize: '12px', fontWeight: 'bold', margin: '3mm 0 1mm 0' }}>
                 *** DAY-END CASH DRAWER Z-REPORT ***
               </div>
-              <div style={{ fontSize: '9px' }}>CLOSING DATE: {printData.today || new Date().toISOString().split('T')[0]}</div>
+              <div style={{ fontSize: '9px' }}>CLOSING DATE: {printData.today || getLocalDateString()}</div>
               <div style={{ fontSize: '9px' }}>PRINTED AT: {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
             </div>
 

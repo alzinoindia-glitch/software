@@ -1,3 +1,4 @@
+import { getLocalDateString } from '../utils/dateUtils';
 import React, { useMemo, useState } from 'react';
 import { 
   Receipt, 
@@ -95,7 +96,7 @@ export default function ExpenseSupplier({
   const [inwardGstHint, setInwardGstHint] = useState(null);
   const [isImportingBill, setIsImportingBill] = useState(false);
   const [inwardInvoiceNumber, setInwardInvoiceNumber] = useState('');
-  const [inwardDate, setInwardDate] = useState(new Date().toISOString().split('T')[0]);
+  const [inwardDate, setInwardDate] = useState(getLocalDateString());
   const [supplierBillFilter, setSupplierBillFilter] = useState('all');
   const [editingBillId, setEditingBillId] = useState('');
 
@@ -123,7 +124,7 @@ export default function ExpenseSupplier({
 
     const newExp = {
       id: `EXP-${Date.now().toString().slice(-4)}`,
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       category: expCategory,
       payeeName: expenseNeedsPayeeName ? expPayeeName.trim() : '',
       amount: parseFloat(expAmount),
@@ -203,7 +204,7 @@ export default function ExpenseSupplier({
     setEditingBillId(bill.id);
     setSelectedSupplierId(supplierId);
     setInwardInvoiceNumber(bill.invoiceNumber || '');
-    setInwardDate(bill.date || new Date().toISOString().split('T')[0]);
+    setInwardDate(bill.date || getLocalDateString());
     setInwardItems(lines.length ? lines : [newInwardLine()]);
     setInwardDocument(null);
     setInwardGstHint(null);
@@ -541,7 +542,7 @@ export default function ExpenseSupplier({
     setInwardGstHint(null);
     setInwardGstHint(null);
     setInwardInvoiceNumber('');
-    setInwardDate(new Date().toISOString().split('T')[0]);
+    setInwardDate(getLocalDateString());
     setSupplierReorderLines([]);
   };
 
@@ -632,7 +633,7 @@ export default function ExpenseSupplier({
     setInwardDocument(null);
     setInwardGstHint(null);
     setInwardInvoiceNumber('');
-    setInwardDate(new Date().toISOString().split('T')[0]);
+    setInwardDate(getLocalDateString());
     setShowInwardModal(true);
   };
   const visibleSuppliers = suppliers.filter(supplier => [supplier.name, supplier.contactPerson, supplier.phone, supplier.city, supplier.gstin]

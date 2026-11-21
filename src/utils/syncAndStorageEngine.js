@@ -1,3 +1,4 @@
+import { getLocalDateString } from './dateUtils';
 /**
  * ALZINO ERP — High-Performance SSD Storage & Offline Engine
  * Replaces Cloud/Supabase dependence with 100% Local SSD Hardware Storage:
@@ -155,7 +156,7 @@ export async function createNewSsdDatabase(dataPayload) {
   if (isFileSystemAccessSupported()) {
     try {
       const fileHandle = await window.showSaveFilePicker({
-        suggestedName: `ALZINO_SSD_DATABASE_${new Date().toISOString().split('T')[0]}.json`,
+        suggestedName: `ALZINO_SSD_DATABASE_${getLocalDateString()}.json`,
         types: [
           {
             description: 'ALZINO SSD Database (*.json)',
@@ -252,7 +253,7 @@ export function exportYearlyArchiveToSsd({ invoices = [], customers = [], invent
 
   const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(archivePayload, null, 2));
   const downloadAnchor = document.createElement('a');
-  const filename = `ALZINO_SSD_DATABASE_${yearLabel}_${new Date().toISOString().split('T')[0]}.json`;
+  const filename = `ALZINO_SSD_DATABASE_${yearLabel}_${getLocalDateString()}.json`;
   
   downloadAnchor.setAttribute('href', dataStr);
   downloadAnchor.setAttribute('download', filename);
