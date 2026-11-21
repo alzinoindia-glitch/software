@@ -198,6 +198,11 @@ export default function PosBilling({
   
   const searchInputRef = useRef(null);
   const scanHandlerRef = useRef(null);
+  const finalizingSaleRef = useRef(false);
+
+  useEffect(() => {
+    if (cart.length === 0) finalizingSaleRef.current = false;
+  }, [cart.length]);
 
   // Tax Filter: 'all' | 'gst' | 'non-gst'
   const [posTaxFilter, setPosTaxFilter] = useState('all');
@@ -746,6 +751,7 @@ export default function PosBilling({
 
   // Step 2: Finalize Sale ONLY AFTER Payment is Confirmed
   const handleConfirmAndGenerateInvoice = () => {
+    if (finalizingSaleRef.current) return;
     const cashReceived = paymentMode === 'Cash' ? (Number(cashReceivedAmount) || 0) : 0;
     if (paymentMode === 'UPI' && (!upiTxnRef.trim() || !upiVerified)) {
       alert('Enter the UPI UTR / transaction ID and verify that payment was received before completing this sale.');
@@ -791,6 +797,7 @@ export default function PosBilling({
       alert(`Sale not completed: ${stockChanged.name} has only ${liveStock} unit(s) in stock now. Update the bill quantity and try again.`);
       return;
     }
+    finalizingSaleRef.current = true;
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
     const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
     const today = new Date().toISOString().split('T')[0];
