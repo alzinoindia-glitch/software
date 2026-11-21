@@ -466,7 +466,7 @@ export default function ExpenseSupplier({
         serialNumbers: imeiTracked ? [] : identifiers,
         barcodes: units.map(unit => unit.barcode),
         barcode: units[0]?.barcode || '',
-        supplierPurchases: [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: line.quantity, unitCost: purchaseCost.gross, unitCostEntered: line.unitCost, unitCostIncludesGst: Boolean(line.unitCostIncludesGst), gstRate: productGstRate(line.product) }]
+        supplierPurchases: [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, recordedAt: new Date().toISOString(), quantity: line.quantity, unitCost: purchaseCost.gross, unitCostEntered: line.unitCost, unitCostIncludesGst: Boolean(line.unitCostIncludesGst), gstRate: productGstRate(line.product) }]
       };
     });
     setInventory(prev => [...newInventoryProducts, ...prev.map(item => {
@@ -494,7 +494,8 @@ export default function ExpenseSupplier({
           supplierId: selectedSupplierId,
           supplierName: supplier?.name || '',
           supplierBillId: billId,
-          purchaseCost: line.unitCost,
+          purchaseCost: line.quantity ? line.totalAmount / line.quantity : line.unitCost,
+          purchaseCostEntered: line.unitCostEntered,
           purchaseCostIncludesGst: Boolean(line.unitCostIncludesGst),
           purchaseGstRate: line.gstRate,
           receivedDate: inwardDate
@@ -521,7 +522,7 @@ export default function ExpenseSupplier({
         barcodes: [...(item.barcodes || []).filter(value => !oldUnitBarcodes.includes(value)), ...addedUnits.map(unit => unit.barcode)],
         barcode: item.barcode && !oldUnitBarcodes.includes(item.barcode) ? item.barcode : (addedUnits[0]?.barcode || ''),
         units: [...existingUnits, ...addedUnits],
-        supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, quantity: addedQty, unitCost: totalReceived / addedQty, unitCostEntered: latestReceived.unitCostEntered, unitCostIncludesGst: latestReceived.unitCostIncludesGst, gstRate: latestReceived.gstRate }] : [])]
+        supplierPurchases: [...(item.supplierPurchases || []).filter(purchase => purchase.billId !== billId), ...(addedQty ? [{ supplierId: selectedSupplierId, supplierName: supplier?.name || '', billId, invoiceNumber, date: inwardDate, recordedAt: new Date().toISOString(), quantity: addedQty, unitCost: totalReceived / addedQty, unitCostEntered: latestReceived.unitCostEntered, unitCostIncludesGst: latestReceived.unitCostIncludesGst, gstRate: latestReceived.gstRate }] : [])]
       };
     })]);
 
