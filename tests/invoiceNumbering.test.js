@@ -21,3 +21,7 @@ test('starts an unused prefix at its configured minimum sequence', () => {
   assert.equal(getNextInvoiceNumber([], 'ALZ-EST', 82), 'ALZ-EST-0083');
   assert.equal(getNextInvoiceNumber([], 'ALZ-SRV', 200), 'ALZ-SRV-0201');
 });
+
+test('escapes special characters in a custom prefix', () => {
+  assert.equal(getNextInvoiceNumber([{ invoiceNo: 'ALZ.*-0004' }, { invoiceNo: 'ALZx-9999' }], 'ALZ.*'), 'ALZ.*-0005');
+});

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw, Search, RotateCcw } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
-import { applyReturnKhataAdjustment, requiresReturnRefundReference } from '../utils/returnAccounting';
+import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference } from '../utils/returnAccounting';
 import { getReplacementUnitOptions, hasTrackedReplacementUnits } from '../utils/replacementUnitOptions';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -275,6 +275,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       const lineOutstandingCleared = Math.min(lineOutstandingShare, lineAllowance);
       const lineCredit = Math.max(0, lineAllowance - lineOutstandingCleared);
       const item = returnLine.item;
+      const exchangeRefund = action === 'replacement' && linePosition === 0
+        ? getReplacementRefundPaymentFields({ direction: settlementDirection, amount: settlementAmount, method: effectiveSettlementMethod, reference: settlementReference })
+        : {};
       return {
         id: `${groupId}-${linePosition + 1}`, groupId, date: transactionDate, status: 'completed', type: action, ...(action === 'replacement' ? { replacementMode } : {}),
         originalItemIndex: Number(returnLine.index), originalProductId: item.id,
@@ -287,28 +290,12 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         invoicePaidAtReturn: invoicePaid, invoiceOutstandingAtReturn: invoiceOutstanding,
         outstandingCleared: lineOutstandingCleared, availableReturnCredit: lineCredit,
         allowanceReason: lineAllowance + 0.01 < returnLine.returnValue ? 'Admin-approved partial return / used item allowance' : '',
-        ...(() => {
-          const exchangeRefund = getReplacementRefundPaymentFields({
-            direction: action === 'replacement' && linePosition === 0 ? settlementDirection : '',
-            amount: settlementAmount,
-            method: effectiveSettlementMethod,
-            reference: settlementReference
-          });
-          return {
-            refundAmount: action === 'refund' ? lineCredit : (exchangeRefund.amount || 0),
-            refundMethod: action === 'refund' ? refundMethod : (exchangeRefund.method || ''),
-            refundPaidAmount: action === 'refund'
-              ? (refundMethod !== 'Khata (pay later)' ? lineCredit : 0)
-              : (exchangeRefund.paidAmount || 0),
-            refundPendingAmount: action === 'refund'
-              ? (refundMethod === 'Khata (pay later)' ? lineCredit : 0)
-              : (exchangeRefund.pendingAmount || 0),
-            refundStatus: action === 'refund'
-              ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid')
-              : (exchangeRefund.status || ''),
-            refundReference: action === 'refund' ? settlementReference.trim() : (exchangeRefund.reference || '')
-          };
-        })(),
+        refundAmount: action === 'refund' ? lineCredit : (exchangeRefund.amount || 0),
+        refundMethod: action === 'refund' ? refundMethod : (exchangeRefund.method || ''),
+        refundPaidAmount: action === 'refund' ? (refundMethod !== 'Khata (pay later)' ? lineCredit : 0) : (exchangeRefund.paidAmount || 0),
+        refundPendingAmount: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? lineCredit : 0) : (exchangeRefund.pendingAmount || 0),
+        refundStatus: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid') : (exchangeRefund.status || ''),
+        refundReference: action === 'refund' ? settlementReference.trim() : (exchangeRefund.reference || ''),
         condition, restocked: Boolean(restock), returnedImeis: returnLine.returnIdentifiers,
         settlement: action === 'replacement' && linePosition === 0 ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
         replacements: action === 'replacement' && linePosition === 0 ? replacementRecords : [],

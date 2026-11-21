@@ -75,10 +75,16 @@ export const reconcileCustomerAfterInvoiceEdit = (customers = [], previousInvoic
   return next;
 };
 
+const identifiersFrom = value => Array.isArray(value) ? value : String(value || '').split(',');
+
 const stockLineSignature = items => (items || [])
   .map(item => {
-    const identifiers = Array.isArray(item.imeis) ? item.imeis : String(item.imeis || '').split(',');
-    return `${String(item.id || '')}|${Number(item.qty) || 0}|${identifiers.map(String).map(value => value.trim()).filter(Boolean).sort().join(',')}`;
+    const identifiers = [
+      ...identifiersFrom(item.imeis),
+      ...identifiersFrom(item.serialNumbers),
+      ...(Array.isArray(item.units) ? item.units : []).flatMap(unit => [unit.imei1, unit.imei2, unit.serialNumber, unit.barcode, unit.id])
+    ].map(String).map(value => value.trim()).filter(Boolean);
+    return `${String(item.id || item.productId || '')}|${Number(item.qty) || 0}|${[...new Set(identifiers)].sort().join(',')}`;
   })
   .sort();
 
