@@ -606,12 +606,15 @@ export default function ExpenseSupplier({
   const unattributedSupplierSales = useMemo(() => {
     const totals = new Map();
     invoices.forEach(invoice => (invoice.items || []).forEach(line => {
-      if (line.supplierAllocations?.length) return;
       const productId = String(line.id || line.productId || '');
       const product = inventory.find(item => String(item.id) === productId);
       const sources = [...new Set([...(product?.supplierPurchases || []).map(purchase => purchase.supplierId), product?.supplierId].filter(Boolean).map(String))];
       if (sources.length < 2) return;
-      totals.set(productId, (totals.get(productId) || 0) + Number(line.qty || 0));
+      const allocated = (line.supplierAllocations || []).reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+      const unattributed = line.unattributedSupplierQuantity == null
+        ? (line.supplierAllocations?.length ? Math.max(0, Number(line.qty || 0) - allocated) : Number(line.qty || 0))
+        : Math.max(0, Number(line.unattributedSupplierQuantity) || 0);
+      if (unattributed > 0) totals.set(productId, (totals.get(productId) || 0) + unattributed);
     }));
     return totals;
   }, [invoices, inventory]);
