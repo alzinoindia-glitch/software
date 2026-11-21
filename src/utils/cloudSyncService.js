@@ -802,11 +802,11 @@ export const subscribeRealtimeSync = (setters = {}) => {
       console.warn(`[CloudSync] Realtime channel ${status}:`, error || 'No error details provided.');
       reconcileAfterReconnect = true;
       emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
-      if (status === 'TIMED_OUT' || status === 'CLOSED') {
-        channel = null;
-        activeOrgId = null;
-        scheduleReconnect();
-      }
+      // CHANNEL_ERROR, TIMED_OUT, and CLOSED all leave this channel unusable.
+      // Clear its identity so the retry creates a fresh subscription for this org.
+      channel = null;
+      activeOrgId = null;
+      scheduleReconnect();
     });
   };
   subscribeForCurrentUser().catch(reportReconnectFailure);
