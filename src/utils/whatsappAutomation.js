@@ -97,7 +97,34 @@ export function openWhatsAppInvoice(invoice, shopConfig = {}) {
  */
 export function generateWhatsAppRepairText(job, shopConfig = {}, statusType = 'received') {
   const shopName = shopConfig.name || 'ALZINO';
-  const shopPhone = shopConfig.phone || '98490 82741';
+  const shopPhone = shopConfig.phone || '+91 91212 12292';
+
+  if (statusType === 'payment-pending') {
+    const amountDue = Math.max(0, Number(job.balanceDue ?? job.khataDue) || 0);
+    const total = Number(job.billedAt || job.finalPrice || job.estimatedCost) || 0;
+    const paid = Number(job.paidAmount ?? job.advancePaid) || 0;
+    return `⏳ *REPAIR PAYMENT PENDING • ${shopName.toUpperCase()}*\n\n` +
+      `Dear ${job.customerName || 'Customer'},\n` +
+      `Your ${job.deviceModel || 'device'} has been successfully delivered.\n\n` +
+      `*Repair Bill:* ${job.invoiceNo || job.jobId}\n` +
+      `*Final Bill Amount:* ₹${total.toLocaleString('en-IN')}\n` +
+      `*Paid:* ₹${paid.toLocaleString('en-IN')}\n` +
+      `*Outstanding Balance:* ₹${amountDue.toLocaleString('en-IN')}\n\n` +
+      `Please clear the outstanding repair balance at your convenience. Contact us if you have already paid.\n\n` +
+      `Thank you for your support!\n\n` +
+      `*${shopName}*\n${shopConfig.address || 'Bodhan, Telangana'}\n${shopConfig.website || 'www.alzino.shop'}\nSupport: ${shopPhone}`;
+  }
+
+  if (statusType === 'delivered') {
+    const amountDue = Math.max(0, Number(job.balanceDue ?? job.khataDue) || 0);
+    return `✅ *DEVICE DELIVERED • ${shopName.toUpperCase()}*\n\n` +
+      `Dear ${job.customerName || 'Customer'},\n` +
+      `Your ${job.deviceModel || 'device'} has been successfully delivered.\n` +
+      `*Repair Bill:* ${job.invoiceNo || job.jobId}\n` +
+      `*Payment Status:* ${amountDue > 0 ? `Pending ₹${amountDue.toLocaleString('en-IN')}` : 'Paid in full'}\n\n` +
+      `Thank you for your support!\n\n` +
+      `*${shopName}*\n${shopConfig.address || 'Bodhan, Telangana'}\n${shopConfig.website || 'www.alzino.shop'}\nSupport: ${shopPhone}`;
+  }
 
   if (statusType === 'completed') {
     const totalText = job.billedAt ? `₹${Number(job.billedAt).toLocaleString('en-IN')}` : (job.costInformedAfterChecking ? 'Informed after checking' : `₹${Number(job.estimatedCost || 0).toLocaleString('en-IN')}`);

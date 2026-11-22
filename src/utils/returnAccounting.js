@@ -73,14 +73,12 @@ export const applyReturnKhataAdjustment = (customer, { outstandingCleared = 0, n
   };
 };
 
-
 /** Bank/UPI refunds need a traceable reference before the return is finalized. */
 export const requiresReturnRefundReference = ({ action = '', direction = '', amount = 0, method = '' } = {}) => {
   const refundAmount = Math.max(0, Number(amount) || 0);
   const isRefund = action === 'refund' || (action === 'replacement' && direction === 'refund');
   return isRefund && refundAmount > 0 && ['UPI', 'Bank transfer'].includes(String(method));
 };
-
 
 /** Keep an exchange refund payable visible until the customer is paid. */
 export const getReplacementRefundPaymentFields = ({ direction = '', amount = 0, method = '', reference = '' } = {}) => {

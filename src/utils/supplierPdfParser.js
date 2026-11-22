@@ -137,6 +137,8 @@ export function supplierPdfOcrWordsToItems(words, viewport, scale = 1) {
     if (!Number.isFinite(x) || !Number.isFinite(yTop)) return null;
     return {
       str: String(word.text).trim(),
+      // Tesseract uses rendered canvas coordinates (top-left origin). The PDF
+      // table parser groups text by PDF baselines (bottom-left origin).
       transform: [0, 0, 0, 0, x / scale, (Number(viewport.height) - yTop) / scale]
     };
   }).filter(Boolean);
