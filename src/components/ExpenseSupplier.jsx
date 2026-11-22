@@ -440,6 +440,8 @@ export default function ExpenseSupplier({
     if (editingBillId && (!existingBill || role !== 'admin')) return;
     const invoiceNumber = inwardInvoiceNumber.trim() || existingBill?.invoiceNumber || `SUP-${Date.now().toString().slice(-6)}`;
     const billId = editingBillId || `BILL-${Date.now()}`;
+    const duplicateBill = (existingSupplier?.purchaseBills || []).some(bill => bill.id !== billId && String(bill.invoiceNumber || '').trim().toLowerCase() === invoiceNumber.toLowerCase());
+    if (duplicateBill) { alert('This supplier already has a bill with that invoice number.'); return; }
     const billLines = validLines.map(line => {
       const gstRate = productGstRate(line.product);
       const cost = getPurchaseCostBreakdown(line.unitCost, gstRate, line.unitCostIncludesGst);
@@ -491,8 +493,6 @@ export default function ExpenseSupplier({
           return;
         }
       }
-      const duplicateBill = (existingSupplier.purchaseBills || []).some(bill => bill.id !== billId && String(bill.invoiceNumber || '').trim().toLowerCase() === invoiceNumber.toLowerCase());
-      if (duplicateBill) { alert('This supplier already has a bill with that invoice number.'); return; }
     }
     const attachmentId = inwardDocument ? `SUPDOC-${billId}` : existingBill?.attachment?.id || '';
     try {

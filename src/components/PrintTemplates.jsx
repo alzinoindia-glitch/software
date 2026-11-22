@@ -278,8 +278,8 @@ export default function PrintTemplates({
 
               {printData.discount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>DISCOUNT:</span>
-                  <span>-₹{printData.discount}</span>
+                  <span>{printData.discountIncludedInTaxBreakdown ? 'DISCOUNT (INCLUDED ABOVE):' : 'DISCOUNT:'}</span>
+                  <span>{printData.discountIncludedInTaxBreakdown ? `₹${printData.discount}` : `-₹${printData.discount}`}</span>
                 </div>
               )}
               
