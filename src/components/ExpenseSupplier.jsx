@@ -22,7 +22,7 @@ import { applySupplierPayment } from '../utils/supplierPayments';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 import { parseSupplierPdfPages, supplierPdfOcrWordsToItems } from '../utils/supplierPdfParser';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: null, sellPrice: '', sellPriceIncludesGst: null, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: null, sellPrice: '', sellPriceIncludesGst: true, billGstRate: null, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductMrp: '', newProductGstRate: '', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
@@ -45,6 +45,11 @@ const inferGstInclusionFromRow = row => {
   }
   if (entries.some(([key]) => ['taxablevalue', 'unitcostexcludinggst', 'costexcludinggst', 'priceexcludinggst', 'baseratebeforetax'].includes(key))) return false;
   return null;
+};
+const inferGstRateFromRow = row => {
+  const value = getCell(row, 'gstrate', 'taxrate', 'gstpercent', 'taxpercent');
+  const match = String(value ?? '').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
 };
 const inferGstInclusionFromText = text => {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ');
@@ -300,7 +305,8 @@ export default function ExpenseSupplier({
               unitCost: String(Math.round(parsedLine.unitCost * 100) / 100),
               newProductName: parsedLine.name,
               newProductHsn: parsedLine.hsn,
-              newProductGstRate: String(parsedLine.gstRate ?? 18),
+              newProductGstRate: parsedLine.gstRate == null ? '' : String(parsedLine.gstRate),
+              billGstRate: parsedLine.gstRate,
               unitCostIncludesGst: detected,
               gstInclusionSource: detected === null ? 'admin review required' : 'uploaded PDF'
             };
@@ -358,7 +364,8 @@ export default function ExpenseSupplier({
           identifiers,
           imei1Values,
           imei2Values,
-          importedName: productName
+          importedName: productName,
+          billGstRate: inferGstRateFromRow(row)
         };
       }).filter(line => line.importedName || line.productId);
       if (!lines.length) throw new Error('No product rows were found. Use Product, Quantity, and Unit Cost columns.');
@@ -380,7 +387,11 @@ export default function ExpenseSupplier({
       const quantity = Number.parseInt(line.quantity, 10);
       const unitCost = Number.parseFloat(line.unitCost);
       if (!line.isNewProduct) {
-        const product = inventory.find(item => String(item.id) === String(line.productId));
+        const storedProduct = inventory.find(item => String(item.id) === String(line.productId));
+        const billGstRate = Number.isFinite(Number(line.billGstRate)) && line.billGstRate !== null && line.billGstRate !== '' ? Number(line.billGstRate) : null;
+        const product = storedProduct && billGstRate !== null
+          ? { ...storedProduct, gstRate: billGstRate, isGst: billGstRate > 0, hsn: line.importedHsn || storedProduct.hsn }
+          : storedProduct;
         return {
           ...line,
           quantity,
@@ -390,7 +401,8 @@ export default function ExpenseSupplier({
           sellPriceIncludesGst: line.sellPriceIncludesGst ?? product?.sellPriceIncludesGst ?? true
         };
       }
-      const newProductGstRate = Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18;
+      const newProductGstRate = line.newProductGstRate === '' ? null : Number(line.newProductGstRate);
+      if (!Number.isFinite(newProductGstRate)) return { ...line, quantity, unitCost, product: null };
       const proposedProduct = {
         id: line.productId || `PROD-SUPP-${Date.now()}-${index}`,
         name: String(line.newProductName || line.importedName || '').trim(),
@@ -402,7 +414,7 @@ export default function ExpenseSupplier({
         storage: String(line.newProductStorage || '').trim(),
         color: String(line.newProductColor || '').trim(),
         sellPrice: Number(line.sellPrice) || 0,
-        sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
+        sellPriceIncludesGst: line.sellPriceIncludesGst !== false,
         mrp: Number(line.newProductMrp) || Number(line.sellPrice) || 0,
         gstRate: newProductGstRate,
         isGst: newProductGstRate > 0,
@@ -596,6 +608,9 @@ export default function ExpenseSupplier({
           buyCostBase: latestReceived.taxableUnitCost,
           buyCostGst: latestReceived.gstUnitAmount,
           buyPriceIncludesGst: latestReceived.unitCostIncludesGst,
+          gstRate: latestReceived.gstRate,
+          isGst: Number(latestReceived.gstRate) > 0,
+          ...(latestReceived.hsn ? { hsn: latestReceived.hsn } : {}),
           ...(latestReceived.sellPrice > 0 ? { sellPrice: latestReceived.sellPrice, sellPriceIncludesGst: latestReceived.sellPriceIncludesGst } : {})
         } : {}),
         imeis: imeiTracked ? [...(item.imeis || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers] : (item.imeis || []),
@@ -1397,7 +1412,7 @@ export default function ExpenseSupplier({
                       })()}
                       {line.productId && !line.isNewProduct && <button type="button" className="btn-outline" onClick={() => { updateInwardLine(line.id, { productId: '', isNewProduct: false }); setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; }); }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>Clear selection</button>}
                       <button type="button" className="btn-outline" onClick={() => {
-                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true, sellPriceIncludesGst: false });
+                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true, sellPriceIncludesGst: true });
                         setSupplierProductSearch(previous => ({ ...previous, [line.id]: '' }));
                       }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>＋ Add a new product</button>
                       {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
@@ -1406,7 +1421,7 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
                         <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/\D/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
-                        <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
+                        <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`} required><option value="">Choose GST rate *</option><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
                           const values = event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
                           updateInwardLine(line.id, isImeiTrackedCategory(line.newProductCategory) ? { imei1Values: values } : { identifiers: values });
@@ -1421,13 +1436,23 @@ export default function ExpenseSupplier({
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Unit cost ₹ *</label>
                       <input type="number" min="0.01" step="0.01" value={line.unitCost} onChange={event => updateInwardLine(line.id, { unitCost: event.target.value })} required className="input-field" />
                       {(() => {
-                        const product = line.isNewProduct
+                        const storedProduct = line.isNewProduct
                           ? { gstRate: Number(line.newProductGstRate) || 0, isGst: Number(line.newProductGstRate) > 0 }
                           : inventory.find(item => String(item.id) === String(line.productId));
+                        const product = storedProduct && line.billGstRate !== null && line.billGstRate !== undefined && line.billGstRate !== ''
+                          ? { ...storedProduct, gstRate: Number(line.billGstRate), isGst: Number(line.billGstRate) > 0 }
+                          : storedProduct;
                         const rate = productGstRate(product);
                         const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
                         return <>
                           {rate > 0 ? <>
+                            {!line.isNewProduct && <>
+                              <label style={{ display: 'block', marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)' }}>Product GST rate</label>
+                              <select value={line.billGstRate ?? product?.gstRate ?? 0} onChange={event => updateInwardLine(line.id, { billGstRate: Number(event.target.value) })} className="input-field" aria-label={`Product GST rate for product ${index + 1}`}>
+                                {[...new Set([0, 5, 12, 18, 28, Number(product?.gstRate || 0), ...(line.billGstRate == null ? [] : [Number(line.billGstRate)])])].sort((a, b) => a - b).map(rateOption => <option key={rateOption} value={rateOption}>{rateOption === 0 ? '0% Non-GST' : `${rateOption}% GST`}</option>)}
+                              </select>
+                              {line.billGstRate != null && <small style={{ color: 'var(--text-muted)' }}>Rate read from supplier bill; verify before saving.</small>}
+                            </>}
                             <label style={{ display: 'block', marginTop: 5, fontSize: '0.66rem', color: 'var(--text-secondary)' }}>GST in this bill price? ({rate}%)</label>
                             <select value={line.unitCostIncludesGst === true ? 'included' : line.unitCostIncludesGst === false ? 'extra' : ''} onChange={event => updateInwardLine(line.id, { unitCostIncludesGst: event.target.value === 'included' ? true : event.target.value === 'extra' ? false : null, gstInclusionSource: 'admin' })} className="input-field" aria-label={`GST inclusion for product ${index + 1}`}>
                               <option value="">Choose GST status</option>
@@ -1444,7 +1469,7 @@ export default function ExpenseSupplier({
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Selling price ₹</label>
                       <input type="number" min="0.01" step="0.01" required value={line.sellPrice || (!line.isNewProduct ? inventory.find(product => String(product.id) === String(line.productId))?.sellPrice || '' : '')} onChange={event => updateInwardLine(line.id, { sellPrice: event.target.value })} placeholder="e.g. 150" className="input-field" aria-label={`Selling price for product ${index + 1}`} />
                       <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
-                        <input type="checkbox" checked={Boolean(line.sellPriceIncludesGst)} onChange={event => updateInwardLine(line.id, { sellPriceIncludesGst: event.target.checked })} />
+                        <input type="checkbox" checked={line.sellPriceIncludesGst !== false} onChange={event => updateInwardLine(line.id, { sellPriceIncludesGst: event.target.checked })} />
                         Selling price already includes GST
                       </label>
                       <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 3 }}>{line.sellPriceIncludesGst ? 'GST is split out of this price.' : 'Customer bill adds this product’s GST rate to this price.'}</div>
