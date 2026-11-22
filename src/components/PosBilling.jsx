@@ -1,4 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
+import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
+import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
 import React, { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -54,6 +56,7 @@ const getPosGstRate = item => {
   if (Number.isFinite(rate)) return Math.max(0, rate);
   return item?.isGst === false ? 0 : 18;
 };
+const getPosPriceIncludesGst = (item, defaultValue) => typeof item?.priceIncludesGst === 'boolean' ? item.priceIncludesGst : defaultValue;
 
 const isMobileStockCategory = category => {
   const value = String(category || '').trim().toLowerCase();
@@ -407,6 +410,7 @@ export default function PosBilling({
             category: product.category,
             hsn: product.hsn || '851712',
             rate: product.sellPrice,
+            priceIncludesGst: typeof product.sellPriceIncludesGst === 'boolean' ? product.sellPriceIncludesGst : undefined,
             mrp: product.mrp,
             buyPrice: product.buyPrice,
             gstRate: getPosGstRate(product),
@@ -703,14 +707,16 @@ export default function PosBilling({
 
   // Calculations
   const isNonGst = billingType === 'non-gst';
-  const saleLines = cart.map(item => ({
-    item,
-    totals: getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), priceIncludesGst, !isNonGst)
-  }));
+  const saleLines = cart.map(item => {
+    const linePriceIncludesGst = getPosPriceIncludesGst(item, priceIncludesGst);
+    return {
+      item,
+      priceIncludesGst: linePriceIncludesGst,
+      totals: getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), linePriceIncludesGst, !isNonGst)
+    };
+  });
   const totalTaxable = saleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
-  const subtotalBeforeTax = priceIncludesGst && !isNonGst
-    ? totalTaxable
-    : cart.reduce((sum, item) => sum + (item.rate * item.qty), 0);
+  const subtotalBeforeTax = totalTaxable;
   const totalGst = isNonGst ? 0 : saleLines.reduce((sum, line) => sum + line.totals.gst, 0);
   const grandTotal = Math.max(0, saleLines.reduce((sum, line) => sum + line.totals.gross, 0) - Number(discount));
   
@@ -852,7 +858,7 @@ export default function PosBilling({
     }
     finalizingSaleRef.current = true;
     const prefix = isNonGst ? 'ALZ-EST' : 'ALZ-INV';
-    const invoiceNo = `${prefix}-${String(invoices.length + 83).padStart(4, '0')}`;
+    const invoiceNo = getNextInvoiceNumber(invoices, prefix, 82);
     const today = getLocalDateString();
 
     // Compute GST breakdowns
@@ -913,7 +919,7 @@ export default function PosBilling({
       invoiceNo,
       date: today,
       isNonGst,
-      priceIncludesGst: !isNonGst && priceIncludesGst,
+      priceIncludesGst: !isNonGst && saleLines.every(line => line.priceIncludesGst),
       invoiceType: isNonGst ? 'Cash Memo' : 'GST Tax Invoice',
       customerName: customerName.trim() || 'Counter Customer',
       customerPhone: customerPhone.trim(),
@@ -934,7 +940,8 @@ export default function PosBilling({
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
       items: cart.map(item => {
-        const tax = getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), priceIncludesGst, !isNonGst);
+        const linePriceIncludesGst = getPosPriceIncludesGst(item, priceIncludesGst);
+        const tax = getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), linePriceIncludesGst, !isNonGst);
         const cost = getCartCostBreakdown(item);
         return ({
         id: item.id,
@@ -944,6 +951,7 @@ export default function PosBilling({
         qty: item.qty,
         imeis: item.selectedImeis,
         rate: item.rate,
+        priceIncludesGst: linePriceIncludesGst,
         buyPrice: cost.averageUnitCost,
         costOfGoods: cost.totalCost,
         unattributedSupplierQuantity: cost.unattributedQuantity,
@@ -1005,30 +1013,35 @@ export default function PosBilling({
       return invItem;
     }));
 
-    // Update Customer CRM
-    if (customerPhone.trim()) {
+    // Update Customer CRM with normalized phone matching and numeric ledger totals.
+    const customerPhoneDigits = customerPhone.trim().replace(/\D/g, '').slice(-10);
+    if (customerPhoneDigits.length === 10) {
+      const saleTotal = Number.isFinite(Number(grandTotal)) ? Number(grandTotal) : 0;
+      const saleDue = Number.isFinite(Number(khataDue)) ? Number(khataDue) : 0;
       setCustomers(prev => {
-        const exists = prev.find(c => c.phone === customerPhone.trim());
+        const matchesPhone = customer => String(customer.phone || customer.mobile || '').replace(/\D/g, '').slice(-10) === customerPhoneDigits;
+        const exists = prev.find(matchesPhone);
         if (exists) {
-          return prev.map(c => c.phone === customerPhone.trim() ? {
-            ...c,
-            totalSpent: c.totalSpent + grandTotal,
-            balanceDue: c.balanceDue + khataDue,
-          } : c);
-        } else {
-          return [
-            ...prev,
-            {
-              id: `CUST-${String(prev.length + 1).padStart(3, '0')}`,
-              name: customerName.trim() || 'Customer',
-              phone: customerPhone.trim(),
-              address: customerAddress.trim() || 'Bodhan',
-              gstin: customerGstin.trim(),
-              totalSpent: grandTotal,
-              balanceDue: khataDue,
-            }
-          ];
+          const currentSpent = Number(exists.totalSpent);
+          const currentBalanceDue = Number(exists.balanceDue);
+          return prev.map(customer => customer === exists ? {
+            ...customer,
+            totalSpent: (Number.isFinite(currentSpent) ? currentSpent : 0) + saleTotal,
+            balanceDue: (Number.isFinite(currentBalanceDue) ? currentBalanceDue : 0) + saleDue,
+          } : customer);
         }
+        return [
+          ...prev,
+          {
+            id: `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: customerName.trim() || 'Customer',
+            phone: customerPhone.trim(),
+            address: customerAddress.trim() || 'Bodhan',
+            gstin: customerGstin.trim(),
+            totalSpent: saleTotal,
+            balanceDue: saleDue,
+          }
+        ];
       });
     }
 
@@ -1076,12 +1089,11 @@ export default function PosBilling({
     // Recalculate totals for edited invoice
     const isNonGstInv = invoiceToEdit.isNonGst;
     const disc = Number(invoiceToEdit.discount) || 0;
-    const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
     const itemBreakdowns = invoiceToEdit.items.map(item => getSalePriceBreakdown(
       item.rate,
       item.qty,
       getPosGstRate(item),
-      !usesExclusivePrices,
+      typeof item.priceIncludesGst === 'boolean' ? item.priceIncludesGst : invoiceToEdit.priceIncludesGst !== false,
       !isNonGstInv
     ));
     const taxable = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.taxable, 0);
@@ -1092,7 +1104,11 @@ export default function PosBilling({
 
     const isEmiInvoice = Boolean(invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI'));
     const previouslyPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
-    const paid = Math.min(grand, previouslyPaid);
+    if (previouslyPaid > grand) {
+      alert(`The corrected bill total ₹${grand.toLocaleString()} is below the recorded payment ₹${previouslyPaid.toLocaleString()}. Record a refund or payment adjustment before saving this lower total.`);
+      return;
+    }
+    const paid = previouslyPaid;
     const khata = isEmiInvoice ? 0 : Math.max(0, grand - paid);
 
     const updatedInvoice = {
@@ -1114,6 +1130,13 @@ export default function PosBilling({
       paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
       totalProfit: itemBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0) - disc
     };
+
+    const previousInvoice = invoices.find(inv => inv.invoiceNo === updatedInvoice.invoiceNo) || invoiceToEdit;
+    if (hasInvoiceStockChanges(previousInvoice, updatedInvoice)) {
+      alert('Quantity and IMEI/serial corrections must be processed through Returns & Replacements so inventory and supplier batch records stay accurate. No invoice changes were saved.');
+      return;
+    }
+    setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev, previousInvoice, updatedInvoice));
 
     // Update in invoices
     setInvoices(prev => prev.map(inv => inv.invoiceNo === updatedInvoice.invoiceNo ? updatedInvoice : inv));
@@ -1350,9 +1373,9 @@ export default function PosBilling({
                     CASH MEMO (0%)
                   </button>
                 </div>
-                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="Listed prices include GST by default. Turn this off only when the entered selling prices are before GST.">
+                {billingType === 'gst' && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }} title="This is the GST pricing default for older products without a saved per-product price setting.">
                   <input type="checkbox" checked={priceIncludesGst} onChange={event => setPriceIncludesGst(event.target.checked)} />
-                  Price already includes GST
+                  Default price includes GST
                 </label>}
               </div>
 
@@ -1818,7 +1841,9 @@ export default function PosBilling({
               {!isNonGst ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>
-                    {priceIncludesGst ? 'GST included:' : 'GST added:'}
+                    {saleLines.length && saleLines.every(line => line.priceIncludesGst === saleLines[0].priceIncludesGst)
+                      ? (saleLines[0].priceIncludesGst ? 'GST included:' : 'GST added:')
+                      : 'GST (per product):'}
                     <button 
                       onClick={() => setIsInterstate(!isInterstate)}
                       style={{ marginLeft: '0.25rem', fontSize: '0.65rem', color: 'var(--accent-primary)', textDecoration: 'underline', cursor: 'pointer', border: 'none', background: 'none' }}
@@ -1826,7 +1851,7 @@ export default function PosBilling({
                       {isInterstate ? '[IGST]' : '[CGST+SGST]'}
                     </button>
                   </span>
-                  <span className="font-mono">{priceIncludesGst ? '₹' : '+₹'}{totalGst.toFixed(2)}</span>
+                  <span className="font-mono">₹{totalGst.toFixed(2)}</span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
@@ -2186,7 +2211,7 @@ export default function PosBilling({
                   </h3>
                 </div>
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                  Update customer information, contact details, item titles, prices, serials, and warranty terms.
+                  Update customer information, item titles, prices, discounts, and warranty terms. Process quantity or IMEI/serial corrections through Returns & Replacements to keep stock accurate.
                 </div>
               </div>
               <button onClick={() => setEditingInvoiceModal(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.25rem' }}>✕</button>
@@ -2293,11 +2318,7 @@ export default function PosBilling({
                         <input
                           type="number"
                           value={item.qty}
-                          onChange={(e) => {
-                            const newItems = [...invoiceToEdit.items];
-                            newItems[idx].qty = parseInt(e.target.value, 10) || 1;
-                            setInvoiceToEdit({ ...invoiceToEdit, items: newItems });
-                          }}
+                          readOnly
                           className="input-field"
                           style={{ fontSize: '0.8rem' }}
                         />
@@ -2310,11 +2331,7 @@ export default function PosBilling({
                         <input
                           type="text"
                           value={(item.imeis && item.imeis.join(', ')) || ''}
-                          onChange={(e) => {
-                            const newItems = [...invoiceToEdit.items];
-                            newItems[idx].imeis = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                            setInvoiceToEdit({ ...invoiceToEdit, items: newItems });
-                          }}
+                          readOnly
                           className="input-field"
                           style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}
                         />

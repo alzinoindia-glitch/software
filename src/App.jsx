@@ -17,7 +17,7 @@ const UniversalSearchModal = lazy(() => import('./components/UniversalSearchModa
 const PrintTemplates = lazy(() => import('./components/PrintTemplates'));
 import AdminAuthModal from './components/AdminAuthModal';
 import PinAccessModal from './components/PinAccessModal';
-import { getAuthenticatorIdentity } from './utils/authenticatorSession';
+import { getAuthenticatorIdentity, needsAuthenticatorLogin } from './utils/authenticatorSession';
 const CustomerStorefront = lazy(() => import('./components/CustomerStorefront'));
 const ProductScanDetailsModal = lazy(() => import('./components/ProductScanDetailsModal'));
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from './utils/productTerms';
@@ -193,9 +193,10 @@ export default function App() {
   const [theme, setTheme] = useState(() => getStorageData('THEME', 'cream')); // cream | dark
   // Role Mode ('admin' | 'cashier')
   const [role, setRole] = useState(() => initialRoute.role !== 'customer' ? initialRoute.role : getStorageData('ROLE', 'admin'));
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin');
-  const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier');
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(() => initialRoute.portal === 'admin' && needsAuthenticatorLogin('admin'));
+  const [isCashierAuthOpen, setIsCashierAuthOpen] = useState(() => initialRoute.portal === 'cashier' && needsAuthenticatorLogin('cashier'));
   const [cloudHydrated, setCloudHydrated] = useState(false);
+  const [cloudHydrationPending, setCloudHydrationPending] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState({});
   const [productPolicyCleanupReady, setProductPolicyCleanupReady] = useState(false);
   const [cashierTargetPath, setCashierTargetPath] = useState(() => window.location.pathname);
@@ -448,9 +449,12 @@ export default function App() {
   useEffect(() => {
     if (portal === 'customer' || (portal === 'admin' && isAdminAuthModalOpen) || (portal === 'cashier' && isCashierAuthOpen)) {
       setCloudHydrated(false);
+      setCloudHydrationPending(false);
+      window.dispatchEvent(new CustomEvent('alzino-cloud-sync-status', { detail: { key: 'CLOUD', status: 'saved' } }));
       return undefined;
     }
     let cancelled = false;
+    let hydrationGeneration = 0;
     setCloudHydrated(false);
     setProductPolicyCleanupReady(false);
     const setters = {
@@ -484,20 +488,46 @@ export default function App() {
     };
     const handleTaxonomyUpdated = event => pushCollectionToCloud('CUSTOM_TAXONOMY', event.detail?.taxonomy || getCustomTaxonomy());
     const handleTechniciansUpdated = event => pushCollectionToCloud('CUSTOM_TECHNICIANS', event.detail?.technicians || getCustomTechnicians());
+    const hydrateCloud = async () => {
+      const attempt = ++hydrationGeneration;
+      setCloudHydrated(false);
+      setCloudHydrationPending(true);
+      try {
+        const result = await pullAllFromCloud(setters);
+        if (cancelled || attempt !== hydrationGeneration) return;
+        if (result.success || result.reason === 'Supabase is not configured.') {
+          setCloudHydrated(true);
+          window.dispatchEvent(new CustomEvent('alzino-cloud-sync-status', { detail: { key: 'CLOUD', status: 'saved' } }));
+          return;
+        }
+        const message = result.error
+          ? `Store data could not be loaded from the cloud: ${result.error}`
+          : result.reason || 'Cloud data could not be loaded. Retry before editing store records.';
+        window.dispatchEvent(new CustomEvent('alzino-cloud-sync-status', {
+          detail: { key: 'CLOUD', status: result.error ? 'error' : 'paused', message, at: new Date().toISOString() }
+        }));
+      } catch (error) {
+        if (cancelled || attempt !== hydrationGeneration) return;
+        window.dispatchEvent(new CustomEvent('alzino-cloud-sync-status', {
+          detail: { key: 'CLOUD', status: 'error', message: `Store data could not be loaded from the cloud: ${error?.message || 'Connection failed.'}`, at: new Date().toISOString() }
+        }));
+      } finally {
+        if (!cancelled && attempt === hydrationGeneration) setCloudHydrationPending(false);
+      }
+    };
+    const retryCloudHydration = () => { hydrateCloud(); };
     window.addEventListener('alzino-cloud-sync-conflict', handleCloudConflict);
     window.addEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
     window.addEventListener('alzino:technicians-updated', handleTechniciansUpdated);
-    pullAllFromCloud(setters).then(result => {
-      if (cancelled) return;
-      if (result.success) setCloudHydrated(true);
-      else console.info('[CloudSync] Waiting for authorized cloud access:', result.reason || result.error);
-    });
+    window.addEventListener('alzino-cloud-hydration-retry', retryCloudHydration);
+    hydrateCloud();
     const unsubscribe = subscribeRealtimeSync(setters);
     return () => {
       cancelled = true;
       window.removeEventListener('alzino-cloud-sync-conflict', handleCloudConflict);
       window.removeEventListener('alzino:taxonomy-updated', handleTaxonomyUpdated);
       window.removeEventListener('alzino:technicians-updated', handleTechniciansUpdated);
+      window.removeEventListener('alzino-cloud-hydration-retry', retryCloudHydration);
       if (unsubscribe) unsubscribe();
     };
   }, [portal, isCashierAuthOpen, isAdminAuthModalOpen]);
@@ -775,11 +805,24 @@ export default function App() {
                 {Object.values(cloudSyncStatus).map(item => item.message).filter(Boolean).slice(-1)[0] || 'Your latest changes are saved on this device.'}
               </span>
               {!Object.values(cloudSyncStatus).some(item => item.status === 'conflict') && (
-                <button type="button" className="btn-secondary" onClick={retryPendingCloudWrites}>
+                <button type="button" className="btn-secondary" onClick={() => {
+                  if (cloudSyncStatus.CLOUD || cloudSyncStatus.REALTIME) window.dispatchEvent(new Event('alzino-cloud-hydration-retry'));
+                  else retryPendingCloudWrites();
+                }}>
                   Sync now
                 </button>
               )}
             </section>
+          )}
+
+          {!cloudHydrated && (cloudHydrationPending || cloudSyncStatus.CLOUD) && (portal === 'admin' || portal === 'cashier') && (
+            <div role="alertdialog" aria-modal="true" aria-labelledby="cloud-hydration-title" className="modal-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 1600, display: 'grid', placeItems: 'center', padding: '1rem', background: 'rgba(10, 24, 20, 0.78)' }}>
+              <section className="illoca-card" style={{ width: 'min(100%, 520px)', padding: '1.25rem', background: 'var(--surface-primary)', color: 'var(--text-primary)' }}>
+                <h2 id="cloud-hydration-title" style={{ margin: '0 0 0.5rem', fontSize: '1.15rem' }}>{cloudHydrationPending ? 'Loading store data' : 'Store data is not loaded'}</h2>
+                <p style={{ margin: '0 0 1rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{cloudHydrationPending ? 'Please wait while the latest inventory, invoices, supplier balances, and customer records load.' : cloudSyncStatus.CLOUD.message || 'Cloud data must load before store records can be safely edited.'}</p>
+                {!cloudHydrationPending && <button type="button" className="btn-primary" onClick={() => window.dispatchEvent(new Event('alzino-cloud-hydration-retry'))}>Retry loading store data</button>}
+              </section>
+            </div>
           )}
 
           {/* Main Tab Content */}
@@ -878,6 +921,8 @@ export default function App() {
             setInvoices={setInvoices}
             customers={customers}
             setCustomers={setCustomers}
+            repairJobs={repairJobs}
+            setRepairJobs={setRepairJobs}
             shopConfig={shopConfig}
             role={role}
             onPrintInvoice={handlePrintInvoice}

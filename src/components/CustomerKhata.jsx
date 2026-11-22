@@ -37,6 +37,8 @@ import {
 } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { openWhatsAppKhataReminder } from '../utils/whatsappAutomation';
+import { calculateCustomerSpend } from '../utils/customerAccounting';
+import { applyPaymentToInvoice } from '../utils/invoicePayments';
 
 const getRepairRecordId = job => String(job?.recordId || job?.id || [job?.jobId, job?.customerMobile || job?.customerPhone, job?.date, job?.deviceModel].join('|'));
 const invoiceMatchesRepair = (invoice, repair) => invoice.repairJobRef === getRepairRecordId(repair) || invoice.repairJobRef === repair.jobId;
@@ -221,11 +223,12 @@ export default function CustomerKhata({
         else if (type === 'repairs') smartId = `CUST-R-${numPart}`;
       }
 
-      // Compute total lifetime spend
-      const salesSpend = rec.invoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0);
-      const repairSpend = rec.repairs.reduce((sum, rep) => sum + (Number(rep.finalPrice || rep.finalCost || rep.estimatedCost) || 0), 0);
-      const computedTotal = salesSpend + repairSpend;
-      const totalSpent = Math.max(rec.totalSpent, computedTotal);
+      // Compute lifetime spend from invoices; delivered legacy repairs are a fallback.
+      const { salesSpend, repairSpend, totalSpent } = calculateCustomerSpend({
+        invoices: rec.invoices,
+        repairs: rec.repairs,
+        recordedTotal: rec.totalSpent
+      });
 
       // Compute balance dues
       const salesDue = rec.invoices.reduce((sum, inv) => sum + (Number(inv.balanceDue ?? inv.khataDue) || 0), 0);
@@ -515,6 +518,7 @@ export default function CustomerKhata({
     const due = Number(selectedCustomerForPayment.balanceDue) || 0;
     if (amt > due) { alert(`Payment cannot exceed the outstanding balance of ₹${due.toLocaleString()}.`); return; }
     let unapplied = amt;
+    const paymentDate = getLocalDateString();
     const updatedInvoices = invoices.map(invoice => {
       const invoicePhone = normalizePhone(invoice.customerPhone || invoice.phone);
       const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
@@ -524,8 +528,15 @@ export default function CustomerKhata({
       const invoiceDue = Math.max(0, Number(invoice.balanceDue ?? invoice.khataDue) || 0);
       const applied = Math.min(invoiceDue, unapplied);
       unapplied -= applied;
-      const balanceDue = invoiceDue - applied;
-      return { ...invoice, paidAmount: (Number(invoice.paidAmount) || 0) + applied, balanceDue, khataDue: balanceDue };
+      if (applied <= 0) return invoice;
+      return applyPaymentToInvoice(invoice, {
+        id: `KHATAPAY-${Date.now()}-${invoice.invoiceNo || 'BILL'}`,
+        date: paymentDate,
+        amount: applied,
+        mode: paymentMode,
+        reference: paymentUtr,
+        note: paymentNote
+      });
     });
     setInvoices(updatedInvoices);
     const updatedRepairs = repairJobs.map(job => {
@@ -533,9 +544,18 @@ export default function CustomerKhata({
       const selectedPhone = normalizePhone(selectedCustomerForPayment.phone);
       const matches = (selectedPhone && jobPhone === selectedPhone)
         || (!jobPhone && (job.customerName || '').trim().toLowerCase() === selectedCustomerForPayment.name.trim().toLowerCase());
-      const alreadyInvoiced = invoices.some(invoice => invoiceMatchesRepair(invoice, job));
+      const linkedInvoice = updatedInvoices.find(invoice => invoiceMatchesRepair(invoice, job));
+      if (linkedInvoice) {
+        if (!matches) return job;
+        return {
+          ...job,
+          balanceDue: Math.max(0, Number(linkedInvoice.balanceDue ?? linkedInvoice.khataDue) || 0),
+          paidAmount: Number(linkedInvoice.paidAmount) || 0,
+          paymentStatus: linkedInvoice.paymentStatus || (Number(linkedInvoice.balanceDue ?? linkedInvoice.khataDue) > 0 ? 'PARTIAL' : 'PAID')
+        };
+      }
       const jobDue = Math.max(0, (Number(job.finalPrice || job.finalCost || job.estimatedCost) || 0) - (Number(job.advancePaid) || 0));
-      if (!matches || alreadyInvoiced || job.status === 'Delivered' || unapplied <= 0 || jobDue <= 0) return job;
+      if (!matches || job.status === 'Delivered' || unapplied <= 0 || jobDue <= 0) return job;
       const applied = Math.min(jobDue, unapplied);
       unapplied -= applied;
       return { ...job, advancePaid: (Number(job.advancePaid) || 0) + applied, balanceDue: jobDue - applied, payments: [{ id: `KHATAPAY-${Date.now()}`, date: new Date().toISOString().slice(0, 10), amount: applied, mode: paymentMode, reference: paymentUtr, note: paymentNote }, ...(job.payments || [])] };

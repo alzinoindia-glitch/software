@@ -4,6 +4,7 @@ import { clearSsdIndexedDb } from './syncAndStorageEngine';
 import { clearAllProductImages, syncAllProductImagesToCloud, getPublishedProductImageUrls, getPublicProductImageUrlFromSignedUrl } from './productImageStore';
 import { getProductSellingPrice } from './storefrontProductRules';
 import { sanitizePublicSpecifications } from './productSpecifications';
+import { resolveCloudSnapshot } from './cloudSyncSnapshot';
 
 const STORE_STATE_TABLE = 'store_state';
 
@@ -323,15 +324,14 @@ const applyCloudSnapshotOrRestorePending = (orgId, key, cloudPayload, cloudVersi
 
   const pendingData = compactCloudPayload(key, localPayload);
   const serializedPending = serializePayload(pendingData);
-  const serializedCloud = serializePayload(cloudPayload);
-  if (serializedPending === serializedCloud) {
+  const resolution = resolveCloudSnapshot({ marker, localPayload: pendingData, cloudPayload, cloudVersion });
+  if (resolution.action === 'use-cloud') {
     clearPendingMarker(key);
     setter?.(cloudPayload);
     return cloudPayload;
   }
 
-  const hasMatchingBase = marker.baseVersion != null && Number(marker.baseVersion) === Number(cloudVersion);
-  if (hasMatchingBase) {
+  if (resolution.action === 'restore-local') {
     pendingCloudWrites.set(key, {
       serialized: serializedPending,
       data: pendingData,
@@ -349,7 +349,7 @@ const applyCloudSnapshotOrRestorePending = (orgId, key, cloudPayload, cloudVersi
   clearPendingMarker(key);
   conflictedDomains.add(key);
   versionByScope.set(scopeKey(orgId, key), Number(cloudVersion || 0));
-  lastCloudPayloads.set(scopeKey(orgId, key), serializedCloud);
+  lastCloudPayloads.set(scopeKey(orgId, key), serializePayload(cloudPayload));
   emitCloudSyncStatus(key, 'conflict', `An unsynced ${key} update conflicts with newer cloud data. Choose which version to keep.`);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('alzino-cloud-sync-conflict', {
@@ -588,6 +588,10 @@ export const pullAllFromCloud = async (setters = {}) => {
       if (!conflictedDomains.has(key)) try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
     }
   }
+  // pullAllFromCloud can restore locally persisted unsynced writes into the
+  // in-memory queue. Resume those immediately: the auth-ready event may have
+  // fired before this queue was reconstructed after a page reload.
+  retryPendingCloudWrites();
   return { success: true, count, source: STORE_STATE_TABLE };
 };
 
@@ -604,7 +608,7 @@ export const pullCollectionFromCloud = async (key, setter) => {
     .maybeSingle();
   if (error) return { success: false, error: error.message };
   const scope = scopeKey(orgId, key);
-  const payload = row?.payload ?? [];
+  let payload = row?.payload ?? [];
   if (row) {
     versionByScope.set(scope, Number(row.version || 1));
     lastCloudPayloads.set(scope, serializePayload(payload));
@@ -612,15 +616,22 @@ export const pullCollectionFromCloud = async (key, setter) => {
   } else {
     versionByScope.set(scope, 0);
     lastCloudPayloads.set(scope, serializePayload([]));
-    if (getKnownCloudDomains(orgId).has(key)) {
-      setter?.([]);
-      try { localStorage.setItem(`ALZINO_ERP_${key}`, '[]'); } catch {}
+  }
+  let hasPendingMarker = false;
+  try { hasPendingMarker = Boolean(localStorage.getItem(pendingMarkerKey(key))); } catch {}
+  const shouldApplySnapshot = Boolean(row) || getKnownCloudDomains(orgId).has(key) || hasPendingMarker;
+  if (shouldApplySnapshot) {
+    if (!row) {
+      pendingCloudWrites.delete(key);
+      if (debounceTimers[key]) clearTimeout(debounceTimers[key]);
+      conflictedDomains.delete(key);
+    }
+    payload = applyCloudSnapshotOrRestorePending(orgId, key, payload, Number(row?.version || 0), setter);
+    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+    if (!conflictedDomains.has(key)) {
       try { localStorage.removeItem(`ALZINO_ERP_SYNC_CONFLICT_${KEY_TO_DOMAIN[key]}`); } catch {}
     }
-  }
-  if (row) {
-    setter?.(payload);
-    try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(payload)); } catch {}
+    if (pendingCloudWrites.has(key)) retryPendingCloudWrites();
   }
   return { success: true, count: row ? 1 : 0, payload };
 };
@@ -694,19 +705,45 @@ export const subscribeRealtimeSync = (setters = {}) => {
   let cancelled = false;
   let channel = null;
   let activeOrgId = null;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+  let reconcileAfterReconnect = false;
+
+  const reportReconnectFailure = error => {
+    console.warn('[CloudSync] Realtime subscription error:', error);
+    emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
+    scheduleReconnect();
+  };
+
+  const scheduleReconnect = () => {
+    if (cancelled || reconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * (2 ** Math.min(reconnectAttempts, 5)));
+    reconnectAttempts++;
+    reconcileAfterReconnect = true;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      subscribeForCurrentUser().catch(reportReconnectFailure);
+    }, delay);
+  };
+
   const subscribeForCurrentUser = async () => {
     const orgId = await getActiveOrgId(client);
     if (cancelled) return;
     if (!orgId) {
-      if (channel) await client.removeChannel(channel);
+      const previousChannel = channel;
       channel = null;
       activeOrgId = null;
+      if (previousChannel) await client.removeChannel(previousChannel);
+      emitCloudSyncStatus('REALTIME', 'saved');
       return;
     }
     if (orgId === activeOrgId) return;
-    if (channel) await client.removeChannel(channel);
+    const previousChannel = channel;
+    channel = null;
+    activeOrgId = null;
+    if (previousChannel) await client.removeChannel(previousChannel);
     activeOrgId = orgId;
-    channel = client.channel(`store-state-${orgId}`)
+    const nextChannel = client.channel(`store-state-${orgId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: STORE_STATE_TABLE,
         filter: `organization_id=eq.${orgId}`
@@ -750,22 +787,59 @@ export const subscribeRealtimeSync = (setters = {}) => {
         lastCloudPayloads.set(scope, serialized);
         setters[key](row.payload);
         try { localStorage.setItem(`ALZINO_ERP_${key}`, JSON.stringify(row.payload)); } catch {}
-      })
-      .subscribe();
+      });
+    channel = nextChannel;
+    nextChannel.subscribe((status, error) => {
+      if (cancelled || channel !== nextChannel) return;
+      if (status === 'SUBSCRIBED') {
+        reconnectAttempts = 0;
+        if (!reconcileAfterReconnect) {
+          emitCloudSyncStatus('REALTIME', 'saved');
+          return;
+        }
+        reconcileAfterReconnect = false;
+        pullAllFromCloud(setters).then(result => {
+          if (cancelled || channel !== nextChannel) return;
+          if (result.success) emitCloudSyncStatus('REALTIME', 'saved');
+          else emitCloudSyncStatus('REALTIME', 'paused', result.error || result.reason || 'Live updates reconnected, but cloud records could not be refreshed.');
+        }).catch(reportReconnectFailure);
+        return;
+      }
+      if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return;
+      console.warn(`[CloudSync] Realtime channel ${status}:`, error || 'No error details provided.');
+      reconcileAfterReconnect = true;
+      emitCloudSyncStatus('REALTIME', 'paused', 'Live updates are reconnecting. Your store data remains saved locally; use Sync now to refresh cloud records.');
+      if (status === 'CHANNEL_ERROR') {
+        // Supabase retries channel errors; keep this channel current so its
+        // subsequent SUBSCRIBED callback can reconcile cloud state.
+        return;
+      }
+      // TIMEOUT and CLOSED channels will not complete the current subscription.
+      channel = null;
+      activeOrgId = null;
+      scheduleReconnect();
+    });
   };
-  subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+  subscribeForCurrentUser().catch(reportReconnectFailure);
   const handleAuthReady = () => {
     retryPendingCloudWrites();
-    subscribeForCurrentUser().catch(err => console.warn('[CloudSync] Realtime subscription error:', err));
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    subscribeForCurrentUser().catch(reportReconnectFailure);
   };
   window.addEventListener('alzino-cloud-auth-ready', handleAuthReady);
   window.addEventListener('alzino-cloud-auth-changed', handleAuthReady);
 
   return () => {
     cancelled = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     window.removeEventListener('alzino-cloud-auth-ready', handleAuthReady);
     window.removeEventListener('alzino-cloud-auth-changed', handleAuthReady);
-    if (channel) client.removeChannel(channel);
+    const activeChannel = channel;
+    channel = null;
+    activeOrgId = null;
+    if (activeChannel) client.removeChannel(activeChannel);
   };
 };
 

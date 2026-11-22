@@ -44,11 +44,17 @@ export const sumReplacementSettlement = (invoices = [], predicate = () => true, 
   getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
     .reduce((sum, entry) => {
       const settlement = entry.settlement || {};
+      if (settlement.direction === 'refund' && Number(entry.refundPendingAmount) > 0) return sum;
       if (!methodPredicate(settlement.method || '', settlement.direction || '', entry)) return sum;
       if (settlement.direction === 'collect') return sum + Number(settlement.amount || 0);
       if (settlement.direction === 'refund') return sum - Number(settlement.amount || 0);
       return sum;
     }, 0);
+
+/** Total customer refund liabilities that have not yet been paid. */
+export const sumPendingRefundLiabilities = (invoices = [], predicate = () => true) =>
+  getInvoiceTransactions(invoices, entry => (entry.type === 'refund' || entry.type === 'replacement') && predicate(entry))
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.refundPendingAmount) || 0), 0);
 
 export const isDateInReportRange = (date, dateFilter, todayStr, currentMonthStr) => {
   if (dateFilter === 'today') return String(date || '').slice(0, 10) === todayStr;
@@ -64,5 +70,27 @@ export const applyReturnKhataAdjustment = (customer, { outstandingCleared = 0, n
     ...customer,
     balanceDue: Math.max(0, (Number(customer?.balanceDue) || 0) - cleared) + added,
     ...(added > 0 && entry ? { khataEntries: [entry, ...(customer?.khataEntries || [])] } : {})
+  };
+};
+
+/** Bank/UPI refunds need a traceable reference before the return is finalized. */
+export const requiresReturnRefundReference = ({ action = '', direction = '', amount = 0, method = '' } = {}) => {
+  const refundAmount = Math.max(0, Number(amount) || 0);
+  const isRefund = action === 'refund' || (action === 'replacement' && direction === 'refund');
+  return isRefund && refundAmount > 0 && ['UPI', 'Bank transfer'].includes(String(method));
+};
+
+/** Keep an exchange refund payable visible until the customer is paid. */
+export const getReplacementRefundPaymentFields = ({ direction = '', amount = 0, method = '', reference = '' } = {}) => {
+  const refundAmount = Math.max(0, Number(amount) || 0);
+  if (direction !== 'refund' || refundAmount <= 0) return {};
+  const pending = method === 'Khata (pay later)';
+  return {
+    amount: refundAmount,
+    method: String(method || ''),
+    reference: String(reference || '').trim(),
+    paidAmount: pending ? 0 : refundAmount,
+    pendingAmount: pending ? refundAmount : 0,
+    status: pending ? 'pending' : 'paid'
   };
 };

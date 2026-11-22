@@ -2,7 +2,8 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, PackageCheck, RefreshCw, Search, RotateCcw } from 'lucide-react';
 import { getUpiQrUrl } from '../utils/barcode';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
-import { applyReturnKhataAdjustment } from '../utils/returnAccounting';
+import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference } from '../utils/returnAccounting';
+import { getReplacementUnitOptions, hasTrackedReplacementUnits } from '../utils/replacementUnitOptions';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
@@ -135,7 +136,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
   const replacementDelta = replacementTotal - availableReturnCredit;
   const settlementAmount = Math.abs(replacementDelta);
   const settlementDirection = replacementDelta > 0 ? 'collect' : replacementDelta < 0 ? 'refund' : 'even';
-  const exchangeSettlementOptions = settlementDirection === 'collect' ? ['Cash', 'UPI', 'Card', 'Khata due'] : ['Cash', 'UPI', 'Bank transfer'];
+  const exchangeSettlementOptions = settlementDirection === 'collect' ? ['Cash', 'UPI', 'Card', 'Khata due'] : ['Cash', 'UPI', 'Bank transfer', 'Khata (pay later)'];
   const effectiveSettlementMethod = exchangeSettlementOptions.includes(settlementMethod) ? settlementMethod : exchangeSettlementOptions[0];
   const upiAccounts = useMemo(() => {
     const configured = Array.isArray(shopConfig.upiAccounts) ? shopConfig.upiAccounts.filter((account) => account?.upiId) : [];
@@ -179,8 +180,11 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
     if (Number(returnAllowanceInput) < 0 || (returnAllowanceInput !== '' && Number(returnAllowanceInput) > returnValue + 0.01)) {
       setNotice({ kind: 'error', text: 'Return allowance must be between ₹0 and the original amount paid for the selected units.' }); return;
     }
-    if (action === 'refund' && refundAmount > 0 && refundMethod === 'UPI' && !settlementReference.trim()) {
-      setNotice({ kind: 'error', text: 'Enter the UPI transfer reference after sending the refund.' }); return;
+    const refundReferenceAmount = action === 'replacement' && settlementDirection === 'refund' ? settlementAmount : refundAmount;
+    const refundReferenceMethod = action === 'replacement' ? effectiveSettlementMethod : refundMethod;
+    if (requiresReturnRefundReference({ action, direction: settlementDirection, amount: refundReferenceAmount, method: refundReferenceMethod }) && !settlementReference.trim()) {
+      const referenceName = refundReferenceMethod === 'UPI' ? 'UPI UTR' : 'bank transfer';
+      setNotice({ kind: 'error', text: `Enter the ${referenceName} reference after sending the refund.` }); return;
     }
     if (action === 'replacement' && (!replacementLines.length || resolvedReplacementLines.some((line) => !line.product || Number(line.quantity) < 1))) {
       setNotice({ kind: 'error', text: 'Add at least one replacement product and set a valid quantity.' }); return;
@@ -209,7 +213,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       });
       if (hasInsufficientStock) { setNotice({ kind: 'error', text: 'A replacement product does not have enough available stock for the requested quantities.' }); return; }
       const invalidImeiSelection = resolvedReplacementLines.some((line) => {
-        const tracked = (line.product.imeis || []).length > 0 || (line.product.units || []).length > 0;
+        const tracked = hasTrackedReplacementUnits(line.product);
         return tracked && (line.imeis || []).length !== Number(line.quantity);
       });
       if (invalidImeiSelection) { setNotice({ kind: 'error', text: 'Select the required IMEI or unit for every tracked replacement quantity.' }); return; }
@@ -271,6 +275,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       const lineOutstandingCleared = Math.min(lineOutstandingShare, lineAllowance);
       const lineCredit = Math.max(0, lineAllowance - lineOutstandingCleared);
       const item = returnLine.item;
+      const exchangeRefund = action === 'replacement' && linePosition === 0
+        ? getReplacementRefundPaymentFields({ direction: settlementDirection, amount: settlementAmount, method: effectiveSettlementMethod, reference: settlementReference })
+        : {};
       return {
         id: `${groupId}-${linePosition + 1}`, groupId, date: transactionDate, status: 'completed', type: action, ...(action === 'replacement' ? { replacementMode } : {}),
         originalItemIndex: Number(returnLine.index), originalProductId: item.id,
@@ -283,11 +290,12 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         invoicePaidAtReturn: invoicePaid, invoiceOutstandingAtReturn: invoiceOutstanding,
         outstandingCleared: lineOutstandingCleared, availableReturnCredit: lineCredit,
         allowanceReason: lineAllowance + 0.01 < returnLine.returnValue ? 'Admin-approved partial return / used item allowance' : '',
-        refundAmount: action === 'refund' ? lineCredit : 0, refundMethod: action === 'refund' ? refundMethod : '',
-        refundPaidAmount: action === 'refund' && refundMethod !== 'Khata (pay later)' ? lineCredit : 0,
-        refundPendingAmount: action === 'refund' && refundMethod === 'Khata (pay later)' ? lineCredit : 0,
-        refundStatus: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid') : '',
-        refundReference: action === 'refund' ? settlementReference.trim() : '',
+        refundAmount: action === 'refund' ? lineCredit : (exchangeRefund.amount || 0),
+        refundMethod: action === 'refund' ? refundMethod : (exchangeRefund.method || ''),
+        refundPaidAmount: action === 'refund' ? (refundMethod !== 'Khata (pay later)' ? lineCredit : 0) : (exchangeRefund.paidAmount || 0),
+        refundPendingAmount: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? lineCredit : 0) : (exchangeRefund.pendingAmount || 0),
+        refundStatus: action === 'refund' ? (refundMethod === 'Khata (pay later)' ? 'pending' : 'paid') : (exchangeRefund.status || ''),
+        refundReference: action === 'refund' ? settlementReference.trim() : (exchangeRefund.reference || ''),
         condition, restocked: Boolean(restock), returnedImeis: returnLine.returnIdentifiers,
         settlement: action === 'replacement' && linePosition === 0 ? { direction: settlementDirection, amount: settlementAmount, method: settlementDirection === 'even' ? '' : effectiveSettlementMethod, reference: settlementReference.trim(), upiAccountId: effectiveSettlementMethod === 'UPI' ? selectedUpiAccount?.id || '' : '', paymentConfirmed: settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' ? paymentConfirmed : undefined } : null,
         replacements: action === 'replacement' && linePosition === 0 ? replacementRecords : [],
@@ -419,7 +427,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       <div style={{ position: 'relative', marginBottom: 12 }}><Search size={17} style={{ position: 'absolute', top: 12, left: 11, color: '#70847c' }} /><input style={{ ...inputStyle, paddingLeft: 36 }} value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search invoice, customer, product, or exchange type" /></div>
       {returnHistory.length ? returnHistory.map(({ invoice: item, entry }) => <article key={`${item.invoiceNo || item.id}-${entry.id}`} style={{ padding: 13, border: '1px solid #e1eae6', borderRadius: 11, marginBottom: 9, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'center' }}>
         <div><strong>{item.invoiceNo || item.id} · {entry.type === 'refund' ? 'Refund' : entry.replacementMode === 'full-replacement' ? 'Full replacement' : entry.replacementMode === 'partial-replacement' ? 'Partial replacement' : 'Product exchange'}</strong><div style={{ color: '#667a73', fontSize: 13, marginTop: 4 }}>{item.customerName || 'Counter Customer'}{item.customerPhone ? ` · ${item.customerPhone}` : ''} · {new Date(entry.date || 0).toLocaleString()}</div><div style={{ marginTop: 5, fontSize: 13 }}>Returned: {entry.originalProductName} × {entry.quantity}{entry.type === 'replacement' ? ` · Replaced with: ${describeReplacement(entry) || '—'}` : ''}</div><small style={{ color: '#667a73' }}>{entry.restocked ? 'Returned item restocked' : 'Returned item not restocked'} · {entry.condition || 'Condition not recorded'}</small></div>
-        <div style={{ display: 'grid', justifyItems: 'end', gap: 6 }}><strong style={{ textAlign: 'right', color: entry.refundPendingAmount > 0 || entry.settlement?.direction === 'collect' ? '#a35d00' : '#087452' }}>{entry.type === 'refund' ? entry.refundPendingAmount > 0 ? `Khata refund pending ${money(entry.refundPendingAmount)}` : `Refund ${money(entry.refundAmount)}` : entry.settlement?.direction === 'collect' ? `Collect ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refund ${money(entry.settlement.amount)}` : 'Settled even'}</strong>{entry.refundPendingAmount > 0 && <button type="button" onClick={() => markKhataRefundPaid(item, entry)} style={{ ...inputStyle, minHeight: 34, padding: '0.35rem 0.6rem', width: 'auto', cursor: 'pointer', color: '#fff', background: '#08634d', fontWeight: 700 }}>Mark refund paid</button>}</div>
+        <div style={{ display: 'grid', justifyItems: 'end', gap: 6 }}><strong style={{ textAlign: 'right', color: entry.refundPendingAmount > 0 || entry.settlement?.direction === 'collect' ? '#a35d00' : '#087452' }}>{entry.refundPendingAmount > 0 ? `Khata refund pending ${money(entry.refundPendingAmount)}` : entry.type === 'refund' ? `Refund ${money(entry.refundAmount)}` : entry.settlement?.direction === 'collect' ? `Collect ${money(entry.settlement.amount)}` : entry.settlement?.direction === 'refund' ? `Refund ${money(entry.settlement.amount)}` : 'Settled even'}</strong>{entry.refundPendingAmount > 0 && <button type="button" onClick={() => markKhataRefundPaid(item, entry)} style={{ ...inputStyle, minHeight: 34, padding: '0.35rem 0.6rem', width: 'auto', cursor: 'pointer', color: '#fff', background: '#08634d', fontWeight: 700 }}>Mark refund paid</button>}</div>
       </article>) : <div style={{ padding: 28, textAlign: 'center', color: '#71837c' }}>No completed return or replacement records found.</div>}
     </div> : <div className="returns-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 0.8fr) minmax(0, 1.6fr)', gap: 16, alignItems: 'start' }}>
 
@@ -531,7 +539,7 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
             {action === 'refund' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, alignItems: 'end' }}>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Refund amount / approved allowance (₹)<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="0" max={returnValue} step="0.01" value={returnAllowanceInput === '' ? returnValue : returnAllowanceInput} onChange={(event) => setReturnAllowanceInput(event.target.value)} /><small style={{ color: '#667a73' }}>Returned line value: {money(returnValue)}. Enter a lower amount for a partial refund; any unpaid Khata share is cleared first.</small></label>
               <label style={{ fontSize: 12, fontWeight: 700 }}>Refund method<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={refundMethod} onChange={(event) => setRefundMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Khata (pay later)</option></select>{refundMethod === 'Khata (pay later)' && <small style={{ display: 'block', marginTop: 4, color: '#a35d00' }}>This amount will be recorded as pending for the customer to collect later.</small>}</label>
-              {refundMethod === 'UPI' && <label style={{ fontSize: 12, fontWeight: 700 }}>Refund UTR / transfer reference<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={settlementReference} onChange={(event) => setSettlementReference(event.target.value)} placeholder="Enter transfer reference" /></label>}
+              {['UPI', 'Bank transfer'].includes(refundMethod) && <label style={{ fontSize: 12, fontWeight: 700 }}>Refund {refundMethod === 'UPI' ? 'UTR' : 'bank transfer'} reference<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={settlementReference} onChange={(event) => setSettlementReference(event.target.value)} placeholder={refundMethod === 'UPI' ? 'Enter UPI UTR' : 'Enter bank transfer reference'} /></label>}
               <div style={{ padding: 10, background: refundMethod === 'Khata (pay later)' ? '#fff8e8' : '#f3f7f5', borderRadius: 9 }}><small style={{ color: '#667a73' }}>{refundMethod === 'Khata (pay later)' ? 'Customer Khata refund pending' : 'Refund to customer'}</small><strong style={{ display: 'block', fontSize: 20, color: refundMethod === 'Khata (pay later)' ? '#a35d00' : '#087452', marginTop: 2 }}>{money(refundAmount)}</strong></div>
             </div> : <div style={{ display: 'grid', gap: 10 }}>
               <p style={{ margin: '0 0 2px', color: '#667a73', fontSize: 13 }}>{replacementMode === 'full-replacement' ? 'Replace all remaining units on each selected invoice line.' : replacementMode === 'partial-replacement' ? 'Return only the quantity selected for each line; the remaining units stay on the original invoice.' : 'Exchange the selected returned items for one or more products from stock.'}</p>
@@ -540,11 +548,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
               {resolvedReplacementLines.map((line) => {
                 const otherQty = replacementLines.filter((other) => other.rowId !== line.rowId && String(other.productId) === String(line.productId)).reduce((sum, other) => sum + Number(other.quantity || 0), 0);
                 const maxAvailable = Number(line.product?.stock || 0) - otherQty;
-                const isTracked = line.product && ((line.product.imeis || []).length > 0 || (line.product.units || []).length > 0);
-                const availableImeiOptions = line.product ? [
-                  ...(line.product.units || []).map((unit) => ({ value: String(unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''), label: `${unit.imei1 || unit.imei2 || unit.barcode || unit.id || ''}${unit.color ? ` · ${unit.color}` : ''}` })).filter((option) => option.value),
-                  ...(line.product.imeis || []).filter((imei) => !(line.product.units || []).some((unit) => [unit.imei1, unit.imei2, unit.barcode, unit.id].includes(imei))).map((imei) => ({ value: String(imei), label: String(imei) })),
-                ] : [];
+                const isTracked = hasTrackedReplacementUnits(line.product);
+                const availableImeiOptions = getReplacementUnitOptions(line.product);
                 return <div key={line.rowId} className="replacement-product-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 2fr) minmax(70px, .6fr) minmax(105px, .9fr) auto', gap: 8, alignItems: 'end', padding: 10, background: '#f7faf8', border: '1px solid #dfe9e4', borderRadius: 10 }}>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Product<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={line.productId} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, productId: event.target.value, quantity: 1, imeis: [], discountPerUnit: 0 } : entry))}><option value="">Choose stock product</option>{[...matchingStockProducts, ...(line.product && !matchingStockProducts.some((product) => String(product.id) === String(line.product.id)) ? [line.product] : [])].map((product) => { const source = getProductSourceSummary(product); return <option key={product.id} value={product.id}>{product.name} · {product.stock} left · supplier {source.suppliers.join(', ') || product.supplierName || '—'} · buy {money(source.cost)} · sell {money(product.sellPrice ?? product.price)}</option>; })}</select></label>
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Qty<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} type="number" min="1" max={Math.max(1, maxAvailable)} value={line.quantity} onChange={(event) => setReplacementLines((current) => current.map((entry) => entry.rowId === line.rowId ? { ...entry, quantity: Math.min(Math.max(1, maxAvailable), Math.max(1, Number(event.target.value) || 1)), imeis: (entry.imeis || []).slice(0, Math.max(1, Number(event.target.value) || 1)) } : entry))} /></label>
@@ -565,6 +570,8 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
                 <span>{settlementDirection === 'collect' ? 'Collect from customer' : settlementDirection === 'refund' ? 'Refund to customer' : 'Balance'}<strong style={{ display: 'block', marginTop: 4, color: settlementDirection === 'even' ? '#087452' : '#a35d00' }}>{money(settlementAmount)}</strong></span>
               </div>
               {settlementDirection !== 'even' && <label style={{ fontSize: 12, fontWeight: 700 }}>{settlementDirection === 'collect' ? 'Collect / record difference by' : 'Refund / credit difference by'}<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={effectiveSettlementMethod} onChange={(event) => setSettlementMethod(event.target.value)}>{exchangeSettlementOptions.map((method) => <option key={method}>{method}</option>)}</select></label>}
+              {settlementDirection === 'refund' && effectiveSettlementMethod === 'Khata (pay later)' && <small style={{ color: '#a35d00' }}>Record this as a pending refund liability. Use the return register to mark it paid later.</small>}
+              {action === 'replacement' && requiresReturnRefundReference({ action, direction: settlementDirection, amount: settlementAmount, method: effectiveSettlementMethod }) && <label style={{ fontSize: 12, fontWeight: 700 }}>Refund {effectiveSettlementMethod === 'UPI' ? 'UTR' : 'bank transfer'} reference<input style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={settlementReference} onChange={(event) => setSettlementReference(event.target.value)} placeholder={effectiveSettlementMethod === 'UPI' ? 'Enter UTR after sending refund' : 'Enter bank transfer reference'} /></label>}
               {settlementDirection === 'collect' && effectiveSettlementMethod === 'UPI' && <div style={{ padding: 12, border: '1px solid #d5e1dc', borderRadius: 10, background: '#f7faf8' }}>
                 {upiAccounts.length > 1 && <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Receive payment into<select style={{ ...inputStyle, display: 'block', marginTop: 5 }} value={selectedUpiAccount?.id || ''} onChange={(event) => setSelectedUpiAccountId(event.target.value)}>{upiAccounts.map((account, index) => <option key={account.id || index} value={account.id || ''}>{account.bankName || account.accountName || 'UPI account'} · {account.upiId}</option>)}</select></label>}
                 {selectedUpiAccount && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><img src={getUpiQrUrl(selectedUpiAccount.upiId, selectedUpiAccount.accountName || shopConfig.name || 'ALZINO', settlementAmount, `${invoice?.invoiceNo || 'RETURN'}-EXCHANGE`)} alt={`UPI QR for ${money(settlementAmount)}`} width="120" height="120" style={{ objectFit: 'contain', background: '#fff', border: '1px solid #e1eae6', borderRadius: 8 }} /><div><strong>Collect {money(settlementAmount)} by UPI</strong><div style={{ fontSize: 12, color: '#667a73', marginTop: 4 }}>{selectedUpiAccount.bankName || selectedUpiAccount.accountName || 'Shop account'} · {selectedUpiAccount.upiId}</div></div></div>}

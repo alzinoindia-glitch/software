@@ -1,5 +1,5 @@
 import { getLocalDateString } from '../utils/dateUtils';
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   TrendingUp,
   IndianRupee,
@@ -46,6 +46,18 @@ export default function ExecutiveDashboard({
   onPrintInvoice = () => {},
   onOpenProductInventory = () => {}
 }) {
+  useEffect(() => () => {
+    document.body.classList.remove('dashboard-report-print-mode');
+  }, []);
+
+  const handlePrintDayReport = () => {
+    document.body.classList.add('dashboard-report-print-mode');
+    window.addEventListener('afterprint', () => {
+      document.body.classList.remove('dashboard-report-print-mode');
+    }, { once: true });
+    window.requestAnimationFrame(() => window.print());
+  };
+
   const [agingFilter, setAgingFilter] = useState('all'); // 'all' | '30' | '60' | '90'
   const [lowStockDisplayLimit, setLowStockDisplayLimit] = useState(5);
   const [showAddClaimModal, setShowAddClaimModal] = useState(false);
@@ -282,7 +294,7 @@ export default function ExecutiveDashboard({
   };
 
   return (
-    <div className="app-module-container" style={{ paddingBottom: '2.5rem' }}>
+    <div className="app-module-container dashboard-report-print" style={{ paddingBottom: '2.5rem' }}>
       
       {/* Top Banner: Store Operational Control Center */}
       <div style={{
@@ -326,7 +338,7 @@ export default function ExecutiveDashboard({
         </div>
 
         {/* Quick Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div className="dashboard-report-no-print" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
             onClick={() => onNavigateTab('pos')}
             className="btn-primary"
@@ -344,7 +356,7 @@ export default function ExecutiveDashboard({
             <span>Stock & Rack/Bin</span>
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={handlePrintDayReport}
             className="btn-secondary"
             style={{ padding: '0.5rem 0.9rem', fontSize: '0.82rem' }}
           >

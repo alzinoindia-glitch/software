@@ -1,5 +1,7 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
+import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
+import { getSalePriceBreakdown } from '../utils/gstPricing';
 import { 
   FileText, 
   Search, 
@@ -37,6 +39,8 @@ export default function InvoicesHub({
   setInvoices = () => {}, 
   customers = [],
   setCustomers = () => {},
+  repairJobs = [],
+  setRepairJobs = () => {},
   role = 'cashier',
   shopConfig = {}, 
   onPrintInvoice = () => {},
@@ -157,51 +161,49 @@ export default function InvoicesHub({
 
   // Open Edit Modal
   const handleOpenEdit = (inv) => {
+    if (role !== 'admin') return;
     setInvoiceToEdit(JSON.parse(JSON.stringify(inv)));
     setEditingInvoiceModal(true);
   };
 
   // Save Edit Changes
   const handleSaveInvoiceEdit = (reprintFormat = null) => {
-    if (!invoiceToEdit) return;
+    if (role !== 'admin' || !invoiceToEdit) return;
 
     const isNonGstInv = invoiceToEdit.isNonGst;
-    const subtotal = invoiceToEdit.items.reduce((s, it) => s + (Number(it.rate) * Number(it.qty)), 0);
     const disc = Number(invoiceToEdit.discount) || 0;
-    const usesExclusivePrices = invoiceToEdit.priceIncludesGst === false;
-    const taxBeforeDiscount = isNonGstInv ? 0 : invoiceToEdit.items.reduce((sum, item) => {
-      const lineAmount = Number(item.rate) * Number(item.qty);
-      const rate = Number(item.gstRate ?? 18);
-      return sum + (usesExclusivePrices ? lineAmount * rate / 100 : lineAmount - lineAmount / (1 + rate / 100));
-    }, 0);
-    const taxable = isNonGstInv ? subtotal : usesExclusivePrices ? subtotal : subtotal - taxBeforeDiscount;
-    const grand = Math.max(0, Math.round(subtotal + (usesExclusivePrices ? taxBeforeDiscount : 0) - disc));
-    const gst = taxBeforeDiscount;
+    const itemBreakdowns = invoiceToEdit.items.map(item => getSalePriceBreakdown(
+      item.rate,
+      item.qty,
+      Number(item.gstRate ?? 18),
+      typeof item.priceIncludesGst === 'boolean' ? item.priceIncludesGst : invoiceToEdit.priceIncludesGst !== false,
+      !isNonGstInv
+    ));
+    const taxable = itemBreakdowns.reduce((sum, item) => sum + item.taxable, 0);
+    const gst = itemBreakdowns.reduce((sum, item) => sum + item.gst, 0);
+    const grand = Math.max(0, Math.round((itemBreakdowns.reduce((sum, item) => sum + item.gross, 0) - disc + Number.EPSILON) * 100) / 100);
     const cgst = isNonGstInv ? 0 : gst / 2;
     const sgst = isNonGstInv ? 0 : gst / 2;
 
     const originalInvoice = invoices.find(invoice => invoice.invoiceNo === invoiceToEdit.invoiceNo) || invoiceToEdit;
-    const previousDue = getInvoiceBalance(originalInvoice);
     const existingPaid = Number(invoiceToEdit.paidAmount ?? (originalInvoice.paymentMode === 'Khata' ? 0 : originalInvoice.grandTotal)) || 0;
-    const paid = Math.min(grand, Math.max(0, existingPaid));
+    if (existingPaid > grand) {
+      alert(`The corrected total ₹${grand.toLocaleString('en-IN')} is below recorded payments ₹${existingPaid.toLocaleString('en-IN')}. Record a refund or payment adjustment before saving.`);
+      return;
+    }
+    const paid = Math.max(0, existingPaid);
     const khata = invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
       ? 0
       : Math.max(0, grand - paid);
 
     const updatedInvoice = {
       ...invoiceToEdit,
-      items: invoiceToEdit.items.map(it => ({
+      items: invoiceToEdit.items.map((it, index) => ({
         ...it,
-        total: Number(it.rate) * Number(it.qty) + (usesExclusivePrices && !isNonGstInv
-          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
-          : 0),
-        taxable: isNonGstInv || usesExclusivePrices
-          ? Number(it.rate) * Number(it.qty)
-          : (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100),
-        gstAmount: isNonGstInv ? 0 : (usesExclusivePrices
-          ? Number(it.rate) * Number(it.qty) * (Number(it.gstRate ?? 18) / 100)
-          : Number(it.rate) * Number(it.qty) - (Number(it.rate) * Number(it.qty)) / (1 + Number(it.gstRate ?? 18) / 100)),
-        profit: (Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)
+        total: itemBreakdowns[index].gross,
+        taxable: itemBreakdowns[index].taxable,
+        gstAmount: itemBreakdowns[index].gst,
+        profit: itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
       })),
       taxableAmount: taxable,
       cgstTotal: cgst,
@@ -213,26 +215,37 @@ export default function InvoicesHub({
       paymentStatus: invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
         ? 'EMI_SANCTIONED'
         : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: invoiceToEdit.items.reduce((s, it) => s + ((Number(it.rate) - (Number(it.buyPrice) || 0)) * Number(it.qty)), 0) - disc
+      totalProfit: invoiceToEdit.items.reduce((sum, it, index) => sum + itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty), 0) - disc
     };
 
-    setInvoices(prev => prev.map(inv => inv.invoiceNo === updatedInvoice.invoiceNo ? updatedInvoice : inv));
+    if (hasInvoiceStockChanges(originalInvoice, updatedInvoice)) {
+      alert('Quantity and IMEI/serial changes must be processed through Returns & Replacements so stock and supplier batches remain accurate. Other invoice corrections were not saved.');
+      return;
+    }
 
-    // Update customer if exists
-    if (updatedInvoice.customerPhone) {
-      setCustomers(prev => prev.map(c => {
-        if (c.phone && c.phone.replace(/\D/g, '') === updatedInvoice.customerPhone.replace(/\D/g, '')) {
-          const updatedCustomerDue = Math.max(0, Number(c.balanceDue || 0) + khata - previousDue);
-          return {
-            ...c,
-            balanceDue: updatedCustomerDue,
-            totalSpent: Math.max(0, Number(c.totalSpent || 0) + grand - (Number(originalInvoice.grandTotal) || 0)),
-            name: updatedInvoice.customerName || c.name,
-            address: updatedInvoice.customerAddress || c.address,
-            gstin: updatedInvoice.customerGstin || c.gstin
-          };
-        }
-        return c;
+    setInvoices(prev => prev.map(inv => inv.invoiceNo === updatedInvoice.invoiceNo ? updatedInvoice : inv));
+    setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev, originalInvoice, updatedInvoice));
+    const linkedRepair = repairJobs.find(job =>
+      (updatedInvoice.repairJobRef && [job.recordId, job.jobId].some(value => String(value || '') === String(updatedInvoice.repairJobRef)))
+      || (updatedInvoice.repairJobId && String(job.jobId) === String(updatedInvoice.repairJobId))
+      || (job.invoiceNo && String(job.invoiceNo) === String(updatedInvoice.invoiceNo))
+    );
+    if (linkedRepair) {
+      setRepairJobs(prev => prev.map(job => {
+        const isLinkedJob = linkedRepair.recordId
+          ? job.recordId === linkedRepair.recordId
+          : job.jobId === linkedRepair.jobId;
+        return isLinkedJob ? {
+          ...job,
+          customerName: updatedInvoice.customerName || job.customerName,
+          customerMobile: updatedInvoice.customerPhone || job.customerMobile,
+          invoiceNo: updatedInvoice.invoiceNo,
+          finalPrice: grand,
+          billedAt: grand,
+          paidAmount: paid,
+          balanceDue: khata,
+          paymentStatus: updatedInvoice.paymentStatus
+        } : job;
       }));
     }
 
@@ -997,6 +1010,10 @@ export default function InvoicesHub({
                 Customer Information on Bill
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.65rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>Invoice Date</label>
+                  <input type="date" value={String(invoiceToEdit.date || todayStr).slice(0, 10)} onChange={event => setInvoiceToEdit({ ...invoiceToEdit, date: event.target.value })} className="input-field" />
+                </div>
                 <div>
                   <label style={{ fontSize: '0.72rem', fontWeight: 600, display: 'block', marginBottom: '0.2rem' }}>
                     Customer Full Name *

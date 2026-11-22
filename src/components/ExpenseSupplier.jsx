@@ -20,9 +20,9 @@ import { getPurchaseCostBreakdown } from '../utils/gstPricing';
 import { countUniqueSupplierBills, getNetSupplierAllocations } from '../utils/supplierAccounting';
 import { applySupplierPayment } from '../utils/supplierPayments';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
-import { parseSupplierPdfItems } from '../utils/supplierPdfParser';
+import { parseSupplierPdfPages, supplierPdfOcrWordsToItems } from '../utils/supplierPdfParser';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: null, sellPrice: '', sellPriceIncludesGst: null, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
@@ -51,6 +51,43 @@ const inferGstInclusionFromText = text => {
   if (/\b(inclusive of|includes?|included in|incl\.?\s*)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(is\s+)?included\b|\b(?:gst|tax)\s+inclusive\b/.test(normalized)) return true;
   if (/\b(exclusive of|excludes?|excluding|plus|extra)\s*(all\s+)?(applicable\s+)?(gst|tax(?:es)?)\b|\b(gst|tax)\s+(will be\s+)?charged extra\b/.test(normalized)) return false;
   return null;
+};
+
+const readScannedSupplierPdf = async (pdf, onProgress) => {
+  if (pdf.numPages > 20) throw new Error('This bill has more than 20 pages. Split it into smaller files or enter the remaining lines manually.');
+  const { createWorker } = await import('tesseract.js');
+  let worker;
+  try {
+    worker = await createWorker('eng', 1, {
+      logger: message => {
+        if (message.status === 'recognizing text' && Number.isFinite(message.progress)) {
+          onProgress(`Reading scanned bill: ${Math.round(message.progress * 100)}%`);
+        } else if (message.status) {
+          onProgress(`Preparing bill reader: ${message.status}`);
+        }
+      }
+    });
+    const pages = [];
+    for (let index = 1; index <= pdf.numPages; index++) {
+      onProgress(`Scanning bill page ${index} of ${pdf.numPages}…`);
+      const page = await pdf.getPage(index);
+      const scale = 2;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) throw new Error('Could not prepare a page for OCR on this device.');
+      await page.render({ canvasContext: context, viewport }).promise;
+      const { data } = await worker.recognize(canvas);
+      pages.push(supplierPdfOcrWordsToItems(data.words, viewport, scale));
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    return pages;
+  } finally {
+    if (worker) await worker.terminate();
+  }
 };
 
 export default function ExpenseSupplier({ 
@@ -96,6 +133,7 @@ export default function ExpenseSupplier({
   const [inwardDocument, setInwardDocument] = useState(null);
   const [inwardGstHint, setInwardGstHint] = useState(null);
   const [isImportingBill, setIsImportingBill] = useState(false);
+  const [inwardImportStatus, setInwardImportStatus] = useState('');
   const [inwardInvoiceNumber, setInwardInvoiceNumber] = useState('');
   const [inwardDate, setInwardDate] = useState(getLocalDateString());
   const [supplierBillFilter, setSupplierBillFilter] = useState('all');
@@ -205,6 +243,8 @@ export default function ExpenseSupplier({
       identifiers: bill.identifiers || [], imei1Values: bill.imei1Values || [], imei2Values: bill.imei2Values || []
     }]).map(line => ({
       ...newInwardLine(), productId: line.productId || '', quantity: String(line.quantity || 1), unitCost: String(line.unitCostEntered ?? line.unitCost ?? ''), unitCostIncludesGst: line.unitCostIncludesGst !== false,
+      sellPrice: String(inventory.find(item => String(item.id) === String(line.productId))?.sellPrice ?? ''),
+      sellPriceIncludesGst: line.sellPriceIncludesGst ?? inventory.find(item => String(item.id) === String(line.productId))?.sellPriceIncludesGst ?? true,
       identifiers: [...(line.identifiers || [])], imei1Values: [...(line.imei1Values || [])], imei2Values: [...(line.imei2Values || [])], importedName: line.productName || ''
     }));
     setEditingBillId(bill.id);
@@ -222,21 +262,32 @@ export default function ExpenseSupplier({
     setInwardDocument(file);
     setInwardGstHint(null);
     setIsImportingBill(true);
+    setInwardImportStatus('Reading supplier bill…');
     if (/\.pdf$/i.test(file.name)) {
       try {
+        if (file.size > 30 * 1024 * 1024) throw new Error('PDF is over 30 MB. Compress it or add the bill lines manually.');
         const [pdfjs, workerUrl] = await Promise.all([
           import('pdfjs-dist/build/pdf.mjs'),
           import('pdfjs-dist/build/pdf.worker.min.mjs?url')
         ]);
         pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-        const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
+        const pageContents = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
           const page = await pdf.getPage(index + 1);
           const content = await page.getTextContent();
           return content.items;
         }));
-        const parsed = parseSupplierPdfItems(pages.flat());
-        const detected = parsed.includesGst ?? inferGstInclusionFromText(pages.flat().map(item => item.str || '').join(' '));
+        let parsed = parseSupplierPdfPages(pageContents);
+        let scannedOcrUsed = false;
+        let recognizedPages = pageContents;
+        if (!parsed.lines.length) {
+          scannedOcrUsed = true;
+          setInwardImportStatus('Product table not found. Starting on-device text recognition…');
+          recognizedPages = await readScannedSupplierPdf(pdf, setInwardImportStatus);
+          parsed = parseSupplierPdfPages(recognizedPages);
+        }
+        const billText = recognizedPages.flat().map(item => item.str || '').join(' ');
+        const detected = parsed.includesGst ?? inferGstInclusionFromText(billText);
         if (parsed.invoiceNumber) setInwardInvoiceNumber(parsed.invoiceNumber);
         if (parsed.invoiceDate) setInwardDate(parsed.invoiceDate);
         if (parsed.lines.length) {
@@ -258,19 +309,22 @@ export default function ExpenseSupplier({
           });
           setInwardItems(lines);
           setInwardGstHint(detected === null ? null : { includesGst: detected, source: 'uploaded PDF' });
-          alert(`Read ${lines.length} product line(s) from the PDF. Check each name, HSN, quantity, cost and GST setting, then match it to stock or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
+          alert(`${scannedOcrUsed ? 'Recognized' : 'Read'} ${lines.length} product line(s) from the ${scannedOcrUsed ? 'scanned PDF' : 'PDF'}. Verify every name, HSN, quantity, cost and GST setting, then match each product or choose “Add a new product”. Nothing is added to inventory until you submit the bill.`);
         } else {
-          alert('The PDF text was readable, but no product table could be identified. Enter bill lines manually or upload an Excel/CSV file.');
+          alert(parsed.hasSelectableText
+            ? 'The PDF contains selectable text, but its product table could not be identified. Add bill lines manually or upload an Excel/CSV file.'
+            : 'The scanned PDF could not be read confidently. Add bill lines manually or upload an Excel/CSV file; no inventory was changed.');
         }
       } catch (error) {
         console.error('Could not read supplier bill PDF:', error);
-        alert(`Could not read this PDF: ${error.message || 'check that it contains selectable text'}. You can still enter the bill lines manually.`);
+        alert(`Could not read this PDF: ${error.message || 'the file may be damaged or unsupported'}. You can still enter the bill lines manually.`);
       } finally {
         setIsImportingBill(false);
+        setInwardImportStatus('');
       }
       return;
     }
-    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); return; }
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) { setIsImportingBill(false); setInwardImportStatus(''); return; }
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -317,6 +371,7 @@ export default function ExpenseSupplier({
       alert(`Could not read this bill spreadsheet: ${error.message || 'check the file format'}`);
     } finally {
       setIsImportingBill(false);
+      setInwardImportStatus('');
     }
   };
 
@@ -326,9 +381,18 @@ export default function ExpenseSupplier({
     const validLines = inwardItems.map((line, index) => {
       const quantity = Number.parseInt(line.quantity, 10);
       const unitCost = Number.parseFloat(line.unitCost);
-      if (!line.isNewProduct) return { ...line, quantity, unitCost, product: inventory.find(item => String(item.id) === String(line.productId)) };
+      if (!line.isNewProduct) {
+        const product = inventory.find(item => String(item.id) === String(line.productId));
+        return {
+          ...line,
+          quantity,
+          unitCost,
+          product,
+          sellPrice: line.sellPrice || String(product?.sellPrice ?? ''),
+          sellPriceIncludesGst: line.sellPriceIncludesGst ?? product?.sellPriceIncludesGst ?? true
+        };
+      }
       const newProductGstRate = Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18;
-      const newProductLandedCost = getPurchaseCostBreakdown(unitCost, newProductGstRate, line.unitCostIncludesGst !== false).gross;
       const proposedProduct = {
         id: line.productId || `PROD-SUPP-${Date.now()}-${index}`,
         name: String(line.newProductName || line.importedName || '').trim(),
@@ -339,8 +403,9 @@ export default function ExpenseSupplier({
         ram: String(line.newProductRam || '').trim(),
         storage: String(line.newProductStorage || '').trim(),
         color: String(line.newProductColor || '').trim(),
-        sellPrice: Number(line.newProductSellPrice) || newProductLandedCost,
-        mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || newProductLandedCost,
+        sellPrice: Number(line.sellPrice) || 0,
+        sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
+        mrp: Number(line.newProductMrp) || Number(line.sellPrice) || 0,
         gstRate: newProductGstRate,
         isGst: newProductGstRate > 0,
         stock: 0, lowStockThreshold: 2, rack: 'R-01', bin: 'B-01', locations: [],
@@ -354,6 +419,10 @@ export default function ExpenseSupplier({
     });
     if (validLines.some(line => !line.product || (line.isNewProduct && (!line.product.name || !line.product.category)) || !Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.unitCost) || line.unitCost <= 0)) {
       alert('Choose an inventory product or enter a name and category for each new product, then enter a valid quantity and unit cost.');
+      return;
+    }
+    if (validLines.some(line => !Number.isFinite(Number(line.sellPrice)) || Number(line.sellPrice) <= 0)) {
+      alert('Enter a selling price for every bill product. Existing products are prefilled; new products need a price before they can be added to inventory.');
       return;
     }
     if (validLines.some(line => productGstRate(line.product) > 0 && line.unitCostIncludesGst !== true && line.unitCostIncludesGst !== false)) {
@@ -391,6 +460,8 @@ export default function ExpenseSupplier({
       totalAmount: Math.round((cost.gross * line.quantity + Number.EPSILON) * 100) / 100,
       taxableAmount: Math.round((cost.taxable * line.quantity + Number.EPSILON) * 100) / 100,
       gstAmount: Math.round((cost.gst * line.quantity + Number.EPSILON) * 100) / 100,
+      sellPrice: Number(line.sellPrice) || 0,
+      sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
       identifiers: [...new Set([...(line.identifiers || []), ...(line.imei1Values || []), ...(line.imei2Values || [])])],
       imei1Values: [...new Set(line.imei1Values || [])],
       imei2Values: [...new Set(line.imei2Values || [])]
@@ -467,6 +538,7 @@ export default function ExpenseSupplier({
         buyCostBase: purchaseCost.taxable,
         buyCostGst: purchaseCost.gst,
         buyPriceIncludesGst: Boolean(line.unitCostIncludesGst),
+        sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
         stock: line.quantity,
         locations: [{ rack: 'R-01', bin: 'B-01', qty: line.quantity }],
         receivedDate: inwardDate,
@@ -525,7 +597,8 @@ export default function ExpenseSupplier({
           buyCostEntered: latestReceived.unitCostEntered,
           buyCostBase: latestReceived.taxableUnitCost,
           buyCostGst: latestReceived.gstUnitAmount,
-          buyPriceIncludesGst: latestReceived.unitCostIncludesGst
+          buyPriceIncludesGst: latestReceived.unitCostIncludesGst,
+          ...(latestReceived.sellPrice > 0 ? { sellPrice: latestReceived.sellPrice, sellPriceIncludesGst: latestReceived.sellPriceIncludesGst } : {})
         } : {}),
         imeis: imeiTracked ? [...(item.imeis || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers] : (item.imeis || []),
         serialNumbers: imeiTracked ? (item.serialNumbers || []) : [...(item.serialNumbers || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers],
@@ -1215,7 +1288,7 @@ export default function ExpenseSupplier({
       {/* Stock Inward Modal */}
       {showInwardModal && (
         <div className="drawer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in supplier-inward-dialog" style={{ maxWidth: 'min(1080px, calc(100vw - 2rem))', width: '100%', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
+          <form onSubmit={handleStockInward} className="illoca-card animate-fade-in supplier-inward-dialog" style={{ width: 'min(1600px, calc(100vw - 2rem))', maxWidth: 'min(1600px, calc(100vw - 2rem))', flex: '1 1 1600px', boxSizing: 'border-box', maxHeight: '92vh', overflowY: 'auto', padding: '1.5rem', background: 'var(--surface-primary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
               <h3 style={{ fontSize: '1.2rem' }}>{editingBillId ? 'Edit Supplier Bill & Stock Inward' : 'Purchase Stock Inward (From Supplier)'}</h3>
               <button type="button" onClick={() => { setShowInwardModal(false); setEditingBillId(''); }} className="btn-outline" style={{ padding: '0.2rem 0.5rem' }}>✕</button>
@@ -1251,7 +1324,7 @@ export default function ExpenseSupplier({
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>Supplier bill file (PDF, Excel, or CSV)</label>
                 <input type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" onChange={event => handleBillFile(event.target.files?.[0])} className="input-field" />
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-                  {isImportingBill ? 'Reading bill…' : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : /\.pdf$/i.test(inwardDocument.name) && inwardItems.some(line => line.importedName) ? ` · ${inwardItems.filter(line => line.importedName).length} PDF product rows loaded` : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · confirm GST status for every line' : ''}` : 'Drop a bill here. Excel/CSV rows and selectable-text PDFs can prefill products, quantities, HSN, costs and GST.'}
+                  {isImportingBill ? (inwardImportStatus || 'Reading bill…') : inwardDocument ? `${inwardDocument.name}${/\.(xlsx|xls|csv)$/i.test(inwardDocument.name) ? ' · spreadsheet rows loaded' : /\.pdf$/i.test(inwardDocument.name) && inwardItems.some(line => line.importedName) ? ` · ${inwardItems.filter(line => line.importedName).length} PDF product rows loaded` : ' · attached'}${inwardGstHint ? ` · GST ${inwardGstHint.includesGst ? 'included' : 'extra'} detected; verify each line` : /\.pdf$/i.test(inwardDocument.name) ? ' · confirm GST status for every line' : ''}` : 'Drop a bill here. Excel/CSV files and selectable or scanned PDFs can prefill product lines for admin review.'}
                 </div>
               </div>
 
@@ -1262,7 +1335,7 @@ export default function ExpenseSupplier({
               <div style={{ marginTop: -8, fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Choose an inventory item or create a new unpublished product here. New mobile products need one IMEI per unit.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '32vh', overflowY: 'auto' }}>
                 {inwardItems.map((line, index) => (
-                  <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', alignItems: 'end' }}>
+                  <div key={line.id} className="illoca-card supplier-inward-line" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(280px, 2fr) minmax(90px, 0.6fr) minmax(180px, 1.1fr) minmax(160px, 0.9fr) auto', gap: '0.5rem', alignItems: 'end' }}>
                     <div style={{ position: 'relative', minWidth: 0 }}>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Search inventory product {index + 1} *</label>
                       {(() => {
@@ -1284,10 +1357,12 @@ export default function ExpenseSupplier({
                           updateInwardLine(line.id, {
                             productId: String(product.id),
                             isNewProduct: false,
-                            unitCostIncludesGst: invoiceHint ?? (product.buyPriceIncludesGst !== false),
+                            sellPrice: line.sellPrice || String(product.sellPrice || ''),
+                            sellPriceIncludesGst: line.sellPriceIncludesGst ?? product.sellPriceIncludesGst ?? true,
+                            unitCostIncludesGst: invoiceHint ?? (product.buyPriceIncludesGst === undefined || product.buyPriceIncludesGst === null ? null : product.buyPriceIncludesGst !== false),
                             gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
                               ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
-                              : 'product setting'
+                              : product.buyPriceIncludesGst === undefined || product.buyPriceIncludesGst === null ? 'bill confirmation required' : 'product setting'
                           });
                           setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; });
                         };
@@ -1324,7 +1399,7 @@ export default function ExpenseSupplier({
                       })()}
                       {line.productId && !line.isNewProduct && <button type="button" className="btn-outline" onClick={() => { updateInwardLine(line.id, { productId: '', isNewProduct: false }); setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; }); }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>Clear selection</button>}
                       <button type="button" className="btn-outline" onClick={() => {
-                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true });
+                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true, sellPriceIncludesGst: false });
                         setSupplierProductSearch(previous => ({ ...previous, [line.id]: '' }));
                       }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>＋ Add a new product</button>
                       {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
@@ -1333,7 +1408,6 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
                         <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/\D/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
-                        <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (GST included; defaults to landed cost)" aria-label={`New product ${index + 1} selling price`} />
                         <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
                           const values = event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
@@ -1349,7 +1423,9 @@ export default function ExpenseSupplier({
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Unit cost ₹ *</label>
                       <input type="number" min="0.01" step="0.01" value={line.unitCost} onChange={event => updateInwardLine(line.id, { unitCost: event.target.value })} required className="input-field" />
                       {(() => {
-                        const product = inventory.find(item => String(item.id) === String(line.productId));
+                        const product = line.isNewProduct
+                          ? { gstRate: Number(line.newProductGstRate) || 0, isGst: Number(line.newProductGstRate) > 0 }
+                          : inventory.find(item => String(item.id) === String(line.productId));
                         const rate = productGstRate(product);
                         const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
                         return <>
@@ -1365,6 +1441,15 @@ export default function ExpenseSupplier({
                           </> : <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 4 }}>No GST applies to this product.</div>}
                         </>;
                       })()}
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Selling price ₹</label>
+                      <input type="number" min="0.01" step="0.01" required value={line.sellPrice || (!line.isNewProduct ? inventory.find(product => String(product.id) === String(line.productId))?.sellPrice || '' : '')} onChange={event => updateInwardLine(line.id, { sellPrice: event.target.value })} placeholder="e.g. 150" className="input-field" aria-label={`Selling price for product ${index + 1}`} />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
+                        <input type="checkbox" checked={Boolean(line.sellPriceIncludesGst)} onChange={event => updateInwardLine(line.id, { sellPriceIncludesGst: event.target.checked })} />
+                        Selling price already includes GST
+                      </label>
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 3 }}>{line.sellPriceIncludesGst ? 'GST is split out of this price.' : 'Customer bill adds this product’s GST rate to this price.'}</div>
                     </div>
                     <button type="button" className="btn-outline" title="Remove product" disabled={inwardItems.length === 1} onClick={() => setInwardItems(previous => previous.filter(item => item.id !== line.id))} style={{ color: 'var(--status-red)', padding: '0.45rem' }}><Trash2 size={14} /></button>
                     {(line.identifiers?.length > 0 || line.imei1Values?.length > 0 || line.imei2Values?.length > 0) && <div style={{ gridColumn: '1 / -1', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{line.identifiers.length + line.imei1Values.length + line.imei2Values.length} identifier(s) imported from bill; identifiers can also be added from inventory edit.</div>}

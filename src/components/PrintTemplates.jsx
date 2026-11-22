@@ -1,7 +1,9 @@
 import { getLocalDateString } from '../utils/dateUtils';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
+import { getInvoicePrintZoom } from '../utils/printLayout';
 import AlzinoLogo from './AlzinoLogo';
 
 const isMobileItem = item => /mobile|phone|smartphone|handset/i.test(String(item?.category || ''));
@@ -36,17 +38,7 @@ export default function PrintTemplates({
     return printMode || 'thermal';
   });
 
-  useEffect(() => {
-    const resetPrintScale = () => {
-      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
-      if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
-      document.body.classList.remove('print-document-mode');
-    };
-    window.addEventListener('afterprint', resetPrintScale);
-    return () => window.removeEventListener('afterprint', resetPrintScale);
-  }, []);
-
-  const handlePrint = () => {
+  const preparePrintDocument = useCallback(() => {
     document.body.classList.add('print-document-mode');
     if (activeFormat === 'a4') {
       const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
@@ -54,10 +46,32 @@ export default function PrintTemplates({
         // Leave a small safety margin inside the A4 page at 96 DPI.
         const printableHeight = (287 / 25.4) * 96;
         const contentHeight = Math.max(sheet.scrollHeight, sheet.getBoundingClientRect().height);
-        const zoom = Math.min(1, printableHeight / contentHeight);
+        const zoom = getInvoicePrintZoom(contentHeight, printableHeight);
         sheet.style.setProperty('--invoice-print-zoom', String(zoom));
       }
     }
+  }, [activeFormat]);
+
+  useEffect(() => {
+    const resetPrintScale = () => {
+      const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
+      if (sheet) sheet.style.removeProperty('--invoice-print-zoom');
+      document.body.classList.remove('print-document-mode');
+    };
+    // Also isolate the invoice when printing from the browser menu or Ctrl+P.
+    // Otherwise the hidden admin screen still occupies layout and Chrome can
+    // report dozens of sheets even though the invoice preview looks correct.
+    const prepareBeforePrint = () => preparePrintDocument();
+    window.addEventListener('beforeprint', prepareBeforePrint);
+    window.addEventListener('afterprint', resetPrintScale);
+    return () => {
+      window.removeEventListener('beforeprint', prepareBeforePrint);
+      window.removeEventListener('afterprint', resetPrintScale);
+    };
+  }, [preparePrintDocument]);
+
+  const handlePrint = () => {
+    preparePrintDocument();
     window.requestAnimationFrame(() => window.print());
   };
 
@@ -66,7 +80,7 @@ export default function PrintTemplates({
   const isInvoiceBill = Boolean(printData.invoiceNo || printData.items);
   const isSingleBarcodeLabel = printMode === 'barcodes' && !printData.bulk && (printData.copies === 1 || printData.format === 'single');
 
-  return (
+  return createPortal((
     <div className="print-modal-container" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       
       {/* Top Floating Control Bar (Hidden on actual print) */}
@@ -1332,7 +1346,7 @@ export default function PrintTemplates({
 
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 function BulkBarcodePages({ labels, format, shopName }) {

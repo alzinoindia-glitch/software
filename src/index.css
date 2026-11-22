@@ -470,6 +470,11 @@ input, select, textarea {
     margin: 0;
   }
 
+  @page dashboard-report {
+    size: A4;
+    margin: 10mm;
+  }
+
   @page product-label {
     size: 50mm 25mm;
     margin: 0;
@@ -528,15 +533,39 @@ input, select, textarea {
   }
 
   body.print-document-mode > #root {
-    display: block !important;
-    min-height: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-
-  body.print-document-mode > #root > :not(.print-modal-container) {
+    /* PrintTemplates is portaled to body so the full app cannot add blank pages. */
     display: none !important;
   }
+
+  body.dashboard-report-print-mode * {
+    visibility: hidden !important;
+  }
+
+  body.dashboard-report-print-mode .dashboard-report-print,
+  body.dashboard-report-print-mode .dashboard-report-print * {
+    visibility: visible !important;
+  }
+
+  body.dashboard-report-print-mode .dashboard-report-print {
+    page: dashboard-report;
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #FFFFFF !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+  }
+
+  .dashboard-report-no-print {
+    display: none !important;
+  }
+
+  /* Keep the React app wrapper mounted: the print modal is nested inside it. */
   .no-print {
     display: none !important;
   }
@@ -553,9 +582,33 @@ input, select, textarea {
 
   .print-container.print-invoice-a4 {
     page: invoice-a4;
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: visible !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    display: block !important;
+    flex: none !important;
+    break-after: avoid-page !important;
+    page-break-after: avoid !important;
+  }
+
+  /* The A4 template has one sheet inside a layout wrapper. Keep that wrapper
+     on the same physical page; an auto-height flex wrapper can paginate the
+     invoice and make Chrome report dozens of sheets for a one-page bill. */
+  .print-container.print-invoice-a4 > div {
+    display: block !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
+    gap: 0 !important;
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+    break-after: avoid-page !important;
+    page-break-after: avoid !important;
   }
 
   .print-container.print-barcode-single {
@@ -629,15 +682,20 @@ input, select, textarea {
   }
 
   .invoice-a4-sheet {
-    page: invoice-a4;
-    width: 100% !important;
-    min-height: 0 !important;
-    height: auto !important;
-    padding: 0 !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    min-height: 297mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    padding: 12mm !important;
     font-size: 9px !important;
-    zoom: 1;
-    break-inside: avoid-page;
-    page-break-inside: avoid;
+    box-sizing: border-box !important;
+    zoom: var(--invoice-print-zoom, 1);
+    overflow: hidden !important;
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+    break-after: avoid-page !important;
+    page-break-after: avoid !important;
   }
 
   .invoice-a4-sheet table,
@@ -986,33 +1044,6 @@ input, select, textarea {
     overflow-x: auto;
   }
 
-  .print-invoice-a4 .invoice-a4-sheet {
-    width: 100% !important;
-    min-height: 0 !important;
-    max-height: 287mm !important;
-    padding: 4mm !important;
-    font-size: 9px !important;
-    zoom: var(--invoice-print-zoom, 0.82);
-    overflow: hidden !important;
-    break-inside: avoid-page !important;
-    page-break-inside: avoid !important;
-  }
-
-  .print-invoice-a4 .invoice-a4-sheet table {
-    table-layout: fixed;
-    font-size: 8px !important;
-    overflow-wrap: anywhere;
-  }
-
-  .print-invoice-a4 .invoice-a4-sheet > div:first-child {
-    flex-wrap: wrap;
-  }
-
-  .print-invoice-a4 .invoice-a4-sheet th,
-  .print-invoice-a4 .invoice-a4-sheet td {
-    padding: 3px 2px !important;
-  }
-
   .settings-page {
     padding: 0.65rem !important;
   }
@@ -1306,3 +1337,13 @@ body.theme-cream .hud-pill.active {
   pointer-events: none;
 }
 
+
+@media (max-width: 760px) {
+  .supplier-inward-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .supplier-inward-line > div:first-child {
+    grid-column: 1 / -1;
+  }
+}
