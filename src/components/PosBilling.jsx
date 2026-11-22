@@ -46,7 +46,7 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
-import { getSalePriceBreakdown } from '../utils/gstPricing';
+import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
@@ -715,16 +715,20 @@ export default function PosBilling({
       totals: getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), linePriceIncludesGst, !isNonGst)
     };
   });
-  const totalTaxable = saleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
+  const undiscountedGross = saleLines.reduce((sum, line) => sum + line.totals.gross, 0);
+  const appliedDiscount = Math.min(undiscountedGross, Math.max(0, Number(discount) || 0));
+  const discountedTotals = applySaleDiscount(saleLines.map(line => line.totals), appliedDiscount);
+  const discountedSaleLines = saleLines.map((line, index) => ({ ...line, totals: discountedTotals[index] }));
+  const totalTaxable = discountedSaleLines.reduce((sum, line) => sum + line.totals.taxable, 0);
   const subtotalBeforeTax = totalTaxable;
-  const totalGst = isNonGst ? 0 : saleLines.reduce((sum, line) => sum + line.totals.gst, 0);
-  const grandTotal = Math.max(0, saleLines.reduce((sum, line) => sum + line.totals.gross, 0) - Number(discount));
+  const totalGst = isNonGst ? 0 : discountedSaleLines.reduce((sum, line) => sum + line.totals.gst, 0);
+  const grandTotal = discountedSaleLines.reduce((sum, line) => sum + line.totals.gross, 0);
   
   // Total line profit (for admin mode)
-  const totalProfit = saleLines.reduce((sum, line) => {
+  const totalProfit = discountedSaleLines.reduce((sum, line) => {
     const cost = getCartCostBreakdown(line.item);
     return sum + line.totals.taxable - cost.totalCost;
-  }, 0) - Number(discount);
+  }, 0);
 
   // EMI auto-calculated loan amount
   const emiLoanAmount = Math.max(0, grandTotal - (Number(emiDownPayment) || 0));
@@ -940,8 +944,9 @@ export default function PosBilling({
       hidePaymentQr: true,
       notes: invoiceNotes.trim(),
       items: cart.map(item => {
-        const linePriceIncludesGst = getPosPriceIncludesGst(item, priceIncludesGst);
-        const tax = getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), linePriceIncludesGst, !isNonGst);
+        const line = discountedSaleLines.find(saleLine => saleLine.item.id === item.id);
+        const linePriceIncludesGst = line?.priceIncludesGst ?? getPosPriceIncludesGst(item, priceIncludesGst);
+        const tax = line?.totals || getSalePriceBreakdown(item.rate, item.qty, getPosGstRate(item), linePriceIncludesGst, !isNonGst);
         const cost = getCartCostBreakdown(item);
         return ({
         id: item.id,
@@ -972,7 +977,8 @@ export default function PosBilling({
       cgstTotal,
       sgstTotal,
       igstTotal,
-      discount: Number(discount),
+      discount: appliedDiscount,
+      discountIncludedInTaxBreakdown: true,
       grandTotal,
       paidAmount: actualPaid,
       khataDue,
@@ -1096,11 +1102,14 @@ export default function PosBilling({
       typeof item.priceIncludesGst === 'boolean' ? item.priceIncludesGst : invoiceToEdit.priceIncludesGst !== false,
       !isNonGstInv
     ));
-    const taxable = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.taxable, 0);
-    const gst = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.gst, 0);
-    const grand = Math.max(0, itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.gross, 0) - disc);
-    const cgst = isNonGstInv ? 0 : gst / 2;
-    const sgst = isNonGstInv ? 0 : gst / 2;
+    const undiscountedGross = itemBreakdowns.reduce((sum, breakdown) => sum + breakdown.gross, 0);
+    const appliedDiscount = Math.min(undiscountedGross, Math.max(0, disc));
+    const discountedBreakdowns = applySaleDiscount(itemBreakdowns, appliedDiscount);
+    const taxable = discountedBreakdowns.reduce((sum, breakdown) => sum + breakdown.taxable, 0);
+    const gst = discountedBreakdowns.reduce((sum, breakdown) => sum + breakdown.gst, 0);
+    const grand = discountedBreakdowns.reduce((sum, breakdown) => sum + breakdown.gross, 0);
+    const cgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
+    const sgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
 
     const isEmiInvoice = Boolean(invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI'));
     const previouslyPaid = Number(invoiceToEdit.paidAmount ?? (invoiceToEdit.paymentMode === 'Khata' ? 0 : invoiceToEdit.grandTotal)) || 0;
@@ -1115,20 +1124,23 @@ export default function PosBilling({
       ...invoiceToEdit,
       items: invoiceToEdit.items.map((it, index) => ({
         ...it,
-        total: itemBreakdowns[index].gross,
-        taxable: itemBreakdowns[index].taxable,
-        gstAmount: itemBreakdowns[index].gst,
-        profit: itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
+        total: discountedBreakdowns[index].gross,
+        taxable: discountedBreakdowns[index].taxable,
+        gstAmount: discountedBreakdowns[index].gst,
+        profit: discountedBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
       })),
       taxableAmount: taxable,
       cgstTotal: cgst,
       sgstTotal: sgst,
+      igstTotal: invoiceToEdit.isInterstate ? gst : 0,
+      discount: appliedDiscount,
+      discountIncludedInTaxBreakdown: true,
       grandTotal: grand,
       paidAmount: paid,
       balanceDue: khata,
       khataDue: khata,
       paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: itemBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0) - disc
+      totalProfit: discountedBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0)
     };
 
     const previousInvoice = invoices.find(inv => inv.invoiceNo === updatedInvoice.invoiceNo) || invoiceToEdit;
