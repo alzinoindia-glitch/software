@@ -30,6 +30,7 @@ import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxo
 import { getUpiQrUrl } from '../utils/barcode';
 import { applyRepairInvoiceToCustomerLedger, getRepairBalanceDue } from '../utils/repairAccounting';
 import { reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
+import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -441,10 +442,12 @@ export default function RepairLab({
       alert("Please enter a valid final service amount.");
       return;
     }
-    const discountAmt = Math.max(0, Number(repairDiscount) || 0);
-    const grandTotalPrice = Math.max(0, Math.round(finalPrice - discountAmt));
-
     const isNonGst = repairBillingType === 'non-gst';
+    const discountAmt = Math.min(finalPrice, Math.max(0, Number(repairDiscount) || 0));
+    const repairTotals = applySaleDiscount([
+      getSalePriceBreakdown(finalPrice, 1, 18, true, !isNonGst)
+    ], discountAmt)[0];
+    const grandTotalPrice = repairTotals.gross;
     const prefix = isNonGst ? 'ALZ-SRV' : 'ALZ-INV';
     const invoiceNo = getNextInvoiceNumber(invoices, prefix, 200);
     const today = getLocalDateString();
@@ -481,8 +484,9 @@ export default function RepairLab({
 
     // Calculate spare parts cost vs profit
     const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0) * Math.max(1, Number(p.qty) || 1), 0);
-    const buyPrice = totalSparePartsCost > 0 ? totalSparePartsCost : Math.round(finalPrice * 0.35);
-    const calculatedProfit = Math.max(0, grandTotalPrice - buyPrice);
+    const hasRecordedCost = consumedParts.some(part => Number(part.cost) > 0);
+    const buyPrice = totalSparePartsCost;
+    const calculatedProfit = hasRecordedCost ? grandTotalPrice - buyPrice : null;
 
     // Spare parts summary text for notes
     const partsText = consumedParts.length > 0 
@@ -516,22 +520,26 @@ export default function RepairLab({
           category: 'Repair Services',
           hsn: '998713', // Official GST SAC code for mobile repairing & servicing
           qty: 1,
-          imeis: jobToBill.screenLock ? [`Ref: ${jobToBill.jobId} • Lock: ${jobToBill.screenLock}`] : [`Ref: ${jobToBill.jobId}`],
+          // Screen locks are private intake data and must never be copied to a customer invoice.
+          imeis: [`Ref: ${jobToBill.jobId}`],
           rate: finalPrice,
           buyPrice: buyPrice,
           gstRate: isNonGst ? 0 : 18,
-          taxable: isNonGst ? finalPrice : parseFloat((finalPrice / 1.18).toFixed(2)),
-          total: finalPrice,
+          taxable: repairTotals.taxable,
+          gstAmount: repairTotals.gst,
+          total: grandTotalPrice,
           profit: calculatedProfit,
+          costCoverage: hasRecordedCost ? 'Recorded spare parts only' : 'Not recorded',
           warranty: repairWarranty,
           condition: `Repaired & Tested (${jobToBill.issues.join(', ')})`,
         }
       ],
-      taxableAmount: isNonGst ? grandTotalPrice : parseFloat((grandTotalPrice / 1.18).toFixed(2)),
-      cgstTotal: isNonGst ? 0 : parseFloat(((grandTotalPrice - (grandTotalPrice / 1.18)) / 2).toFixed(2)),
-      sgstTotal: isNonGst ? 0 : parseFloat(((grandTotalPrice - (grandTotalPrice / 1.18)) / 2).toFixed(2)),
+      taxableAmount: repairTotals.taxable,
+      cgstTotal: isNonGst ? 0 : parseFloat((repairTotals.gst / 2).toFixed(2)),
+      sgstTotal: isNonGst ? 0 : parseFloat((repairTotals.gst / 2).toFixed(2)),
       igstTotal: 0,
       discount: discountAmt,
+      discountIncludedInTaxBreakdown: true,
       grandTotal: grandTotalPrice,
       advancePaid: advance,
       payments: [
@@ -544,6 +552,7 @@ export default function RepairLab({
       balanceDue: khataDue,
       khataDue,
       totalProfit: calculatedProfit,
+      profitCostCoverage: hasRecordedCost ? 'Recorded spare parts only; labour overhead excluded' : 'Not calculated: spare part costs were not recorded',
     };
 
     // 1. Add to invoices
