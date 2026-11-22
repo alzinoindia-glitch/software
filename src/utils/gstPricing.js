@@ -1,5 +1,19 @@
 const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
+// Apply one bill-level discount across taxable value and GST in the same
+// proportion as each line's gross value, keeping invoice totals reconcilable.
+export const applySaleDiscount = (breakdowns, discount = 0) => {
+  const grossTotal = breakdowns.reduce((sum, line) => sum + Math.max(0, Number(line.gross) || 0), 0);
+  const appliedDiscount = Math.min(grossTotal, Math.max(0, Number(discount) || 0));
+  if (!grossTotal || !appliedDiscount) return breakdowns.map(line => ({ ...line }));
+  const factor = (grossTotal - appliedDiscount) / grossTotal;
+  return breakdowns.map(line => ({
+    taxable: roundMoney(Math.max(0, Number(line.taxable) || 0) * factor),
+    gst: roundMoney(Math.max(0, Number(line.gst) || 0) * factor),
+    gross: roundMoney(Math.max(0, Number(line.gross) || 0) * factor)
+  }));
+};
+
 export const getPurchaseCostBreakdown = (enteredAmount, gstRate = 0, includesGst = true) => {
   const entered = Math.max(0, Number(enteredAmount) || 0);
   const rate = Math.max(0, Number(gstRate) || 0);
