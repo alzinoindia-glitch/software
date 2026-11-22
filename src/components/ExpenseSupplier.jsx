@@ -22,7 +22,7 @@ import { applySupplierPayment } from '../utils/supplierPayments';
 import { findMatchingInventoryVariant } from '../utils/inventoryVariantMatch';
 import { parseSupplierPdfPages, supplierPdfOcrWordsToItems } from '../utils/supplierPdfParser';
 
-const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: true, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductSellPrice: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
+const newInwardLine = () => ({ id: `LINE-${Date.now()}-${Math.random()}`, productId: '', quantity: '1', unitCost: '', unitCostIncludesGst: null, sellPrice: '', sellPriceIncludesGst: null, isNewProduct: false, newProductName: '', newProductCategory: '', newProductBrand: '', newProductHsn: '', newProductMrp: '', newProductGstRate: '18', identifiers: [], imei1Values: [], imei2Values: [] });
 const productGstRate = product => Math.max(0, Number(product?.gstRate ?? (product?.isGst ? 18 : 0)) || 0);
 const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const getCell = (row, ...names) => {
@@ -88,8 +88,6 @@ const readScannedSupplierPdf = async (pdf, onProgress) => {
     if (worker) await worker.terminate();
   }
 };
-
-
 export default function ExpenseSupplier({ 
   initialSubTab = 'expenses',
   expenses, 
@@ -243,6 +241,8 @@ export default function ExpenseSupplier({
       identifiers: bill.identifiers || [], imei1Values: bill.imei1Values || [], imei2Values: bill.imei2Values || []
     }]).map(line => ({
       ...newInwardLine(), productId: line.productId || '', quantity: String(line.quantity || 1), unitCost: String(line.unitCostEntered ?? line.unitCost ?? ''), unitCostIncludesGst: line.unitCostIncludesGst !== false,
+      sellPrice: String(inventory.find(item => String(item.id) === String(line.productId))?.sellPrice ?? ''),
+      sellPriceIncludesGst: line.sellPriceIncludesGst ?? inventory.find(item => String(item.id) === String(line.productId))?.sellPriceIncludesGst ?? true,
       identifiers: [...(line.identifiers || [])], imei1Values: [...(line.imei1Values || [])], imei2Values: [...(line.imei2Values || [])], importedName: line.productName || ''
     }));
     setEditingBillId(bill.id);
@@ -379,9 +379,18 @@ export default function ExpenseSupplier({
     const validLines = inwardItems.map((line, index) => {
       const quantity = Number.parseInt(line.quantity, 10);
       const unitCost = Number.parseFloat(line.unitCost);
-      if (!line.isNewProduct) return { ...line, quantity, unitCost, product: inventory.find(item => String(item.id) === String(line.productId)) };
+      if (!line.isNewProduct) {
+        const product = inventory.find(item => String(item.id) === String(line.productId));
+        return {
+          ...line,
+          quantity,
+          unitCost,
+          product,
+          sellPrice: line.sellPrice || String(product?.sellPrice ?? ''),
+          sellPriceIncludesGst: line.sellPriceIncludesGst ?? product?.sellPriceIncludesGst ?? true
+        };
+      }
       const newProductGstRate = Number.isFinite(Number(line.newProductGstRate)) ? Number(line.newProductGstRate) : 18;
-      const newProductLandedCost = getPurchaseCostBreakdown(unitCost, newProductGstRate, line.unitCostIncludesGst !== false).gross;
       const proposedProduct = {
         id: line.productId || `PROD-SUPP-${Date.now()}-${index}`,
         name: String(line.newProductName || line.importedName || '').trim(),
@@ -392,8 +401,9 @@ export default function ExpenseSupplier({
         ram: String(line.newProductRam || '').trim(),
         storage: String(line.newProductStorage || '').trim(),
         color: String(line.newProductColor || '').trim(),
-        sellPrice: Number(line.newProductSellPrice) || newProductLandedCost,
-        mrp: Number(line.newProductMrp) || Number(line.newProductSellPrice) || newProductLandedCost,
+        sellPrice: Number(line.sellPrice) || 0,
+        sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
+        mrp: Number(line.newProductMrp) || Number(line.sellPrice) || 0,
         gstRate: newProductGstRate,
         isGst: newProductGstRate > 0,
         stock: 0, lowStockThreshold: 2, rack: 'R-01', bin: 'B-01', locations: [],
@@ -407,6 +417,10 @@ export default function ExpenseSupplier({
     });
     if (validLines.some(line => !line.product || (line.isNewProduct && (!line.product.name || !line.product.category)) || !Number.isInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.unitCost) || line.unitCost <= 0)) {
       alert('Choose an inventory product or enter a name and category for each new product, then enter a valid quantity and unit cost.');
+      return;
+    }
+    if (validLines.some(line => !Number.isFinite(Number(line.sellPrice)) || Number(line.sellPrice) <= 0)) {
+      alert('Enter a selling price for every bill product. Existing products are prefilled; new products need a price before they can be added to inventory.');
       return;
     }
     if (validLines.some(line => productGstRate(line.product) > 0 && line.unitCostIncludesGst !== true && line.unitCostIncludesGst !== false)) {
@@ -444,6 +458,8 @@ export default function ExpenseSupplier({
       totalAmount: Math.round((cost.gross * line.quantity + Number.EPSILON) * 100) / 100,
       taxableAmount: Math.round((cost.taxable * line.quantity + Number.EPSILON) * 100) / 100,
       gstAmount: Math.round((cost.gst * line.quantity + Number.EPSILON) * 100) / 100,
+      sellPrice: Number(line.sellPrice) || 0,
+      sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
       identifiers: [...new Set([...(line.identifiers || []), ...(line.imei1Values || []), ...(line.imei2Values || [])])],
       imei1Values: [...new Set(line.imei1Values || [])],
       imei2Values: [...new Set(line.imei2Values || [])]
@@ -520,6 +536,7 @@ export default function ExpenseSupplier({
         buyCostBase: purchaseCost.taxable,
         buyCostGst: purchaseCost.gst,
         buyPriceIncludesGst: Boolean(line.unitCostIncludesGst),
+        sellPriceIncludesGst: Boolean(line.sellPriceIncludesGst),
         stock: line.quantity,
         locations: [{ rack: 'R-01', bin: 'B-01', qty: line.quantity }],
         receivedDate: inwardDate,
@@ -578,7 +595,8 @@ export default function ExpenseSupplier({
           buyCostEntered: latestReceived.unitCostEntered,
           buyCostBase: latestReceived.taxableUnitCost,
           buyCostGst: latestReceived.gstUnitAmount,
-          buyPriceIncludesGst: latestReceived.unitCostIncludesGst
+          buyPriceIncludesGst: latestReceived.unitCostIncludesGst,
+          ...(latestReceived.sellPrice > 0 ? { sellPrice: latestReceived.sellPrice, sellPriceIncludesGst: latestReceived.sellPriceIncludesGst } : {})
         } : {}),
         imeis: imeiTracked ? [...(item.imeis || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers] : (item.imeis || []),
         serialNumbers: imeiTracked ? (item.serialNumbers || []) : [...(item.serialNumbers || []).filter(value => !oldIdentifiers.includes(value)), ...appendedIdentifiers],
@@ -1315,7 +1333,7 @@ export default function ExpenseSupplier({
               <div style={{ marginTop: -8, fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Choose an inventory item or create a new unpublished product here. New mobile products need one IMEI per unit.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '32vh', overflowY: 'auto' }}>
                 {inwardItems.map((line, index) => (
-                  <div key={line.id} className="illoca-card" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(280px, 2fr) minmax(100px, 0.7fr) minmax(190px, 1fr) auto', gap: '0.5rem', alignItems: 'end' }}>
+                  <div key={line.id} className="illoca-card supplier-inward-line" style={{ padding: '0.7rem', display: 'grid', gridTemplateColumns: 'minmax(280px, 2fr) minmax(90px, 0.6fr) minmax(180px, 1.1fr) minmax(160px, 0.9fr) auto', gap: '0.5rem', alignItems: 'end' }}>
                     <div style={{ position: 'relative', minWidth: 0 }}>
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Search inventory product {index + 1} *</label>
                       {(() => {
@@ -1337,10 +1355,12 @@ export default function ExpenseSupplier({
                           updateInwardLine(line.id, {
                             productId: String(product.id),
                             isNewProduct: false,
-                            unitCostIncludesGst: invoiceHint ?? (product.buyPriceIncludesGst !== false),
+                            sellPrice: line.sellPrice || String(product.sellPrice || ''),
+                            sellPriceIncludesGst: line.sellPriceIncludesGst ?? product.sellPriceIncludesGst ?? true,
+                            unitCostIncludesGst: invoiceHint ?? (product.buyPriceIncludesGst === undefined || product.buyPriceIncludesGst === null ? null : product.buyPriceIncludesGst !== false),
                             gstInclusionSource: invoiceHint !== null && invoiceHint !== undefined
                               ? (line.gstInclusionSource || inwardGstHint?.source || 'uploaded bill')
-                              : 'product setting'
+                              : product.buyPriceIncludesGst === undefined || product.buyPriceIncludesGst === null ? 'bill confirmation required' : 'product setting'
                           });
                           setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; });
                         };
@@ -1377,7 +1397,7 @@ export default function ExpenseSupplier({
                       })()}
                       {line.productId && !line.isNewProduct && <button type="button" className="btn-outline" onClick={() => { updateInwardLine(line.id, { productId: '', isNewProduct: false }); setSupplierProductSearch(previous => { const next = { ...previous }; delete next[line.id]; return next; }); }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>Clear selection</button>}
                       <button type="button" className="btn-outline" onClick={() => {
-                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true });
+                        updateInwardLine(line.id, { productId: `NEW-${line.id}`, isNewProduct: true, sellPriceIncludesGst: false });
                         setSupplierProductSearch(previous => ({ ...previous, [line.id]: '' }));
                       }} style={{ marginTop: 4, padding: '0.25rem 0.45rem', fontSize: '0.68rem' }}>＋ Add a new product</button>
                       {line.importedName && <div style={{ fontSize: '0.64rem', color: 'var(--text-secondary)', marginTop: 3 }}>From invoice: {line.importedName}{line.importedHsn ? ` · HSN ${line.importedHsn}` : ''}</div>}
@@ -1386,7 +1406,6 @@ export default function ExpenseSupplier({
                         <input className="input-field" value={line.newProductCategory} onChange={event => updateInwardLine(line.id, { newProductCategory: event.target.value })} placeholder="Category * (e.g. Accessories)" required aria-label={`New product ${index + 1} category`} />
                         <input className="input-field" value={line.newProductBrand} onChange={event => updateInwardLine(line.id, { newProductBrand: event.target.value })} placeholder="Brand (optional)" aria-label={`New product ${index + 1} brand`} />
                         <input className="input-field" type="text" inputMode="numeric" maxLength={8} value={line.newProductHsn || ''} onChange={event => updateInwardLine(line.id, { newProductHsn: event.target.value.replace(/\D/g, '').slice(0, 8) })} placeholder="HSN code (optional)" aria-label={`New product ${index + 1} HSN code`} />
-                        <input className="input-field" type="number" min="0" step="0.01" value={line.newProductSellPrice} onChange={event => updateInwardLine(line.id, { newProductSellPrice: event.target.value })} placeholder="Selling price ₹ (GST included; defaults to landed cost)" aria-label={`New product ${index + 1} selling price`} />
                         <select className="input-field" value={line.newProductGstRate} onChange={event => updateInwardLine(line.id, { newProductGstRate: event.target.value })} aria-label={`New product ${index + 1} GST rate`}><option value="0">Non-GST</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18">18% GST</option><option value="28">28% GST</option></select>
                         <textarea className="input-field" value={isImeiTrackedCategory(line.newProductCategory) ? line.imei1Values.join('\n') : line.identifiers.join('\n')} onChange={event => {
                           const values = event.target.value.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean);
@@ -1402,7 +1421,9 @@ export default function ExpenseSupplier({
                       <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Unit cost ₹ *</label>
                       <input type="number" min="0.01" step="0.01" value={line.unitCost} onChange={event => updateInwardLine(line.id, { unitCost: event.target.value })} required className="input-field" />
                       {(() => {
-                        const product = inventory.find(item => String(item.id) === String(line.productId));
+                        const product = line.isNewProduct
+                          ? { gstRate: Number(line.newProductGstRate) || 0, isGst: Number(line.newProductGstRate) > 0 }
+                          : inventory.find(item => String(item.id) === String(line.productId));
                         const rate = productGstRate(product);
                         const cost = getPurchaseCostBreakdown(line.unitCost, rate, line.unitCostIncludesGst);
                         return <>
@@ -1418,6 +1439,15 @@ export default function ExpenseSupplier({
                           </> : <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 4 }}>No GST applies to this product.</div>}
                         </>;
                       })()}
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.7rem', fontWeight: 600 }}>Selling price ₹</label>
+                      <input type="number" min="0.01" step="0.01" required value={line.sellPrice || (!line.isNewProduct ? inventory.find(product => String(product.id) === String(line.productId))?.sellPrice || '' : '')} onChange={event => updateInwardLine(line.id, { sellPrice: event.target.value })} placeholder="e.g. 150" className="input-field" aria-label={`Selling price for product ${index + 1}`} />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
+                        <input type="checkbox" checked={Boolean(line.sellPriceIncludesGst)} onChange={event => updateInwardLine(line.id, { sellPriceIncludesGst: event.target.checked })} />
+                        Selling price already includes GST
+                      </label>
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 3 }}>{line.sellPriceIncludesGst ? 'GST is split out of this price.' : 'Customer bill adds this product’s GST rate to this price.'}</div>
                     </div>
                     <button type="button" className="btn-outline" title="Remove product" disabled={inwardItems.length === 1} onClick={() => setInwardItems(previous => previous.filter(item => item.id !== line.id))} style={{ color: 'var(--status-red)', padding: '0.45rem' }}><Trash2 size={14} /></button>
                     {(line.identifiers?.length > 0 || line.imei1Values?.length > 0 || line.imei2Values?.length > 0) && <div style={{ gridColumn: '1 / -1', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{line.identifiers.length + line.imei1Values.length + line.imei2Values.length} identifier(s) imported from bill; identifiers can also be added from inventory edit.</div>}

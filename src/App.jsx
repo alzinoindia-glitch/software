@@ -921,6 +921,8 @@ export default function App() {
             setInvoices={setInvoices}
             customers={customers}
             setCustomers={setCustomers}
+            repairJobs={repairJobs}
+            setRepairJobs={setRepairJobs}
             shopConfig={shopConfig}
             role={role}
             onPrintInvoice={handlePrintInvoice}

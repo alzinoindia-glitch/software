@@ -212,6 +212,7 @@ export default function InventoryManager({
     buyPrice: '',
     buyPriceIncludesGst: true,
     sellPrice: '',
+    sellPriceIncludesGst: false,
     mrp: '',
     stock: 1,
     lowStockThreshold: 2,
@@ -591,6 +592,7 @@ export default function InventoryManager({
       buyPrice: '',
       buyPriceIncludesGst: true,
       sellPrice: '',
+      sellPriceIncludesGst: false,
       mrp: '',
       stock: 1,
       lowStockThreshold: 2,
@@ -646,6 +648,7 @@ export default function InventoryManager({
       buyPrice: item.buyCostEntered !== undefined ? String(item.buyCostEntered) : item.buyPrice,
       buyPriceIncludesGst: item.buyPriceIncludesGst !== false,
       sellPrice: item.sellPrice,
+      sellPriceIncludesGst: item.sellPriceIncludesGst === undefined ? true : Boolean(item.sellPriceIncludesGst),
       mrp: item.mrp ? String(item.mrp) : '',
       stock: item.stock,
       lowStockThreshold: item.lowStockThreshold || 2,
@@ -986,6 +989,7 @@ export default function InventoryManager({
             buyCostGst,
             buyPriceIncludesGst,
             sellPrice: parseFloat(formData.sellPrice) || 0,
+            sellPriceIncludesGst: Boolean(formData.sellPriceIncludesGst),
             mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
             stock: calculatedStock,
             ...(calculatedStock > 0 && item.status === 'Sold' ? { status: 'Active' } : {}),
@@ -1030,6 +1034,8 @@ export default function InventoryManager({
           buyCostBase,
           buyCostGst,
           buyPriceIncludesGst,
+          sellPrice: Number(formData.sellPrice) || Number(item.sellPrice) || 0,
+          sellPriceIncludesGst: Boolean(formData.sellPriceIncludesGst),
           ...(formData.hsn && !item.hsn ? { hsn: formData.hsn } : {}),
           supplierId: assignedSupplier?.id || item.supplierId || '',
           supplierName: assignedSupplier?.name || item.supplierName || '',
@@ -1070,6 +1076,7 @@ export default function InventoryManager({
         buyCostGst,
         buyPriceIncludesGst,
         sellPrice: parseFloat(formData.sellPrice) || 0,
+        sellPriceIncludesGst: Boolean(formData.sellPriceIncludesGst),
         mrp: formData.mrp === '' ? 0 : (parseFloat(formData.mrp) || 0),
         stock: calculatedStock,
         lowStockThreshold: parseInt(formData.lowStockThreshold, 10) || 2,
@@ -2692,7 +2699,7 @@ export default function InventoryManager({
               </div>
 
               <div>
-                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ * <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>(GST included at POS)</span></label>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, display: 'block', marginBottom: '0.2rem' }}>Selling Price ₹ *</label>
                 <input
                   type="number"
                   placeholder="Sell ₹"
@@ -2702,6 +2709,20 @@ export default function InventoryManager({
                   className="input-field"
                   style={{ fontWeight: 800, color: 'var(--accent-primary)' }}
                 />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem', fontSize: '0.72rem', fontWeight: 650, cursor: formData.isGst ? 'pointer' : 'not-allowed', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.sellPriceIncludesGst)}
+                    disabled={!formData.isGst}
+                    onChange={event => setFormData({ ...formData, sellPriceIncludesGst: event.target.checked })}
+                  />
+                  Entered selling price already includes GST
+                </label>
+                <div style={{ marginTop: '0.15rem', fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                  {formData.isGst
+                    ? (formData.sellPriceIncludesGst ? 'GST is included in this price.' : `GST at ${Number(formData.gstRate) || 18}% is added at billing. ₹${(Number(formData.sellPrice) || 0).toLocaleString('en-IN')} becomes ₹${((Number(formData.sellPrice) || 0) * (1 + (Number(formData.gstRate) || 18) / 100)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}.`)
+                    : 'Non-GST item: no GST is added at billing.'}
+                </div>
               </div>
 
               <div>

@@ -5,6 +5,16 @@ const numericOrZero = value => {
 
 const normalizePhone = value => String(value || '').replace(/\D/g, '').slice(-10);
 
+export const getRepairBalanceDue = (job = {}, invoice = null) => {
+  if (invoice) {
+    if (invoice.balanceDue !== undefined && invoice.balanceDue !== null) return Math.max(0, numericOrZero(invoice.balanceDue));
+    if (invoice.khataDue !== undefined && invoice.khataDue !== null) return Math.max(0, numericOrZero(invoice.khataDue));
+    return Math.max(0, numericOrZero(invoice.grandTotal) - numericOrZero(invoice.paidAmount));
+  }
+  if (job.balanceDue !== undefined && job.balanceDue !== null) return Math.max(0, numericOrZero(job.balanceDue));
+  return Math.max(0, numericOrZero(job.finalPrice || job.finalCost || job.estimatedCost) - numericOrZero(job.advancePaid));
+};
+
 export const applyRepairInvoiceToCustomerLedger = (customers = [], {
   phone = '', name = 'Customer', address = '', gstin = '', invoiceTotal = 0, khataDue = 0, newCustomerId
 } = {}) => {
@@ -21,7 +31,7 @@ export const applyRepairInvoiceToCustomerLedger = (customers = [], {
   }
 
   return [{
-    id: newCustomerId || ['CUST', Date.now(), Math.random().toString(36).slice(2, 8)].join('-'),
+    id: newCustomerId || `CUST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: String(name || '').trim() || 'Customer',
     phone: String(phone || '').trim(),
     address: String(address || '').trim(),

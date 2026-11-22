@@ -5,7 +5,8 @@ import { clearAuthenticatorSession, getAuthenticatorIdentity, needsAuthenticator
 const tokenFor = (portal, expiresAt = Math.floor(Date.now() / 1000) + 300) => {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
   return `${encode({ alg: 'none' })}.${encode({
-    sub: 'staff-1', exp: expiresAt,
+    sub: 'staff-1',
+    exp: expiresAt,
     app_metadata: { portal, organization_id: 'shop-1', staff_role: 'admin' }
   })}.signature`;
 };
@@ -27,7 +28,7 @@ const installWindow = (token, portal) => {
   return globalThis.window;
 };
 
-test('valid saved admin session is reused after a page reload', t => {
+test('valid saved admin session does not require login after a page reload', t => {
   const previousWindow = globalThis.window;
   t.after(() => { clearAuthenticatorSession(); if (previousWindow) globalThis.window = previousWindow; else delete globalThis.window; });
   installWindow(tokenFor('admin'), 'admin');
@@ -45,7 +46,7 @@ test('expired saved session is cleared and requires fresh authentication', t => 
   assert.equal(fakeWindow.sessionStorage.getItem('ALZINO_ERP_AUTHENTICATOR_TOKEN'), null);
 });
 
-test('cashier session cannot unlock the admin portal', t => {
+test('a valid cashier session is reused only for the cashier portal', t => {
   const previousWindow = globalThis.window;
   t.after(() => { clearAuthenticatorSession(); if (previousWindow) globalThis.window = previousWindow; else delete globalThis.window; });
   installWindow(tokenFor('cashier'), 'cashier');

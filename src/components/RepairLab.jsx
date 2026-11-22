@@ -28,7 +28,8 @@ import {
 import { openWhatsAppRepairUpdate } from '../utils/whatsappAutomation';
 import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxonomy';
 import { getUpiQrUrl } from '../utils/barcode';
-import { applyRepairInvoiceToCustomerLedger } from '../utils/repairAccounting';
+import { applyRepairInvoiceToCustomerLedger, getRepairBalanceDue } from '../utils/repairAccounting';
+import { reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -107,6 +108,8 @@ export default function RepairLab({
     return list.length > 0 ? list[0] : '';
   });
   const [customTechnician, setCustomTechnician] = useState('');
+  const [editingRepairJob, setEditingRepairJob] = useState(null);
+  const [repairEditDraft, setRepairEditDraft] = useState(null);
 
   useEffect(() => {
     const onTechniciansUpdated = event => {
@@ -502,7 +505,7 @@ export default function RepairLab({
       paymentMode: effectivePaymentMode,
       paymentRef: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairPaymentRef.trim() : '',
       upiAccountId: effectivePaymentMode === 'UPI / PhonePe / GPay' ? repairUpiAccount.id || '' : '',
-      paymentStatus: effectivePaymentMode === 'Khata' ? 'KHATA_DUE' : 'PAID',
+      paymentStatus: khataDue > 0 ? (advance > 0 ? 'PARTIAL' : 'KHATA_DUE') : 'PAID',
       paymentConfirmedAt: new Date().toISOString(),
       warrantyNotes: repairWarranty,
       notes: `${repairNotes.trim()} [Intake Job: ${jobToBill.jobId} | Advance paid: ₹${advance}${partsText}]`,
@@ -538,6 +541,7 @@ export default function RepairLab({
       balanceCollectedNow: effectivePaymentMode === 'Khata' ? 0 : netBalanceToCollect,
       netBalanceToCollect: netBalanceToCollect,
       paidAmount: actualPaid,
+      balanceDue: khataDue,
       khataDue,
       totalProfit: calculatedProfit,
     };
@@ -561,9 +565,12 @@ export default function RepairLab({
         return {
           ...job,
           status: 'Delivered',
-          balanceDue: 0,
+          balanceDue: khataDue,
+          finalPrice: grandTotalPrice,
+          paidAmount: actualPaid,
+          paymentStatus: khataDue > 0 ? (advance > 0 ? 'PARTIAL' : 'KHATA_DUE') : 'PAID',
           invoiceNo: invoiceNo,
-          billedAt: finalPrice,
+          billedAt: grandTotalPrice,
           deliveredDate: today,
           consumedParts: consumedParts,
           partsCost: totalSparePartsCost
@@ -592,14 +599,14 @@ export default function RepairLab({
   };
 
   const updateStatus = (targetJob, newStatus) => {
+    const linkedInvoice = findRepairInvoice(targetJob, invoices);
+    if (newStatus === 'Delivered' && !linkedInvoice) {
+      alert('Generate the final repair bill before marking this device as delivered. This records the confirmed amount and any payment due.');
+      return;
+    }
     setRepairJobs(prev => prev.map(job => {
       if (job.recordId === targetJob.recordId) {
-        let newBalance = job.balanceDue;
-        if (newStatus === 'Delivered' && job.balanceDue > 0) {
-          const collect = confirm(`Collect remaining balance ₹${job.balanceDue} for ${job.deviceModel}?`);
-          if (collect) newBalance = 0;
-        }
-        return { ...job, status: newStatus, balanceDue: newBalance };
+        return { ...job, status: newStatus };
       }
       return job;
     }));
@@ -612,6 +619,86 @@ export default function RepairLab({
         }
       }, 150);
     }
+  };
+
+  const openRepairEdit = job => {
+    if (role !== 'admin') return;
+    setEditingRepairJob(job);
+    setRepairEditDraft({
+      date: String(job.date || getLocalDateString()).slice(0, 10),
+      customerName: job.customerName || '',
+      customerMobile: job.customerMobile || job.customerPhone || '',
+      deviceModel: job.deviceModel || '',
+      color: job.color || '',
+      screenLock: job.screenLock || '',
+      issues: (job.issues || []).join('\n'),
+      estimatedCost: String(job.estimatedCost ?? ''),
+      technician: job.technician || '',
+      technicianNotes: job.technicianNotes || ''
+    });
+  };
+
+  const saveRepairEdit = event => {
+    event.preventDefault();
+    if (role !== 'admin' || !editingRepairJob || !repairEditDraft) return;
+    const phone = String(repairEditDraft.customerMobile || '').replace(/\D/g, '');
+    const issues = String(repairEditDraft.issues || '').split(/[\n,;]+/).map(issue => issue.trim()).filter(Boolean);
+    const linkedInvoice = findRepairInvoice(editingRepairJob, invoices);
+    const estimate = Number(repairEditDraft.estimatedCost);
+    if (!repairEditDraft.customerName.trim() || phone.length !== 10 || !repairEditDraft.deviceModel.trim()) {
+      alert('Enter the customer name, a valid 10-digit mobile number, and device model.');
+      return;
+    }
+    if (!linkedInvoice && !editingRepairJob.costInformedAfterChecking && (!Number.isFinite(estimate) || estimate < 0)) {
+      alert('Enter a valid repair estimate.');
+      return;
+    }
+
+    const updatedJob = {
+      ...editingRepairJob,
+      date: repairEditDraft.date || editingRepairJob.date,
+      customerName: repairEditDraft.customerName.trim(),
+      customerMobile: phone,
+      deviceModel: repairEditDraft.deviceModel.trim(),
+      color: repairEditDraft.color.trim(),
+      screenLock: repairEditDraft.screenLock.trim(),
+      issues: issues.length ? issues : ['General Servicing'],
+      technician: repairEditDraft.technician.trim() || 'Other',
+      technicianNotes: repairEditDraft.technicianNotes.trim(),
+      ...(!linkedInvoice ? { estimatedCost: estimate, balanceDue: editingRepairJob.costInformedAfterChecking ? 0 : Math.max(0, estimate - (Number(editingRepairJob.advancePaid) || 0)) } : {})
+    };
+
+    if (linkedInvoice) {
+      const updatedInvoice = {
+        ...linkedInvoice,
+        customerName: updatedJob.customerName,
+        customerPhone: updatedJob.customerMobile,
+        date: linkedInvoice.date,
+        items: (linkedInvoice.items || []).map(item => item.category === 'Repair Services' ? {
+          ...item,
+          name: `${updatedJob.deviceModel} Repair: ${updatedJob.issues.join(', ')}`,
+          condition: `Repaired & Tested (${updatedJob.issues.join(', ')})`
+        } : item)
+      };
+      setInvoices(prev => prev.map(invoice => invoice.invoiceNo === linkedInvoice.invoiceNo ? updatedInvoice : invoice));
+      setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev, linkedInvoice, updatedInvoice));
+      updatedJob.balanceDue = getRepairBalanceDue(updatedJob, updatedInvoice);
+      updatedJob.paidAmount = Number(updatedInvoice.paidAmount) || 0;
+      updatedJob.paymentStatus = updatedInvoice.paymentStatus || (updatedJob.balanceDue > 0 ? 'PARTIAL' : 'PAID');
+    } else {
+      const oldDue = getRepairBalanceDue(editingRepairJob);
+      const newDue = getRepairBalanceDue(updatedJob);
+      setCustomers(prev => reconcileCustomerAfterInvoiceEdit(prev,
+        { invoiceNo: editingRepairJob.jobId, customerName: editingRepairJob.customerName, customerPhone: editingRepairJob.customerMobile, grandTotal: 0, paidAmount: 0, balanceDue: oldDue },
+        { invoiceNo: editingRepairJob.jobId, customerName: updatedJob.customerName, customerPhone: updatedJob.customerMobile, grandTotal: 0, paidAmount: 0, balanceDue: newDue }
+      ));
+    }
+    setRepairJobs(prev => prev.map(job => (job.recordId && editingRepairJob.recordId)
+      ? (job.recordId === editingRepairJob.recordId ? updatedJob : job)
+      : (job.jobId === editingRepairJob.jobId ? updatedJob : job)));
+    setEditingRepairJob(null);
+    setRepairEditDraft(null);
+    showToast(`Repair job ${editingRepairJob.jobId} updated.`);
   };
 
   const filteredJobs = useMemo(() => {
@@ -732,6 +819,7 @@ export default function RepairLab({
           const isDelivered = job.status === 'Delivered';
           const linkedInvoice = findRepairInvoice(job, invoices);
           const isBilled = Boolean(linkedInvoice);
+          const repairDue = getRepairBalanceDue(job, linkedInvoice);
 
           return (
             <div 
@@ -858,7 +946,9 @@ export default function RepairLab({
               <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.35rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' }}>
-                    {job.costInformedAfterChecking ? (
+                    {isBilled ? (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Bill: ₹{Number(linkedInvoice.grandTotal || linkedInvoice.total || job.billedAt || 0).toLocaleString('en-IN')}</span>
+                    ) : job.costInformedAfterChecking ? (
                       <button
                         type="button"
                         onClick={() => handleUpdateCostAfterChecking(job)}
@@ -882,22 +972,29 @@ export default function RepairLab({
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Est: ₹{job.estimatedCost}</span>
                     )}
-                    <span style={{ fontSize: '0.75rem', color: 'var(--status-green)' }}>Adv: ₹{job.advancePaid}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--status-green)' }}>Paid: ₹{Number(linkedInvoice?.paidAmount ?? job.advancePaid) || 0}</span>
                   </div>
                   <div>
                     <span style={{ 
                       fontFamily: 'var(--font-mono)', 
                       fontWeight: 700, 
                       fontSize: '0.9rem',
-                      color: job.costInformedAfterChecking ? '#D97706' : (job.balanceDue > 0 ? 'var(--status-red)' : 'var(--status-green)')
+                      color: !isBilled && job.costInformedAfterChecking ? '#D97706' : (repairDue > 0 ? 'var(--status-red)' : 'var(--status-green)')
                     }}>
-                      {job.costInformedAfterChecking ? 'Due: After check' : `Due: ₹${job.balanceDue}`}
+                      {!isBilled
+                        ? (job.costInformedAfterChecking ? 'Final amount: After check' : `Estimated balance: ₹${repairDue.toLocaleString('en-IN')}`)
+                        : repairDue > 0 ? `Payment pending: ₹${repairDue.toLocaleString('en-IN')}` : 'Payment: Paid'}
                     </span>
                   </div>
                 </div>
 
                 {/* Action Buttons Row with Generate Bill */}
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  {role === 'admin' && (
+                    <button type="button" onClick={() => openRepairEdit(job)} className="btn-outline" style={{ padding: '0.4rem 0.65rem', fontSize: '0.78rem' }}>
+                      Edit Job
+                    </button>
+                  )}
                   {/* GENERATE BILL BUTTON (PRE-FILLED WITH CUSTOMER & DEVICE) */}
                   <button
                     onClick={() => handleOpenBillModal(job)}
@@ -950,8 +1047,16 @@ export default function RepairLab({
                     <button
                       type="button"
                       onClick={() => {
-                        const type = (job.status === 'Ready for Delivery' || job.status === 'Delivered') ? 'completed' : 'received';
-                        openWhatsAppRepairUpdate(job, shopConfig, type);
+                        const type = job.status === 'Delivered'
+                          ? (repairDue > 0 ? 'payment-pending' : 'delivered')
+                          : job.status === 'Ready for Delivery' ? 'completed' : 'received';
+                        openWhatsAppRepairUpdate({
+                          ...job,
+                          invoiceNo: linkedInvoice?.invoiceNo || job.invoiceNo,
+                          billedAt: linkedInvoice?.grandTotal ?? job.billedAt,
+                          balanceDue: repairDue,
+                          paidAmount: linkedInvoice?.paidAmount ?? job.paidAmount ?? job.advancePaid,
+                        }, shopConfig, type);
                       }}
                       className="btn-outline"
                       style={{
@@ -1562,6 +1667,36 @@ export default function RepairLab({
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* New Job Modal */}
+      {editingRepairJob && repairEditDraft && role === 'admin' && (
+        <div className="drawer-overlay" onClick={() => { setEditingRepairJob(null); setRepairEditDraft(null); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 3200 }}>
+          <form onSubmit={saveRepairEdit} onClick={event => event.stopPropagation()} className="illoca-card animate-fade-in" style={{ maxWidth: 680, width: '100%', padding: '1.4rem', background: 'var(--surface-primary)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div><h3 style={{ margin: 0 }}>Edit Repair Job · {editingRepairJob.jobId}</h3><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 4 }}>Update customer, device, fault, and job details.</div></div>
+              <button type="button" className="btn-outline" onClick={() => { setEditingRepairJob(null); setRepairEditDraft(null); }}>✕</button>
+            </div>
+            {findRepairInvoice(editingRepairJob, invoices) && <div className="mono-tag" style={{ display: 'block', marginBottom: 12, whiteSpace: 'normal' }}>This job has a bill. To edit its price, discount, or payment, edit invoice {findRepairInvoice(editingRepairJob, invoices).invoiceNo} in Invoices.</div>}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '0.75rem' }}>
+              <label className="input-label">Intake date<input type="date" className="input-field" value={repairEditDraft.date} onChange={event => setRepairEditDraft({ ...repairEditDraft, date: event.target.value })} /></label>
+              <label className="input-label">Customer name *<input required className="input-field" value={repairEditDraft.customerName} onChange={event => setRepairEditDraft({ ...repairEditDraft, customerName: event.target.value })} /></label>
+              <label className="input-label">Mobile number *<input required inputMode="numeric" maxLength={10} className="input-field" value={repairEditDraft.customerMobile} onChange={event => setRepairEditDraft({ ...repairEditDraft, customerMobile: event.target.value.replace(/\D/g, '').slice(-10) })} /></label>
+              <label className="input-label">Device make & model *<input required className="input-field" value={repairEditDraft.deviceModel} onChange={event => setRepairEditDraft({ ...repairEditDraft, deviceModel: event.target.value })} /></label>
+              <label className="input-label">Color / appearance<input className="input-field" value={repairEditDraft.color} onChange={event => setRepairEditDraft({ ...repairEditDraft, color: event.target.value })} /></label>
+              <label className="input-label">Screen lock / PIN<input className="input-field" value={repairEditDraft.screenLock} onChange={event => setRepairEditDraft({ ...repairEditDraft, screenLock: event.target.value })} /></label>
+              <label className="input-label">Technician<input className="input-field" value={repairEditDraft.technician} onChange={event => setRepairEditDraft({ ...repairEditDraft, technician: event.target.value })} /></label>
+              <label className="input-label">Estimate ₹<input type="number" min="0" step="0.01" className="input-field" disabled={Boolean(findRepairInvoice(editingRepairJob, invoices)) || editingRepairJob.costInformedAfterChecking} value={repairEditDraft.estimatedCost} onChange={event => setRepairEditDraft({ ...repairEditDraft, estimatedCost: event.target.value })} /></label>
+              <label className="input-label" style={{ gridColumn: '1 / -1' }}>Reported faults (one per line)<textarea rows={3} className="input-field" value={repairEditDraft.issues} onChange={event => setRepairEditDraft({ ...repairEditDraft, issues: event.target.value })} /></label>
+              <label className="input-label" style={{ gridColumn: '1 / -1' }}>Technician notes<textarea rows={3} className="input-field" value={repairEditDraft.technicianNotes} onChange={event => setRepairEditDraft({ ...repairEditDraft, technicianNotes: event.target.value })} /></label>
+            </div>
+            {!findRepairInvoice(editingRepairJob, invoices) && <div style={{ marginTop: 10, color: 'var(--text-secondary)', fontSize: '0.72rem' }}>The estimated customer balance will be adjusted when you save. Intake advances and payments remain unchanged.</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16, borderTop: '1px solid var(--border-color)', paddingTop: 12 }}>
+              <button type="button" className="btn-outline" onClick={() => { setEditingRepairJob(null); setRepairEditDraft(null); }}>Cancel</button>
+              <button type="submit" className="btn-primary">Save Repair Changes</button>
+            </div>
+          </form>
         </div>
       )}
 

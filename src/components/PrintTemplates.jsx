@@ -1,8 +1,9 @@
 import { getLocalDateString } from '../utils/dateUtils';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { renderBarcodeSvg, renderCodeSvg, getUpiQrUrl } from '../utils/barcode';
 import { buildProductScanUrl, normalizeProductTerms } from '../utils/productTerms';
+import { getInvoicePrintZoom } from '../utils/printLayout';
 import AlzinoLogo from './AlzinoLogo';
 
 const isMobileItem = item => /mobile|phone|smartphone|handset/i.test(String(item?.category || ''));
@@ -37,7 +38,7 @@ export default function PrintTemplates({
     return printMode || 'thermal';
   });
 
-  const preparePrintDocument = () => {
+  const preparePrintDocument = useCallback(() => {
     document.body.classList.add('print-document-mode');
     if (activeFormat === 'a4') {
       const sheet = printContainerRef.current?.querySelector('.invoice-a4-sheet');
@@ -45,11 +46,11 @@ export default function PrintTemplates({
         // Leave a small safety margin inside the A4 page at 96 DPI.
         const printableHeight = (287 / 25.4) * 96;
         const contentHeight = Math.max(sheet.scrollHeight, sheet.getBoundingClientRect().height);
-        const zoom = Math.min(1, printableHeight / contentHeight);
+        const zoom = getInvoicePrintZoom(contentHeight, printableHeight);
         sheet.style.setProperty('--invoice-print-zoom', String(zoom));
       }
     }
-  };
+  }, [activeFormat]);
 
   useEffect(() => {
     const resetPrintScale = () => {
@@ -67,7 +68,7 @@ export default function PrintTemplates({
       window.removeEventListener('beforeprint', prepareBeforePrint);
       window.removeEventListener('afterprint', resetPrintScale);
     };
-  }, [activeFormat]);
+  }, [preparePrintDocument]);
 
   const handlePrint = () => {
     preparePrintDocument();

@@ -470,6 +470,11 @@ input, select, textarea {
     margin: 0;
   }
 
+  @page dashboard-report {
+    size: A4;
+    margin: 10mm;
+  }
+
   @page product-label {
     size: 50mm 25mm;
     margin: 0;
@@ -533,6 +538,36 @@ input, select, textarea {
   }
 
   /* Only the portaled print surface remains in the print document. */
+
+  body.dashboard-report-print-mode * {
+    visibility: hidden !important;
+  }
+
+  body.dashboard-report-print-mode .dashboard-report-print,
+  body.dashboard-report-print-mode .dashboard-report-print * {
+    visibility: visible !important;
+  }
+
+  body.dashboard-report-print-mode .dashboard-report-print {
+    page: dashboard-report;
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #FFFFFF !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+  }
+
+  .dashboard-report-no-print {
+    display: none !important;
+  }
+
+  /* Keep the React app wrapper mounted: the print modal is nested inside it. */
   .no-print {
     display: none !important;
   }
@@ -562,8 +597,9 @@ input, select, textarea {
     page-break-after: avoid !important;
   }
 
-  /* Keep the single A4 sheet wrapper on one physical page. An auto-height
-     flex wrapper can paginate far beyond the invoice and report dozens of sheets. */
+  /* The A4 template has one sheet inside a layout wrapper. Keep that wrapper
+     on the same physical page; an auto-height flex wrapper can paginate the
+     invoice and make Chrome report dozens of sheets for a one-page bill. */
   .print-container.print-invoice-a4 > div {
     display: block !important;
     width: 210mm !important;
@@ -1303,3 +1339,13 @@ body.theme-cream .hud-pill.active {
   pointer-events: none;
 }
 
+
+@media (max-width: 760px) {
+  .supplier-inward-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .supplier-inward-line > div:first-child {
+    grid-column: 1 / -1;
+  }
+}
