@@ -26,6 +26,9 @@ const headerKind = value => {
   const text = String(value || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/\b(qty|quantity|units)\b/.test(text)) return 'quantity';
   if (/\b(hsn|sac)\b/.test(text)) return 'hsn';
+  // A tax component column must never be mistaken for the product line amount.
+  // Prefer the invoice's final amount column for stock cost extraction.
+  if (/\b(cgst|sgst|igst|gst|tax)\b/.test(text) && /\b(amount|amt)\b/.test(text) && !/\b(taxable|net|base)\b/.test(text)) return 'taxAmount';
   if (/\b(rate|unit price|price|unit cost|cost)\b/.test(text)) return 'rate';
   if (/\b(amount|line total|total|taxable value|net amount)\b/.test(text)) return 'amount';
   if (/\b(description|particulars|product|item|goods)\b/.test(text)) return 'description';
@@ -33,7 +36,8 @@ const headerKind = value => {
 };
 
 const columnRange = (columns, kind) => {
-  const column = columns.find(item => item.kind === kind);
+  const matches = columns.filter(item => item.kind === kind).sort((a, b) => a.x - b.x);
+  const column = kind === 'amount' ? matches[matches.length - 1] : matches[0];
   if (!column) return null;
   const positions = [...new Set(columns.map(item => item.x))].sort((a, b) => a - b);
   const index = positions.indexOf(column.x);

@@ -1460,7 +1460,7 @@ export default function ExpenseSupplier({
                               <option value="extra">Add GST to unit cost</option>
                             </select>
                             <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 3 }}>{line.gstInclusionSource === 'uploaded spreadsheet' || line.gstInclusionSource === 'uploaded PDF' || line.gstInclusionSource === 'uploaded bill' ? `Suggested from ${line.gstInclusionSource}; verify against invoice.` : line.gstInclusionSource === 'product setting' ? 'Prefilled from this product’s last purchase; change to match this invoice.' : 'Choose according to the supplier invoice.'}</div>
-                            {Number(line.unitCost) > 0 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 2 }}>{line.unitCostIncludesGst ? 'GST is already in this price' : `GST added: ₹${cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} · Cost to stock: ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
+                            {Number(line.unitCost) > 0 && <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', marginTop: 3 }}>Product ₹{cost.taxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST ({rate}%) ₹{cost.gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} = unit stock cost ₹{cost.gross.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>}
                           </> : <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: 4 }}>No GST applies to this product.</div>}
                         </>;
                       })()}
