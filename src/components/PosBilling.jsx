@@ -735,6 +735,12 @@ export default function PosBilling({
     const cost = getCartCostBreakdown(line.item);
     return sum + line.totals.taxable - cost.taxableCostTotal;
   }, 0);
+  const totalCostCoverage = discountedSaleLines.every(({ item }) =>
+    Number(item.buyPrice || 0) > 0 || Number(item.buyCostBase || 0) > 0 || (item.allTrackedUnits || []).some(unit =>
+      Number(unit.purchaseCost || unit.purchaseCostEntered || unit.unitRecord?.purchaseCost || unit.unitRecord?.purchaseCostEntered || 0) > 0
+    )
+  );
+  const profitMarginPercent = totalTaxable > 0 ? (totalProfit / totalTaxable) * 100 : 0;
 
   // EMI auto-calculated loan amount
   const emiLoanAmount = Math.max(0, grandTotal - (Number(emiDownPayment) || 0));
@@ -1910,6 +1916,19 @@ export default function PosBilling({
                   ₹{grandTotal.toLocaleString()}
                 </span>
               </div>
+              {role === 'admin' && cart.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', marginTop: '0.45rem', padding: '0.4rem 0.65rem', borderRadius: '7px', background: 'var(--status-green-bg)', color: 'var(--status-green)', fontSize: '0.76rem' }}>
+                  <div>
+                    <strong>Estimated gross profit</strong>
+                    <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                      {totalCostCoverage ? `${profitMarginPercent.toFixed(1)}% of sales before GST` : 'Some item purchase costs are missing'}
+                    </span>
+                  </div>
+                  <strong style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                    {totalCostCoverage ? `${totalProfit < 0 ? '-' : ''}₹${Math.abs(totalProfit).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : 'Incomplete'}
+                  </strong>
+                </div>
+              )}
             </div>
 
             {/* Unified payment entry point */}

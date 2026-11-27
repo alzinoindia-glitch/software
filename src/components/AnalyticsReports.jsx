@@ -1,6 +1,7 @@
 import { getLocalDateString } from '../utils/dateUtils';
+import { getInvoiceProfitSummary } from '../utils/profitAccounting';
 import React, { useState, useMemo } from 'react';
-import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement, sumPendingRefundLiabilities } from '../utils/returnAccounting';
+import { getInvoiceReturns, getInvoiceTransactions, isDateInReportRange, sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement, sumPendingRefundLiabilities, sumReturnTaxableRevenueAdjustments, sumReplacementTaxableRevenueAdjustments } from '../utils/returnAccounting';
 import { 
   TrendingUp, 
   IndianRupee, 
@@ -173,8 +174,13 @@ export default function AnalyticsReports({
   // =========================================================================
   // FINANCIAL P&L AND PROFIT TRACKING (MRP vs SELLING vs BUY COST)
   // =========================================================================
-  const totalRevenue = filteredInvoices.reduce((sum, i) => sum + (Number(i.grandTotal) || 0), 0) - selectedRefundTotal + sumReplacementRevenueAdjustments(invoices, inSelectedRange);
-  const totalGrossProfit = filteredInvoices.reduce((sum, i) => sum + (Number(i.totalProfit) || 0), 0) - sumReturnProfitAdjustments(invoices, inSelectedRange) + sumReplacementProfitAdjustments(invoices, inSelectedRange);
+  const filteredProfitSummaries = filteredInvoices.map(invoice => getInvoiceProfitSummary(invoice));
+  const totalRevenue = filteredProfitSummaries.reduce((sum, summary) => sum + summary.revenue, 0)
+    + sumReturnTaxableRevenueAdjustments(invoices, inSelectedRange)
+    + sumReplacementTaxableRevenueAdjustments(invoices, inSelectedRange);
+  const totalGrossRevenue = filteredInvoices.reduce((sum, invoice) => sum + (Number(invoice.grandTotal) || 0), 0) - selectedRefundTotal + sumReplacementRevenueAdjustments(invoices, inSelectedRange);
+  const totalGrossProfit = filteredProfitSummaries.reduce((sum, summary) => sum + (summary.costCoverageComplete ? (summary.profit ?? 0) : 0), 0) - sumReturnProfitAdjustments(invoices, inSelectedRange) + sumReplacementProfitAdjustments(invoices, inSelectedRange);
+  const billsMissingCost = filteredProfitSummaries.filter(summary => !summary.costCoverageComplete).length;
   const netProfit = totalGrossProfit - totalExpensesAmt;
 
   // =========================================================================
@@ -184,18 +190,22 @@ export default function AnalyticsReports({
     const map = {};
 
     filteredInvoices.forEach(inv => {
-      (inv.items || []).forEach(item => {
+      const invoiceSummary = getInvoiceProfitSummary(inv);
+      (inv.items || []).forEach((item, itemIndex) => {
         const key = item.name?.trim() || 'Unknown Product';
         const qty = Number(item.qty) || 1;
         const sellTotal = Number(item.total) || (Number(item.rate) * qty) || 0;
         const unitSell = qty > 0 ? sellTotal / qty : Number(item.rate) || 0;
+        const lineSummary = invoiceSummary.lines[itemIndex];
         
         // Find matching inventory item for MRP and Buy Price reference if not stored on item
         const invMatch = inventory.find(invIt => invIt.id === item.id || invIt.name?.toLowerCase() === item.name?.toLowerCase());
-        const unitBuy = item.buyPrice !== undefined ? Number(item.buyPrice) : (invMatch?.buyPrice || Math.round(unitSell * 0.7));
+        const unitBuy = lineSummary?.cost !== null && lineSummary?.cost !== undefined
+          ? lineSummary.cost / Math.max(1, qty)
+          : 0;
         const unitMrp = invMatch?.mrp || item.mrp || Math.round(unitSell * 1.12);
         const category = item.category || invMatch?.category || (inv.isRepairInvoice ? 'Repair Services' : 'Mobile Accessories');
-        const profit = item.profit !== undefined ? Number(item.profit) : (sellTotal - (unitBuy * qty));
+        const profit = lineSummary?.profit ?? null;
 
         if (!map[key]) {
           map[key] = {
@@ -208,7 +218,9 @@ export default function AnalyticsReports({
             unitBuy,
             totalBuyCost: 0,
             totalRevenue: 0,
+            totalGrossRevenue: 0,
             totalProfit: 0,
+            profitCoverageComplete: true,
             avgSellPrice: 0,
           };
         }
@@ -216,8 +228,10 @@ export default function AnalyticsReports({
         map[key].unitsSold += qty;
         map[key].totalMrp += (unitMrp * qty);
         map[key].totalBuyCost += (unitBuy * qty);
-        map[key].totalRevenue += sellTotal;
-        map[key].totalProfit += profit;
+        map[key].totalRevenue += lineSummary?.revenue ?? 0;
+        map[key].totalGrossRevenue += sellTotal;
+        if (lineSummary?.cost === null || lineSummary?.cost === undefined) map[key].profitCoverageComplete = false;
+        else map[key].totalProfit += profit;
       });
     });
 
@@ -225,13 +239,17 @@ export default function AnalyticsReports({
       const key = entry.originalProductName?.trim() || 'Returned Product';
       const qty = Number(entry.quantity || 0);
       const returnedAmount = Number(entry.refundAmount || 0);
-      const unitBuy = Number(entry.originalUnitCost || 0);
-      const profitAdjustment = Number(entry.originalUnitProfit || 0) * qty + (entry.restocked ? 0 : unitBuy * qty);
+      const unitBuy = Number(entry.originalUnitTaxableCost ?? entry.originalUnitCost ?? 0);
+      const retainedTaxable = Number(entry.retainedTaxableAmount || 0);
+      const profitAdjustment = Number(entry.originalUnitProfit || 0) * qty + (entry.restocked ? 0 : unitBuy * qty) - retainedTaxable;
       const invMatch = inventory.find((invIt) => String(invIt.id) === String(entry.originalProductId) || invIt.name?.toLowerCase() === key.toLowerCase());
       const category = entry.originalCategory || invMatch?.category || 'Mobile Accessories';
-      if (!map[key]) map[key] = { name: key, category, brand: invMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: invMatch?.mrp || 0, totalMrp: 0, unitBuy, totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 };
+      if (!map[key]) map[key] = { name: key, category, brand: invMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: invMatch?.mrp || 0, totalMrp: 0, unitBuy, totalBuyCost: 0, totalRevenue: 0, totalGrossRevenue: 0, totalProfit: 0, profitCoverageComplete: true, avgSellPrice: 0 };
       map[key].unitsSold -= qty;
-      map[key].totalRevenue -= returnedAmount;
+      map[key].totalRevenue -= Number(entry.originalUnitTaxablePaid ?? returnedAmount / Math.max(1, qty)) * qty;
+      map[key].totalRevenue += retainedTaxable;
+      map[key].totalGrossRevenue -= Number(entry.originalUnitPaid ?? returnedAmount / Math.max(1, qty)) * qty;
+      map[key].totalGrossRevenue += Number(entry.allowanceReduction || 0);
       map[key].totalProfit -= profitAdjustment;
       if (entry.restocked) map[key].totalBuyCost -= unitBuy * qty;
     });
@@ -239,27 +257,33 @@ export default function AnalyticsReports({
       const qty = Number(entry.quantity || 0);
       const originalName = entry.originalProductName?.trim() || 'Returned Product';
       const originalMatch = inventory.find((invIt) => String(invIt.id) === String(entry.originalProductId) || invIt.name?.toLowerCase() === originalName.toLowerCase());
-      const original = map[originalName] || (map[originalName] = { name: originalName, category: entry.originalCategory || originalMatch?.category || 'Mobile Accessories', brand: originalMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: originalMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(entry.originalUnitCost || 0), totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 });
+      const original = map[originalName] || (map[originalName] = { name: originalName, category: entry.originalCategory || originalMatch?.category || 'Mobile Accessories', brand: originalMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: originalMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(entry.originalUnitTaxableCost ?? entry.originalUnitCost ?? 0), totalBuyCost: 0, totalRevenue: 0, totalGrossRevenue: 0, totalProfit: 0, profitCoverageComplete: true, avgSellPrice: 0 });
       original.unitsSold -= qty;
-      original.totalRevenue -= Number(entry.originalUnitPaid || 0) * qty;
-      original.totalProfit -= Number(entry.originalUnitProfit || 0) * qty;
-      if (entry.restocked) original.totalBuyCost -= Number(entry.originalUnitCost || 0) * qty;
+      original.totalRevenue -= Number(entry.originalUnitTaxablePaid ?? entry.originalUnitPaid ?? 0) * qty;
+      original.totalRevenue += Number(entry.retainedTaxableAmount || 0);
+      original.totalGrossRevenue -= Number(entry.originalUnitPaid || 0) * qty;
+      original.totalGrossRevenue += Number(entry.allowanceReduction || 0);
+      original.totalProfit -= Number(entry.originalUnitProfit || 0) * qty - Number(entry.retainedTaxableAmount || 0);
+      if (entry.restocked) original.totalBuyCost -= Number(entry.originalUnitTaxableCost ?? entry.originalUnitCost ?? 0) * qty;
 
       (entry.replacements || (entry.replacement ? [entry.replacement] : [])).forEach((replacementLine) => {
         const replacementName = replacementLine.productName?.trim() || 'Replacement Product';
         const replacementMatch = inventory.find((invIt) => String(invIt.id) === String(replacementLine.productId) || invIt.name?.toLowerCase() === replacementName.toLowerCase());
-        const replacement = map[replacementName] || (map[replacementName] = { name: replacementName, category: replacementLine.category || replacementMatch?.category || 'Mobile Accessories', brand: replacementMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: replacementMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(replacementLine.unitCost || 0), totalBuyCost: 0, totalRevenue: 0, totalProfit: 0, avgSellPrice: 0 });
+        const replacement = map[replacementName] || (map[replacementName] = { name: replacementName, category: replacementLine.category || replacementMatch?.category || 'Mobile Accessories', brand: replacementMatch?.brand || 'ALZINO', unitsSold: 0, unitMrp: replacementMatch?.mrp || 0, totalMrp: 0, unitBuy: Number(replacementLine.taxableUnitCost ?? replacementLine.unitCost ?? 0), totalBuyCost: 0, totalRevenue: 0, totalGrossRevenue: 0, totalProfit: 0, profitCoverageComplete: true, avgSellPrice: 0 });
         replacement.unitsSold += Number(replacementLine.quantity || 0);
-        replacement.totalRevenue += Number(replacementLine.unitPrice || 0) * Number(replacementLine.quantity || 0);
+        replacement.totalRevenue += Number(replacementLine.unitTaxablePrice ?? replacementLine.unitPrice ?? 0) * Number(replacementLine.quantity || 0);
+        replacement.totalGrossRevenue += Number(replacementLine.unitPrice || 0) * Number(replacementLine.quantity || 0);
         replacement.totalProfit += Number(replacementLine.unitProfit || 0) * Number(replacementLine.quantity || 0);
-        replacement.totalBuyCost += Number(replacementLine.unitCost || 0) * Number(replacementLine.quantity || 0);
+        replacement.totalBuyCost += Number(replacementLine.taxableUnitCost ?? replacementLine.unitCost ?? 0) * Number(replacementLine.quantity || 0);
       });
     });
 
     return Object.values(map).map(p => {
-      p.avgSellPrice = p.unitsSold > 0 ? Math.round(p.totalRevenue / p.unitsSold) : 0;
-      p.marginPct = p.totalRevenue > 0 ? Math.round((p.totalProfit / p.totalRevenue) * 100) : 0;
-      p.discountFromMrp = p.totalMrp > p.totalRevenue ? Math.round(((p.totalMrp - p.totalRevenue) / p.totalMrp) * 100) : 0;
+      p.avgTaxableSellPrice = p.unitsSold > 0 ? Math.round(p.totalRevenue / p.unitsSold) : 0;
+      p.avgSellPrice = p.unitsSold > 0 ? Math.round(p.totalGrossRevenue / p.unitsSold) : 0;
+      p.unitBuy = p.unitsSold > 0 ? p.totalBuyCost / p.unitsSold : 0;
+      p.marginPct = p.profitCoverageComplete && p.totalRevenue > 0 ? Math.round((p.totalProfit / p.totalRevenue) * 100) : null;
+      p.discountFromMrp = p.totalMrp > p.totalGrossRevenue ? Math.round(((p.totalMrp - p.totalGrossRevenue) / p.totalMrp) * 100) : 0;
       return p;
     });
   }, [filteredInvoices, inventory, selectedReturnEntries, selectedTransactionEntries]);
@@ -273,7 +297,8 @@ export default function AnalyticsReports({
       const catCost = itemsInCat.reduce((s, p) => s + p.totalBuyCost, 0);
       const catProfit = itemsInCat.reduce((s, p) => s + p.totalProfit, 0);
       const catUnits = itemsInCat.reduce((s, p) => s + p.unitsSold, 0);
-      const margin = catRevenue > 0 ? Math.round((catProfit / catRevenue) * 100) : 0;
+      const costCoverageComplete = itemsInCat.every(product => product.profitCoverageComplete);
+      const margin = costCoverageComplete && catRevenue > 0 ? Math.round((catProfit / catRevenue) * 100) : null;
 
       return {
         category: catName,
@@ -289,7 +314,7 @@ export default function AnalyticsReports({
 
   // Total Catalog MRP of Sold items vs Realized Selling Price
   const totalMrpValue = productAnalytics.reduce((s, p) => s + p.totalMrp, 0);
-  const totalCustomerSavings = Math.max(0, totalMrpValue - totalRevenue);
+  const totalCustomerSavings = Math.max(0, totalMrpValue - totalGrossRevenue);
   const avgDiscountGivenPct = totalMrpValue > 0 ? Math.round((totalCustomerSavings / totalMrpValue) * 100) : 0;
 
   // Filter individual product table by selected category & search
@@ -445,7 +470,7 @@ export default function AnalyticsReports({
     csv += "Product Name,Category,Brand,Units Sold,Unit MRP,Avg Selling Price,Buy Cost,Unit Profit,Total Profit,Margin %,MRP Discount %\n";
 
     productAnalytics.forEach(p => {
-      const unitProfit = p.avgSellPrice - p.unitBuy;
+      const unitProfit = p.avgTaxableSellPrice - p.unitBuy;
       const row = [
         `"${p.name.replace(/"/g, '""')}"`,
         `"${p.category}"`,
@@ -687,7 +712,7 @@ export default function AnalyticsReports({
             ₹{totalGrossProfit.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--status-green)', fontWeight: 600, marginTop: '0.2rem' }}>
-            {totalRevenue > 0 ? `${Math.round((totalGrossProfit / totalRevenue) * 100)}% Margin` : ''}
+            {billsMissingCost ? `Margin unavailable: cost missing on ${billsMissingCost} bill(s)` : totalRevenue > 0 ? `${Math.round((totalGrossProfit / totalRevenue) * 100)}% margin before GST` : ''}
           </div>
         </div>
       </div>
@@ -1209,7 +1234,7 @@ export default function AnalyticsReports({
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Units Sold</th>
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Unit MRP</th>
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Avg Selling Price</th>
-                  <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Buy / Cost Price</th>
+                  <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Buy Cost (before input GST)</th>
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Total Profit (₹)</th>
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Margin %</th>
                   <th style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>MRP Savings</th>
@@ -1217,7 +1242,7 @@ export default function AnalyticsReports({
               </thead>
               <tbody>
                 {filteredProductsTable.map((prod, idx) => {
-                  const unitProfit = prod.avgSellPrice - prod.unitBuy;
+                  const unitProfit = prod.avgTaxableSellPrice - prod.unitBuy;
 
                   return (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -1253,7 +1278,7 @@ export default function AnalyticsReports({
                       </td>
 
                       <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', fontWeight: 800, fontFamily: 'var(--font-mono)', color: prod.totalProfit >= 0 ? 'var(--status-green)' : 'var(--status-red)', fontSize: '0.92rem' }}>
-                        {prod.totalProfit >= 0 ? `+₹${prod.totalProfit.toLocaleString()}` : `-₹${Math.abs(prod.totalProfit).toLocaleString()}`}
+                        {!prod.profitCoverageComplete ? 'Cost missing' : prod.totalProfit >= 0 ? `+₹${prod.totalProfit.toLocaleString()}` : `-₹${Math.abs(prod.totalProfit).toLocaleString()}`}
                       </td>
 
                       <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>
@@ -1266,7 +1291,7 @@ export default function AnalyticsReports({
                           color: prod.marginPct >= 30 ? 'var(--status-green)' : 'var(--accent-primary)',
                           fontFamily: 'var(--font-mono)'
                         }}>
-                          {prod.marginPct}%
+                          {prod.marginPct === null ? '—' : `${prod.marginPct}%`}
                         </span>
                       </td>
 

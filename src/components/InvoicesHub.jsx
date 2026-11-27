@@ -2,7 +2,7 @@ import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
 import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
-import { getInvoiceItemProfitCost } from '../utils/supplierAccounting';
+import { getInvoiceProfitSummary } from '../utils/profitAccounting';
 import { 
   FileText, 
   Search, 
@@ -150,7 +150,10 @@ export default function InvoicesHub({
 
   // Overall Financial Stats
   const totalBilled = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0);
-  const totalProfit = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.totalProfit) || 0), 0);
+  const invoiceProfitSummaries = filteredInvoices.map(inv => getInvoiceProfitSummary(inv));
+  const totalProfit = invoiceProfitSummaries.reduce((sum, summary) => sum + (summary.costCoverageComplete ? (summary.profit ?? 0) : 0), 0);
+  const totalTaxableRevenue = invoiceProfitSummaries.reduce((sum, summary) => sum + summary.revenue, 0);
+  const billsMissingCost = invoiceProfitSummaries.filter(summary => !summary.costCoverageComplete).length;
   const totalPaid = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
   const totalDueKhata = filteredInvoices.reduce((sum, inv) => sum + getInvoiceBalance(inv), 0);
 
@@ -185,6 +188,20 @@ export default function InvoicesHub({
     const taxable = discountedBreakdowns.reduce((sum, item) => sum + item.taxable, 0);
     const gst = discountedBreakdowns.reduce((sum, item) => sum + item.gst, 0);
     const grand = discountedBreakdowns.reduce((sum, item) => sum + item.gross, 0);
+    const editedItems = invoiceToEdit.items.map((item, index) => ({
+      ...item,
+      total: discountedBreakdowns[index].gross,
+      taxable: discountedBreakdowns[index].taxable,
+      gstAmount: discountedBreakdowns[index].gst,
+      priceIncludesGst: typeof item.priceIncludesGst === 'boolean' ? item.priceIncludesGst : true
+    }));
+    const editedProfitSummary = getInvoiceProfitSummary({
+      ...invoiceToEdit,
+      items: editedItems,
+      totalProfit: null,
+      discount: appliedDiscount,
+      discountIncludedInTaxBreakdown: true
+    });
     const cgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
     const sgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
 
@@ -201,13 +218,7 @@ export default function InvoicesHub({
 
     const updatedInvoice = {
       ...invoiceToEdit,
-      items: invoiceToEdit.items.map((it, index) => ({
-        ...it,
-        total: discountedBreakdowns[index].gross,
-        taxable: discountedBreakdowns[index].taxable,
-        gstAmount: discountedBreakdowns[index].gst,
-        profit: discountedBreakdowns[index].taxable - getInvoiceItemProfitCost(it)
-      })),
+      items: editedItems.map((item, index) => ({ ...item, profit: editedProfitSummary.lines[index]?.profit ?? null })),
       taxableAmount: taxable,
       cgstTotal: cgst,
       sgstTotal: sgst,
@@ -221,7 +232,7 @@ export default function InvoicesHub({
       paymentStatus: invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
         ? 'EMI_SANCTIONED'
         : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: invoiceToEdit.items.reduce((sum, it, index) => sum + discountedBreakdowns[index].taxable - getInvoiceItemProfitCost(it), 0)
+      totalProfit: editedProfitSummary.profit
     };
 
     if (hasInvoiceStockChanges(originalInvoice, updatedInvoice)) {
@@ -604,13 +615,15 @@ export default function InvoicesHub({
 
         <div className="stat-card" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Realized Gross Margin
+            Gross Profit (before expenses)
           </div>
           <div style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--status-green)', marginTop: '0.2rem' }}>
             ₹{totalProfit.toLocaleString()}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-            {totalBilled > 0 ? `${Math.round((totalProfit / totalBilled) * 100)}% overall margin` : 'Gross margin earned'}
+            {billsMissingCost > 0
+              ? `Margin unavailable: cost missing on ${billsMissingCost} bill${billsMissingCost === 1 ? '' : 's'}`
+              : totalTaxableRevenue > 0 ? `${Math.round((totalProfit / totalTaxableRevenue) * 100)}% margin on sales before GST` : 'No taxable sales in this period'}
           </div>
         </div>
 
@@ -727,6 +740,8 @@ export default function InvoicesHub({
               </thead>
               <tbody>
                 {filteredInvoices.map((inv) => {
+                  const rowProfitSummary = getInvoiceProfitSummary(inv);
+                  const invoiceProfit = rowProfitSummary.costCoverageComplete ? rowProfitSummary.profit : null;
                   const isRefurb = inv.isRefurbishedResale || (inv.items && inv.items.some(it => it.category === 'Used Mobiles'));
                   const isRepair = inv.isRepairInvoice || inv.repairJobRef || (inv.items && inv.items.some(it => it.category === 'Repair Services'));
                   const returnTransactions = (inv.returnTransactions || []).filter(entry => entry.status !== 'voided');
@@ -828,7 +843,7 @@ export default function InvoicesHub({
 
                       {/* Profit */}
                       <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--status-green)' }}>
-                        +₹{(inv.totalProfit || 0).toLocaleString()}
+                        {invoiceProfit === null ? 'Cost missing' : `${invoiceProfit >= 0 ? '+' : '-'}₹${Math.abs(invoiceProfit).toLocaleString()}`}
                       </td>
 
                       {/* Payment */}
