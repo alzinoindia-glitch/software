@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getNetSupplierAllocations, getSupplierUnitCostBreakdown } from '../src/utils/supplierAccounting.js';
+import { getInvoiceItemProfitCost, getNetSupplierAllocations, getSupplierUnitCostBreakdown } from '../src/utils/supplierAccounting.js';
 import { applySupplierPayment } from '../src/utils/supplierPayments.js';
 
 test('uses the selected units actual costs and preserves supplier bill attribution', () => {
@@ -139,4 +139,30 @@ test('rejects supplier payments above the recorded payable without changing the 
   assert.equal(result.success, false);
   assert.equal(supplier.balancePayable, 20);
   assert.equal(supplier.payments.length, 0);
+});
+
+test('uses the taxable supplier cost when computing profit for GST-inclusive purchases', () => {
+  const cost = getSupplierUnitCostBreakdown({
+    quantity: 1,
+    fallbackUnitCost: 125,
+    fallbackGstRate: 25,
+    units: [{
+      id: 'serial-125', supplierId: 'supplier-a', supplierName: 'Supplier A', supplierBillId: 'bill-1',
+      purchaseCost: 125, purchaseCostEntered: 125, purchaseCostIncludesGst: true, purchaseGstRate: 25
+    }],
+    selectedUnitIds: ['serial-125']
+  });
+
+  assert.equal(cost.totalCost, 125);
+  assert.equal(cost.taxableCostTotal, 100);
+  assert.equal(getInvoiceItemProfitCost({ qty: 1, soldUnitRecords: cost.soldUnitRecords }), 100);
+  assert.equal(150 - getInvoiceItemProfitCost({ qty: 1, soldUnitRecords: cost.soldUnitRecords }), 50);
+});
+
+test('recalculates invoice cost when its quantity is edited', () => {
+  assert.equal(getInvoiceItemProfitCost({ qty: 2, profitCostPerUnit: 100, profitCostOfGoods: 100 }), 200);
+  assert.equal(getInvoiceItemProfitCost({ qty: 2, profitCostPerUnit: 110, soldUnitRecords: [
+    { purchaseCost: 125, purchaseCostEntered: 125, purchaseCostIncludesGst: true, purchaseGstRate: 25 },
+    { purchaseCost: 150, purchaseCostEntered: 150, purchaseCostIncludesGst: true, purchaseGstRate: 25 }
+  ] }), 220);
 });
