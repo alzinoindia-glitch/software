@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { getAgingDays, applyOffer, removeOffer, recommendedOfferPct } from '../utils/stockOffers';
 import { sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement } from '../utils/returnAccounting';
+import { getInvoiceItemProfitCost } from '../utils/supplierAccounting';
 
 export default function ExecutiveDashboard({
   invoices = [],
@@ -97,9 +98,18 @@ export default function ExecutiveDashboard({
 
   // 2. AAJ KA GROSS PROFIT (Gross Profit after purchase cost)
   const todayGrossProfit = todayInvoices.reduce((sum, inv) => {
+    const items = inv.items || [];
+    const hasTaxablePurchaseCost = items.some(item => item.profitCostOfGoods !== undefined
+      || (item.soldUnitRecords || []).some(unit => unit.purchaseCostEntered !== undefined
+        || unit.unitRecord?.purchaseCostEntered !== undefined
+        || unit.purchaseGstRate !== undefined
+        || unit.unitRecord?.purchaseGstRate !== undefined));
+    if (hasTaxablePurchaseCost) {
+      return sum + items.reduce((itemSum, item) => itemSum + Number(item.taxable || 0) - getInvoiceItemProfitCost(item), 0);
+    }
     if (inv.totalProfit !== undefined) return sum + Number(inv.totalProfit);
     // Line-item fallback
-    const itemsProfit = (inv.items || []).reduce((itemSum, item) => {
+    const itemsProfit = items.reduce((itemSum, item) => {
       const buyRate = Number(item.buyPrice) || 0;
       const sellRate = Number(item.rate) || 0;
       return itemSum + ((sellRate - buyRate) * (Number(item.qty) || 1));
