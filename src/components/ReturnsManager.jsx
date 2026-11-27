@@ -4,6 +4,8 @@ import { getUpiQrUrl } from '../utils/barcode';
 import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference } from '../utils/returnAccounting';
 import { getReplacementUnitOptions, hasTrackedReplacementUnits } from '../utils/replacementUnitOptions';
+import { getPurchaseCostBreakdown, getSalePriceBreakdown } from '../utils/gstPricing';
+import { getInvoiceLineProfit } from '../utils/profitAccounting';
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const getInvoiceUnitCodes = (item) => [
@@ -234,7 +236,9 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         units: unitRecords,
         selectedUnitIds: line.imeis || [],
         quantity: line.quantity,
-        fallbackUnitCost: line.product.buyPrice,
+      fallbackUnitCost: line.product.buyPrice,
+      fallbackTaxableUnitCost: line.product.buyCostBase,
+      fallbackGstRate: line.product.purchaseGstRate ?? line.product.gstRate ?? 0,
         supplierId: line.product.supplierId,
         supplierName: line.product.supplierName
       });
@@ -242,11 +246,17 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         productId: line.product.id, productName: line.product.name, category: line.product.category,
         quantity: Number(line.quantity), imeis: line.imeis || [],
         listPrice: line.listPrice,
+        gstRate: Number(line.product.gstRate || 18),
+        priceIncludesGst: line.product.sellPriceIncludesGst !== false,
         discountPerUnit: Math.min(line.discountPerUnit, line.listPrice),
         additionalDiscountShare: replacementSubtotal > 0 ? appliedAdditionalReplacementDiscount * (line.netUnitPrice * Number(line.quantity) / replacementSubtotal) : 0,
         unitPrice: getReplacementNetUnitPrice(line),
-        unitProfit: getReplacementNetUnitPrice(line) - cost.averageUnitCost,
+        unitTaxablePrice: getSalePriceBreakdown(getReplacementNetUnitPrice(line), 1, line.product.gstRate || 18, line.product.sellPriceIncludesGst !== false, true).taxable,
+        unitProfit: getSalePriceBreakdown(getReplacementNetUnitPrice(line), 1, line.product.gstRate || 18, line.product.sellPriceIncludesGst !== false, true).taxable - cost.averageTaxableUnitCost,
         unitCost: cost.averageUnitCost,
+        taxableUnitCost: cost.averageTaxableUnitCost,
+        purchaseGstRate: Number(line.product.purchaseGstRate ?? line.product.gstRate ?? 0),
+        buyPriceIncludesGst: line.product.buyPriceIncludesGst !== false,
         costOfGoods: cost.totalCost,
         supplierAllocations: cost.supplierAllocations,
         soldUnitRecords: cost.soldUnitRecords,
@@ -260,11 +270,17 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
           quantity: resolvedReplacementLines[0].quantity,
           imeis: resolvedReplacementLines[0].imeis || [],
           listPrice: resolvedReplacementLines[0].listPrice,
+          gstRate: Number(resolvedReplacementLines[0].product.gstRate || 18),
+          priceIncludesGst: resolvedReplacementLines[0].product.sellPriceIncludesGst !== false,
           discountPerUnit: Math.min(resolvedReplacementLines[0].discountPerUnit, resolvedReplacementLines[0].listPrice),
           additionalDiscountShare: replacementSubtotal > 0 ? appliedAdditionalReplacementDiscount * (resolvedReplacementLines[0].netUnitPrice * Number(resolvedReplacementLines[0].quantity) / replacementSubtotal) : 0,
           unitPrice: getReplacementNetUnitPrice(resolvedReplacementLines[0]),
-          unitProfit: getReplacementNetUnitPrice(resolvedReplacementLines[0]) - Number(resolvedReplacementLines[0].product.buyPrice || 0),
+          unitTaxablePrice: getSalePriceBreakdown(getReplacementNetUnitPrice(resolvedReplacementLines[0]), 1, resolvedReplacementLines[0].product.gstRate || 18, resolvedReplacementLines[0].product.sellPriceIncludesGst !== false, true).taxable,
+          unitProfit: getSalePriceBreakdown(getReplacementNetUnitPrice(resolvedReplacementLines[0]), 1, resolvedReplacementLines[0].product.gstRate || 18, resolvedReplacementLines[0].product.sellPriceIncludesGst !== false, true).taxable - Number(resolvedReplacementLines[0].product.buyCostBase ?? getPurchaseCostBreakdown(resolvedReplacementLines[0].product.buyPrice || 0, resolvedReplacementLines[0].product.purchaseGstRate ?? resolvedReplacementLines[0].product.gstRate ?? 0, resolvedReplacementLines[0].product.buyPriceIncludesGst !== false).taxable),
           unitCost: Number(resolvedReplacementLines[0].product.buyPrice || 0),
+          taxableUnitCost: Number(resolvedReplacementLines[0].product.buyCostBase ?? getPurchaseCostBreakdown(resolvedReplacementLines[0].product.buyPrice || 0, resolvedReplacementLines[0].product.purchaseGstRate ?? resolvedReplacementLines[0].product.gstRate ?? 0, resolvedReplacementLines[0].product.buyPriceIncludesGst !== false).taxable),
+          purchaseGstRate: Number(resolvedReplacementLines[0].product.purchaseGstRate ?? resolvedReplacementLines[0].product.gstRate ?? 0),
+          buyPriceIncludesGst: resolvedReplacementLines[0].product.buyPriceIncludesGst !== false,
         } : {}),
         quantity: resolvedReplacementLines.reduce((sum, line) => sum + Number(line.quantity), 0),
         valueDifference: replacementDelta,
@@ -275,6 +291,17 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
       const lineOutstandingCleared = Math.min(lineOutstandingShare, lineAllowance);
       const lineCredit = Math.max(0, lineAllowance - lineOutstandingCleared);
       const item = returnLine.item;
+      const originalLineProfit = getInvoiceLineProfit(invoice, returnLine.index);
+      const originalUnitTaxablePaid = item.taxable !== undefined && item.taxable !== null
+        ? Number(item.taxable || 0) / Math.max(1, Number(item.qty || 1))
+        : getSalePriceBreakdown(returnLine.unitPaid, 1, item.gstRate || 0, item.priceIncludesGst !== false, !invoice?.isNonGst).taxable;
+      const retainedTaxableAmount = getSalePriceBreakdown(
+        Math.max(0, returnLine.returnValue - lineAllowance),
+        1,
+        item.gstRate || 0,
+        item.priceIncludesGst !== false,
+        !invoice?.isNonGst
+      ).taxable;
       const exchangeRefund = action === 'replacement' && linePosition === 0
         ? getReplacementRefundPaymentFields({ direction: settlementDirection, amount: settlementAmount, method: effectiveSettlementMethod, reference: settlementReference })
         : {};
@@ -284,8 +311,15 @@ export default function ReturnsManager({ invoices = [], setInvoices, inventory =
         originalProductName: item.name, originalCategory: item.category,
         replacementDiscountTotal: action === 'replacement' && linePosition === 0 ? replacementDiscountTotal : 0,
         additionalReplacementDiscount: action === 'replacement' && linePosition === 0 ? appliedAdditionalReplacementDiscount : 0,
-        originalUnitProfit: Number(item.profit ?? ((Number(item.rate || 0) - Number(item.buyPrice || 0)) * Number(item.qty || 1))) / Math.max(1, Number(item.qty || 1)),
-        originalUnitCost: Number(item.buyPrice || 0), quantity: returnLine.quantity,
+        originalUnitProfit: originalLineProfit === null ? 0 : originalLineProfit / Math.max(1, Number(item.qty || 1)),
+        originalUnitCost: Number(item.buyPrice || 0),
+        originalUnitTaxableCost: Number(item.profitCostPerUnit ?? item.buyCostBase ?? getPurchaseCostBreakdown(item.buyPrice || 0, item.purchaseGstRate ?? item.gstRate ?? 0, item.buyPriceIncludesGst !== false).taxable),
+        originalGstRate: Number(item.gstRate || 0),
+        originalPriceIncludesGst: item.priceIncludesGst !== false,
+        originalIsNonGst: Boolean(invoice?.isNonGst),
+        originalUnitTaxablePaid,
+        retainedTaxableAmount,
+        quantity: returnLine.quantity,
         originalUnitPaid: returnLine.unitPaid, returnValue: returnLine.returnValue, returnAllowance: lineAllowance, allowanceReduction: Math.max(0, returnLine.returnValue - lineAllowance),
         invoicePaidAtReturn: invoicePaid, invoiceOutstandingAtReturn: invoiceOutstanding,
         outstandingCleared: lineOutstandingCleared, availableReturnCredit: lineCredit,

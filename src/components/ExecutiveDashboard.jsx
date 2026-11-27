@@ -28,8 +28,8 @@ import {
   Plus
 } from 'lucide-react';
 import { getAgingDays, applyOffer, removeOffer, recommendedOfferPct } from '../utils/stockOffers';
-import { sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement } from '../utils/returnAccounting';
-import { getInvoiceItemProfitCost } from '../utils/supplierAccounting';
+import { sumRefunds, sumReturnProfitAdjustments, sumReplacementRevenueAdjustments, sumReplacementProfitAdjustments, sumReplacementSettlement, sumReturnTaxableRevenueAdjustments, sumReplacementTaxableRevenueAdjustments } from '../utils/returnAccounting';
+import { getInvoiceProfitSummary } from '../utils/profitAccounting';
 
 export default function ExecutiveDashboard({
   invoices = [],
@@ -96,30 +96,17 @@ export default function ExecutiveDashboard({
   const todayTotalSale = todayInvoices.reduce((sum, inv) => sum + (Number(inv.grandTotal) || 0), 0) - todayRefundTotal + todayReplacementDelta;
   const todayPaidReceived = todayInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0) - todayCashRefunds - todayUpiRefunds - todayOtherRefunds + todayCashExchangeSettlement + todayUpiExchangeSettlement + todayOtherExchangeSettlement;
 
-  // 2. AAJ KA GROSS PROFIT (Gross Profit after purchase cost)
-  const todayGrossProfit = todayInvoices.reduce((sum, inv) => {
-    const items = inv.items || [];
-    const hasTaxablePurchaseCost = items.some(item => item.profitCostOfGoods !== undefined
-      || (item.soldUnitRecords || []).some(unit => unit.purchaseCostEntered !== undefined
-        || unit.unitRecord?.purchaseCostEntered !== undefined
-        || unit.purchaseGstRate !== undefined
-        || unit.unitRecord?.purchaseGstRate !== undefined));
-    if (hasTaxablePurchaseCost) {
-      return sum + items.reduce((itemSum, item) => itemSum + Number(item.taxable || 0) - getInvoiceItemProfitCost(item), 0);
-    }
-    if (inv.totalProfit !== undefined) return sum + Number(inv.totalProfit);
-    // Line-item fallback
-    const itemsProfit = items.reduce((itemSum, item) => {
-      const buyRate = Number(item.buyPrice) || 0;
-      const sellRate = Number(item.rate) || 0;
-      return itemSum + ((sellRate - buyRate) * (Number(item.qty) || 1));
-    }, 0);
-    return sum + (itemsProfit - (Number(inv.discount) || 0));
-  }, 0) - sumReturnProfitAdjustments(invoices, todayReturnDate) + sumReplacementProfitAdjustments(invoices, todayReturnDate);
-
-  const todayProfitMarginPercent = todayTotalSale > 0 
-    ? ((todayGrossProfit / todayTotalSale) * 100).toFixed(1) 
-    : 0;
+  // Profit and margin use the same GST-exclusive basis as POS and invoice line totals.
+  const todayProfitSummaries = todayInvoices.map(getInvoiceProfitSummary);
+  const todayProfitCoverageComplete = todayProfitSummaries.every(summary => summary.costCoverageComplete);
+  const todayGrossProfit = todayProfitSummaries.reduce((sum, summary) => sum + (summary.costCoverageComplete ? (summary.profit ?? 0) : 0), 0)
+    - sumReturnProfitAdjustments(invoices, todayReturnDate) + sumReplacementProfitAdjustments(invoices, todayReturnDate);
+  const todayTaxableSales = todayProfitSummaries.reduce((sum, summary) => sum + summary.revenue, 0)
+    + sumReturnTaxableRevenueAdjustments(invoices, todayReturnDate)
+    + sumReplacementTaxableRevenueAdjustments(invoices, todayReturnDate);
+  const todayProfitMarginPercent = todayTaxableSales > 0 && todayProfitCoverageComplete
+    ? ((todayGrossProfit / todayTaxableSales) * 100).toFixed(1)
+    : null;
 
   // 3. CASH / UPI ALAG COLLECTION
   const todayCashCollection = todayInvoices
@@ -414,14 +401,14 @@ export default function ExecutiveDashboard({
               2. Aaj Ka Gross Profit
             </span>
             <span className="mono-tag" style={{ background: 'var(--status-green-bg)', color: 'var(--status-green)', fontWeight: 800 }}>
-              {todayProfitMarginPercent}% Margin
+              {todayProfitMarginPercent === null ? 'Margin unavailable' : `${todayProfitMarginPercent}% margin before GST`}
             </span>
           </div>
           <div style={{ fontSize: '1.85rem', fontWeight: 900, color: 'var(--status-green)', fontFamily: 'var(--font-heading)' }}>
-            ₹{todayGrossProfit.toLocaleString()}
+            {todayProfitCoverageComplete ? `₹${todayGrossProfit.toLocaleString()}` : `₹${todayGrossProfit.toLocaleString()}*`}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
-            Pure Gross Profit after purchase cost deduction
+            {todayProfitCoverageComplete ? 'Sales before GST less purchase cost before input GST' : '*Known-cost invoices only; add missing supplier costs for the full-day total'}
           </div>
         </div>
 

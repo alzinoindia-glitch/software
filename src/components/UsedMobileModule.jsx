@@ -1,5 +1,6 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import { getNextInvoiceNumber } from '../utils/invoiceNumbering';
+import { getPurchaseCostBreakdown, getSalePriceBreakdown } from '../utils/gstPricing';
 import React, { useState, useMemo } from 'react';
 import { 
   Smartphone, 
@@ -426,7 +427,13 @@ export default function UsedMobileModule({
     const today = getLocalDateString();
 
     const deviceCost = Number(selectedDevice.buyPrice) || 0;
-    const marginProfit = Math.round(grandTotalPrice - deviceCost);
+    const purchaseGstRate = Number(selectedDevice.purchaseGstRate ?? selectedDevice.gstRate ?? 0) || 0;
+    const deviceTaxableCost = selectedDevice.buyCostBase !== undefined
+      ? Number(selectedDevice.buyCostBase) || 0
+      : getPurchaseCostBreakdown(deviceCost, purchaseGstRate, selectedDevice.buyPriceIncludesGst !== false).taxable;
+    const saleGstRate = Number(selectedDevice.gstRate || 18) || 18;
+    const saleBreakdown = getSalePriceBreakdown(grandTotalPrice, 1, saleGstRate, true, !isNonGst);
+    const marginProfit = Math.round((saleBreakdown.taxable - (isNonGst ? deviceCost : deviceTaxableCost)) * 100) / 100;
     const primaryImei = selectedDevice.imeis && selectedDevice.imeis.length > 0 
       ? selectedDevice.imeis 
       : [selectedDevice.barcode || ''];
@@ -452,9 +459,16 @@ export default function UsedMobileModule({
           qty: 1,
           imeis: primaryImei,
           rate: finalPrice,
+          priceIncludesGst: true,
           buyPrice: deviceCost,
-          gstRate: isNonGst ? 0 : 18,
-          taxable: isNonGst ? finalPrice : parseFloat((finalPrice / 1.18).toFixed(2)),
+          buyCostBase: deviceTaxableCost,
+          purchaseGstRate,
+          buyPriceIncludesGst: selectedDevice.buyPriceIncludesGst !== false,
+          profitCostPerUnit: isNonGst ? deviceCost : deviceTaxableCost,
+          profitCostOfGoods: isNonGst ? deviceCost : deviceTaxableCost,
+          gstRate: isNonGst ? 0 : saleGstRate,
+          taxable: saleBreakdown.taxable,
+          gstAmount: saleBreakdown.gst,
           total: finalPrice,
           profit: marginProfit,
           condition: selectedDevice.condition || 'Tested & Certified',
@@ -462,11 +476,12 @@ export default function UsedMobileModule({
           accessories: selectedAccessories.join(', '),
         }
       ],
-      taxableAmount: isNonGst ? grandTotalPrice : parseFloat((grandTotalPrice / 1.18).toFixed(2)),
-      cgstTotal: isNonGst ? 0 : parseFloat(((grandTotalPrice - (grandTotalPrice / 1.18)) / 2).toFixed(2)),
-      sgstTotal: isNonGst ? 0 : parseFloat(((grandTotalPrice - (grandTotalPrice / 1.18)) / 2).toFixed(2)),
+      taxableAmount: saleBreakdown.taxable,
+      cgstTotal: isNonGst ? 0 : parseFloat((saleBreakdown.gst / 2).toFixed(2)),
+      sgstTotal: isNonGst ? 0 : parseFloat((saleBreakdown.gst / 2).toFixed(2)),
       igstTotal: 0,
       discount: discountAmt,
+      discountIncludedInTaxBreakdown: true,
       grandTotal: grandTotalPrice,
       paidAmount: resellPaymentMode === 'Khata' ? 0 : grandTotalPrice,
       khataDue: resellPaymentMode === 'Khata' ? grandTotalPrice : 0,
@@ -862,8 +877,10 @@ export default function UsedMobileModule({
                 </thead>
                 <tbody>
                   {filteredStock.map((phone) => {
-                    const margin = (phone.sellPrice || 0) - (phone.buyPrice || 0);
-                    const marginPct = phone.buyPrice ? Math.round((margin / phone.buyPrice) * 100) : 0;
+                    const buyCost = Number(phone.buyCostBase ?? getPurchaseCostBreakdown(phone.buyPrice || 0, phone.purchaseGstRate ?? phone.gstRate ?? 0, phone.buyPriceIncludesGst !== false).taxable);
+                    const sellNet = getSalePriceBreakdown(phone.sellPrice || 0, 1, phone.gstRate || 18, phone.sellPriceIncludesGst !== false, true).taxable;
+                    const margin = sellNet - buyCost;
+                    const marginPct = sellNet > 0 ? Math.round((margin / sellNet) * 100) : 0;
                     const primaryImei = (phone.imeis && phone.imeis[0]) || phone.barcode || '—';
 
                     return (
@@ -2011,8 +2028,12 @@ export default function UsedMobileModule({
                   const disc = Math.max(0, Number(resellDiscount) || 0);
                   const netPayable = Math.max(0, Math.round(currentSell - disc));
                   const currentBuy = Number(selectedDevice.buyPrice) || 0;
-                  const profit = netPayable - currentBuy;
-                  const marginPct = currentBuy ? Math.round((profit / currentBuy) * 100) : 0;
+                  const isNonGstSale = resellBillingType === 'non-gst';
+                  const saleRate = Number(selectedDevice.gstRate || 18) || 18;
+                  const taxableSale = getSalePriceBreakdown(netPayable, 1, saleRate, true, !isNonGstSale).taxable;
+                  const taxableCost = Number(selectedDevice.buyCostBase ?? getPurchaseCostBreakdown(currentBuy, selectedDevice.purchaseGstRate ?? selectedDevice.gstRate ?? 0, selectedDevice.buyPriceIncludesGst !== false).taxable);
+                  const profit = taxableSale - (isNonGstSale ? currentBuy : taxableCost);
+                  const marginPct = taxableSale ? Math.round((profit / taxableSale) * 100) : 0;
 
                   return (
                     <div>

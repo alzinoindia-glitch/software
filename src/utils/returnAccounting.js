@@ -1,3 +1,5 @@
+import { getSalePriceBreakdown } from './gstPricing.js';
+
 export const getInvoiceTransactions = (invoices = [], predicate = () => true) => invoices.flatMap((invoice) =>
   (invoice.returnTransactions || [])
     .filter((entry) => entry.status !== 'voided' && predicate(entry, invoice))
@@ -24,20 +26,53 @@ export const sumReturnProfitAdjustments = (invoices = [], predicate = () => true
   getInvoiceReturns(invoices, predicate).reduce((sum, entry) => {
     const qty = Number(entry.quantity || 0);
     const profit = Number(entry.originalUnitProfit || 0) * qty;
-    const cost = Number(entry.originalUnitCost || 0) * qty;
-    return sum + profit + (entry.restocked ? 0 : cost);
+    const cost = Number(entry.originalUnitTaxableCost ?? entry.originalUnitCost ?? 0) * qty;
+    return sum + profit + (entry.restocked ? 0 : cost) - Number(entry.retainedTaxableAmount || 0);
   }, 0);
 
 export const sumReplacementRevenueAdjustments = (invoices = [], predicate = () => true) =>
   getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
     .reduce((sum, entry) => sum + Number(entry.replacement?.valueDifference || 0), 0);
 
+// Net sales exclude output GST. New return records persist the taxable unit
+// value; older records fall back to their recorded return value.
+export const sumReturnTaxableRevenueAdjustments = (invoices = [], predicate = () => true) =>
+  getInvoiceReturns(invoices, predicate).reduce((sum, entry) => {
+    const quantity = Math.max(0, Number(entry.quantity) || 0);
+    const taxableValue = entry.originalUnitTaxablePaid !== undefined
+      ? Number(entry.originalUnitTaxablePaid || 0) * quantity
+      : getSalePriceBreakdown(
+        Number(entry.originalUnitPaid ?? entry.returnValue ?? entry.refundAmount ?? 0) * (entry.originalUnitPaid !== undefined ? quantity : 1),
+        1,
+        entry.originalGstRate || 0,
+        entry.originalPriceIncludesGst !== false,
+        !entry.originalIsNonGst
+      ).taxable;
+    return sum - taxableValue + Number(entry.retainedTaxableAmount || 0);
+  }, 0);
+
+export const sumReplacementTaxableRevenueAdjustments = (invoices = [], predicate = () => true) =>
+  getInvoiceTransactions(invoices, entry => entry.type === 'replacement' && predicate(entry))
+    .reduce((sum, entry) => {
+      const quantity = Math.max(0, Number(entry.quantity) || 0);
+      const replacements = entry.replacements || (entry.replacement ? [entry.replacement] : []);
+      const replacementRevenue = replacements.length
+        ? replacements.reduce((rowSum, line) => rowSum + (line.unitTaxablePrice !== undefined
+          ? Number(line.unitTaxablePrice || 0) * Math.max(0, Number(line.quantity) || 0)
+          : getSalePriceBreakdown(Number(line.unitPrice || 0), Number(line.quantity || 0), line.gstRate || 0, line.priceIncludesGst !== false, true).taxable), 0)
+        : Number(entry.replacement?.valueDifference || 0);
+      const originalRevenue = entry.originalUnitTaxablePaid !== undefined
+        ? Number(entry.originalUnitTaxablePaid || 0) * quantity
+        : getSalePriceBreakdown(Number(entry.originalUnitPaid || 0) * quantity, 1, entry.originalGstRate || 0, entry.originalPriceIncludesGst !== false, !entry.originalIsNonGst).taxable;
+      return sum + replacementRevenue - originalRevenue + Number(entry.retainedTaxableAmount || 0);
+    }, 0);
+
 export const sumReplacementProfitAdjustments = (invoices = [], predicate = () => true) =>
   getInvoiceTransactions(invoices, (entry) => entry.type === 'replacement' && predicate(entry))
     .reduce((sum, entry) => {
       const replacements = entry.replacements || (entry.replacement ? [entry.replacement] : []);
       const replacementProfit = replacements.reduce((rowSum, row) => rowSum + Number(row.unitProfit || 0) * Number(row.quantity || 0), 0);
-      return sum + replacementProfit - Number(entry.originalUnitProfit || 0) * Number(entry.quantity || 0);
+      return sum + replacementProfit - Number(entry.originalUnitProfit || 0) * Number(entry.quantity || 0) + Number(entry.retainedTaxableAmount || 0);
     }, 0);
 
 export const sumReplacementSettlement = (invoices = [], predicate = () => true, methodPredicate = () => true) =>
@@ -94,3 +129,4 @@ export const getReplacementRefundPaymentFields = ({ direction = '', amount = 0, 
     status: pending ? 'pending' : 'paid'
   };
 };
+

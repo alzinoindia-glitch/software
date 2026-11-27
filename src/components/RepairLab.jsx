@@ -30,7 +30,7 @@ import { getCustomTechnicians, saveCustomTechnicians } from '../utils/customTaxo
 import { getUpiQrUrl } from '../utils/barcode';
 import { applyRepairInvoiceToCustomerLedger, getRepairBalanceDue } from '../utils/repairAccounting';
 import { reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
-import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
+import { applySaleDiscount, getPurchaseCostBreakdown, getSalePriceBreakdown } from '../utils/gstPricing';
 
 const WhatsAppIcon = ({ size = 15, color = "currentColor" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
@@ -420,6 +420,19 @@ export default function RepairLab({
       name: newPartName.trim(),
       cost,
       inventoryId: selectedInventoryPartId || null,
+      ...(selectedInventoryPartId ? (() => {
+        const inventoryItem = inventory.find(item => String(item.id) === String(selectedInventoryPartId));
+        if (!inventoryItem) return {};
+        const purchaseGstRate = Number(inventoryItem.purchaseGstRate ?? inventoryItem.gstRate ?? 0) || 0;
+        const includesGst = inventoryItem.buyPriceIncludesGst !== false;
+        return {
+          purchaseGstRate,
+          purchaseCostIncludesGst: includesGst,
+          taxablePurchaseCost: inventoryItem.buyCostBase !== undefined
+            ? Number(inventoryItem.buyCostBase) || 0
+            : getPurchaseCostBreakdown(inventoryItem.buyPrice || cost, purchaseGstRate, includesGst).taxable
+        };
+      })() : {}),
       qty: 1
     };
     setConsumedParts(prev => [...prev, newPart]);
@@ -486,7 +499,16 @@ export default function RepairLab({
     const totalSparePartsCost = consumedParts.reduce((sum, p) => sum + (Number(p.cost) || 0) * Math.max(1, Number(p.qty) || 1), 0);
     const hasRecordedCost = consumedParts.some(part => Number(part.cost) > 0);
     const buyPrice = totalSparePartsCost;
-    const calculatedProfit = hasRecordedCost ? grandTotalPrice - buyPrice : null;
+    const taxableSparePartsCost = consumedParts.reduce((sum, part) => {
+      const quantity = Math.max(1, Number(part.qty) || 1);
+      const unitCost = part.taxablePurchaseCost !== undefined
+        ? Number(part.taxablePurchaseCost) || 0
+        : (part.purchaseCostIncludesGst
+          ? getPurchaseCostBreakdown(part.cost, part.purchaseGstRate || 0, true).taxable
+          : Number(part.cost) || 0);
+      return sum + unitCost * quantity;
+    }, 0);
+    const calculatedProfit = hasRecordedCost ? repairTotals.taxable - taxableSparePartsCost : null;
 
     // Spare parts summary text for notes
     const partsText = consumedParts.length > 0 
@@ -524,6 +546,8 @@ export default function RepairLab({
           imeis: [`Ref: ${jobToBill.jobId}`],
           rate: finalPrice,
           buyPrice: buyPrice,
+          costOfGoods: buyPrice,
+          ...(hasRecordedCost ? { profitCostOfGoods: taxableSparePartsCost, profitCostPerUnit: taxableSparePartsCost } : {}),
           gstRate: isNonGst ? 0 : 18,
           taxable: repairTotals.taxable,
           gstAmount: repairTotals.gst,

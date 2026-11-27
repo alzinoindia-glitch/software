@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference, sumPendingRefundLiabilities, sumReplacementSettlement } from '../src/utils/returnAccounting.js';
+import { applyReturnKhataAdjustment, getReplacementRefundPaymentFields, requiresReturnRefundReference, sumPendingRefundLiabilities, sumReplacementSettlement, sumReturnProfitAdjustments, sumReplacementProfitAdjustments, sumReturnTaxableRevenueAdjustments, sumReplacementTaxableRevenueAdjustments } from '../src/utils/returnAccounting.js';
 
 test('clears customer Khata when returned goods cancel an unpaid invoice balance', () => {
   const updated = applyReturnKhataAdjustment({ id: 'C1', balanceDue: 1000 }, { outstandingCleared: 1000 });
@@ -51,4 +51,26 @@ test('separates pending return and exchange refunds from actual settlement inflo
   ] }];
   assert.equal(sumPendingRefundLiabilities(invoices), 500);
   assert.equal(sumReplacementSettlement(invoices), -100);
+});
+
+test('partial refund keeps the approved retained amount in taxable sales and profit', () => {
+  const invoices = [{ returnTransactions: [{
+    type: 'refund', status: 'completed', quantity: 1,
+    originalUnitTaxablePaid: 100, originalUnitProfit: 40, originalUnitTaxableCost: 60,
+    retainedTaxableAmount: 20, returnValue: 120, refundAmount: 100, restocked: true
+  }] }];
+
+  assert.equal(sumReturnTaxableRevenueAdjustments(invoices), -80);
+  assert.equal(sumReturnProfitAdjustments(invoices), 20);
+});
+
+test('replacement accounting retains partial-return value and adds replacement margin once', () => {
+  const invoices = [{ returnTransactions: [{
+    type: 'replacement', status: 'completed', quantity: 1,
+    originalUnitTaxablePaid: 100, originalUnitProfit: 40, retainedTaxableAmount: 20,
+    replacements: [{ quantity: 1, unitTaxablePrice: 200, unitProfit: 140 }]
+  }] }];
+
+  assert.equal(sumReplacementTaxableRevenueAdjustments(invoices), 120);
+  assert.equal(sumReplacementProfitAdjustments(invoices), 120);
 });
