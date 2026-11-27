@@ -1,7 +1,8 @@
 import { getLocalDateString } from '../utils/dateUtils';
 import React, { useState, useMemo } from 'react';
 import { hasInvoiceStockChanges, reconcileCustomerAfterInvoiceEdit } from '../utils/invoiceEditAccounting';
-import { getSalePriceBreakdown } from '../utils/gstPricing';
+import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
+import { getInvoiceItemProfitCost } from '../utils/supplierAccounting';
 import { 
   FileText, 
   Search, 
@@ -179,11 +180,13 @@ export default function InvoicesHub({
       typeof item.priceIncludesGst === 'boolean' ? item.priceIncludesGst : invoiceToEdit.priceIncludesGst !== false,
       !isNonGstInv
     ));
-    const taxable = itemBreakdowns.reduce((sum, item) => sum + item.taxable, 0);
-    const gst = itemBreakdowns.reduce((sum, item) => sum + item.gst, 0);
-    const grand = Math.max(0, Math.round((itemBreakdowns.reduce((sum, item) => sum + item.gross, 0) - disc + Number.EPSILON) * 100) / 100);
-    const cgst = isNonGstInv ? 0 : gst / 2;
-    const sgst = isNonGstInv ? 0 : gst / 2;
+    const appliedDiscount = Math.min(itemBreakdowns.reduce((sum, item) => sum + item.gross, 0), Math.max(0, disc));
+    const discountedBreakdowns = applySaleDiscount(itemBreakdowns, appliedDiscount);
+    const taxable = discountedBreakdowns.reduce((sum, item) => sum + item.taxable, 0);
+    const gst = discountedBreakdowns.reduce((sum, item) => sum + item.gst, 0);
+    const grand = discountedBreakdowns.reduce((sum, item) => sum + item.gross, 0);
+    const cgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
+    const sgst = isNonGstInv || invoiceToEdit.isInterstate ? 0 : gst / 2;
 
     const originalInvoice = invoices.find(invoice => invoice.invoiceNo === invoiceToEdit.invoiceNo) || invoiceToEdit;
     const existingPaid = Number(invoiceToEdit.paidAmount ?? (originalInvoice.paymentMode === 'Khata' ? 0 : originalInvoice.grandTotal)) || 0;
@@ -200,14 +203,17 @@ export default function InvoicesHub({
       ...invoiceToEdit,
       items: invoiceToEdit.items.map((it, index) => ({
         ...it,
-        total: itemBreakdowns[index].gross,
-        taxable: itemBreakdowns[index].taxable,
-        gstAmount: itemBreakdowns[index].gst,
-        profit: itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
+        total: discountedBreakdowns[index].gross,
+        taxable: discountedBreakdowns[index].taxable,
+        gstAmount: discountedBreakdowns[index].gst,
+        profit: discountedBreakdowns[index].taxable - getInvoiceItemProfitCost(it)
       })),
       taxableAmount: taxable,
       cgstTotal: cgst,
       sgstTotal: sgst,
+      igstTotal: invoiceToEdit.isInterstate ? gst : 0,
+      discount: appliedDiscount,
+      discountIncludedInTaxBreakdown: true,
       grandTotal: grand,
       paidAmount: paid,
       balanceDue: khata,
@@ -215,7 +221,7 @@ export default function InvoicesHub({
       paymentStatus: invoiceToEdit.emiDetails || String(invoiceToEdit.paymentMode || '').startsWith('EMI')
         ? 'EMI_SANCTIONED'
         : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: invoiceToEdit.items.reduce((sum, it, index) => sum + itemBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty), 0) - disc
+      totalProfit: invoiceToEdit.items.reduce((sum, it, index) => sum + discountedBreakdowns[index].taxable - getInvoiceItemProfitCost(it), 0)
     };
 
     if (hasInvoiceStockChanges(originalInvoice, updatedInvoice)) {

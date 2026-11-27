@@ -46,10 +46,10 @@ import { HardwareBarcodeScannerEngine, playDeviceBeep } from '../utils/hardwareD
 const CameraBarcodeScannerModal = lazy(() => import('./CameraBarcodeScannerModal'));
 import { openWhatsAppInvoice } from '../utils/whatsappAutomation';
 import { lookupProductByBarcodeOrImei } from '../utils/productSuggestions';
-import { applySaleDiscount, getSalePriceBreakdown } from '../utils/gstPricing';
+import { applySaleDiscount, getPurchaseCostBreakdown, getSalePriceBreakdown } from '../utils/gstPricing';
 import { findProductFromScan, STANDARD_PRODUCT_TERMS_PRESETS, normalizeProductTerms } from '../utils/productTerms';
 import { BASE_CATEGORIES, isUsedMobileProduct, normalizeProductCategory, productCategoriesMatch } from '../utils/customTaxonomy';
-import { getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
+import { getInvoiceItemProfitCost, getSupplierUnitCostBreakdown } from '../utils/supplierAccounting';
 
 const getPosGstRate = item => {
   const rate = Number(item?.gstRate);
@@ -314,6 +314,12 @@ export default function PosBilling({
     selectedUnitIds: item.selectedUnitIds || [],
     quantity: item.qty,
     fallbackUnitCost: item.buyPrice,
+    fallbackTaxableUnitCost: item.buyCostBase !== undefined && item.buyCostBase !== null
+      ? item.buyCostBase
+      : (item.buyPriceIncludesGst !== undefined
+        ? getPurchaseCostBreakdown(item.buyPrice, item.purchaseGstRate ?? item.gstRate, true).taxable
+        : null),
+    fallbackGstRate: item.purchaseGstRate ?? item.gstRate,
     supplierId: item.supplierId,
     supplierName: item.supplierName
   });
@@ -727,7 +733,7 @@ export default function PosBilling({
   // Total line profit (for admin mode)
   const totalProfit = discountedSaleLines.reduce((sum, line) => {
     const cost = getCartCostBreakdown(line.item);
-    return sum + line.totals.taxable - cost.totalCost;
+    return sum + line.totals.taxable - cost.taxableCostTotal;
   }, 0);
 
   // EMI auto-calculated loan amount
@@ -959,13 +965,16 @@ export default function PosBilling({
         priceIncludesGst: linePriceIncludesGst,
         buyPrice: cost.averageUnitCost,
         costOfGoods: cost.totalCost,
+        purchaseGstRate: item.purchaseGstRate ?? item.gstRate ?? 0,
+        profitCostPerUnit: cost.averageTaxableUnitCost,
+        profitCostOfGoods: cost.taxableCostTotal,
         unattributedSupplierQuantity: cost.unattributedQuantity,
         soldUnitRecords: cost.soldUnitRecords,
         gstRate: isNonGst ? 0 : item.gstRate,
         taxable: tax.taxable,
         gstAmount: tax.gst,
         total: tax.gross,
-        profit: tax.taxable - cost.totalCost,
+        profit: tax.taxable - cost.taxableCostTotal,
         warranty: item.warrantyIncluded ? (item.warranty || '').trim() : '',
         termsAndConditions: normalizeProductTerms(item.termsAndConditions),
         supplierAllocations: cost.supplierAllocations,
@@ -1127,7 +1136,7 @@ export default function PosBilling({
         total: discountedBreakdowns[index].gross,
         taxable: discountedBreakdowns[index].taxable,
         gstAmount: discountedBreakdowns[index].gst,
-        profit: discountedBreakdowns[index].taxable - (Number(it.buyPrice) || 0) * Number(it.qty)
+        profit: discountedBreakdowns[index].taxable - getInvoiceItemProfitCost(it)
       })),
       taxableAmount: taxable,
       cgstTotal: cgst,
@@ -1140,7 +1149,7 @@ export default function PosBilling({
       balanceDue: khata,
       khataDue: khata,
       paymentStatus: isEmiInvoice ? 'EMI_SANCTIONED' : (khata > 0 ? 'PARTIAL' : 'PAID'),
-      totalProfit: discountedBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - (Number(invoiceToEdit.items[index].buyPrice) || 0) * Number(invoiceToEdit.items[index].qty), 0)
+      totalProfit: discountedBreakdowns.reduce((sum, breakdown, index) => sum + breakdown.taxable - getInvoiceItemProfitCost(invoiceToEdit.items[index]), 0)
     };
 
     const previousInvoice = invoices.find(inv => inv.invoiceNo === updatedInvoice.invoiceNo) || invoiceToEdit;
