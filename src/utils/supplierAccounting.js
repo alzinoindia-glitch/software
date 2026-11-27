@@ -24,14 +24,22 @@ const unitTaxablePurchaseCost = (unit, fallbackCost = 0, fallbackTaxableCost = n
 };
 
 export const getInvoiceItemProfitCost = item => {
-  if (item?.profitCostOfGoods !== undefined && item.profitCostOfGoods !== null && Number.isFinite(Number(item.profitCostOfGoods))) {
-    return Math.max(0, Number(item.profitCostOfGoods));
-  }
   const quantity = Math.max(0, Number(item?.qty) || 0);
   const soldUnits = item?.soldUnitRecords || [];
   if (soldUnits.length) {
     return soldUnits.slice(0, quantity).reduce((sum, unit) => sum + unitTaxablePurchaseCost(unit, item?.buyPrice, null, item?.purchaseGstRate || 0), 0)
-      + Math.max(0, quantity - soldUnits.length) * unitTaxablePurchaseCost(null, item?.buyPrice, item?.buyCostBase, item?.purchaseGstRate || 0);
+      + Math.max(0, quantity - soldUnits.length) * unitTaxablePurchaseCost(
+        null,
+        item?.buyPrice,
+        item?.profitCostPerUnit ?? item?.buyCostBase,
+        item?.purchaseGstRate || 0
+      );
+  }
+  if (item?.profitCostPerUnit !== undefined && item.profitCostPerUnit !== null && Number.isFinite(Number(item.profitCostPerUnit))) {
+    return Math.max(0, Number(item.profitCostPerUnit)) * quantity;
+  }
+  if (item?.profitCostOfGoods !== undefined && item.profitCostOfGoods !== null && Number.isFinite(Number(item.profitCostOfGoods))) {
+    return Math.max(0, Number(item.profitCostOfGoods));
   }
   if (item?.buyCostBase !== undefined && item.buyCostBase !== null && item.buyCostBase !== '') {
     return Math.max(0, Number(item.buyCostBase) || 0) * quantity;
@@ -133,6 +141,10 @@ export const getSupplierUnitCostBreakdown = ({
         supplierName: unit.supplierName || '',
         supplierBillId: String(unit.supplierBillId || ''),
         purchaseCost,
+        purchaseCostEntered: unit.purchaseCostEntered,
+        purchaseCostIncludesGst: unit.purchaseCostIncludesGst,
+        purchaseGstRate: unit.purchaseGstRate,
+        taxablePurchaseCost: unit.taxablePurchaseCost,
         unitRecord: unit.unitRecord || null
       };
     }).filter(record => record.identifier),
